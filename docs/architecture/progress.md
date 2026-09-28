@@ -66,22 +66,23 @@ records which parts are built and what is next.
 
 ## Next task
 
-Move the private academic data plane behind server-side authorization (the prototype's biggest gap).
+Make the private API the source of truth and give it durable storage.
 
-1. The role policy now lives in one place (`domain/authorization.js`, `authorize(ACTION.…)`), called by
-   the client for classroom management, policies, homework, grading, recommendations, enrollment
-   decisions, and credential issue/revoke. There is still no backend, so it is a UX guard; stand up the
-   private store + API described in the data model and run the same module server-side so a request
-   cannot be forged by the UI.
-2. Authenticate requests with NIP-98 and map the signer pubkey to academy membership + class role on
-   the server; reject writes the client would have blocked.
-3. Separate the issuer signer from the owner key: keep issuer signing permission in the private system
-   with activation / rotation / revocation, and never store the academy `nsec` in app storage in production.
-4. Keep the relay publisher limited to the audited allowlist; academic state must never depend on a
-   relay write succeeding.
+1. Replace `server/store.js` with durable storage (a database behind the same accessor shape) so a
+   restart does not lose academic state.
+2. Wire the client to the API behind a config flag: route `setCompletionPolicy`, `createHomework`,
+   `gradeSubmission`, `recommendCompletion`, and the enrollment decision through `fetch` with a NIP-98
+   header, and keep local state as a cache only.
+3. Verify the loop end to end (create → enroll → homework → grade → recommend) against the server, and
+   add the server URL to settings.
+4. Move issuer signing server-side with activation / rotation, and never store the academy `nsec` in
+   app storage in production.
 
 ## Housekeeping
 
+- [x] Private API core: NIP-98-authenticated HTTP endpoints (`server/`) that enforce
+  `domain/authorization.js` server-side over an in-memory store, with tests (`tests/server.test.js`).
+  See [private API](private-api.md).
 - [x] Extracted a single authorization policy (`domain/authorization.js`, `authorize(ACTION.…)`) used by
   every client action, so the future server can import the same rules instead of duplicating them.
 - [x] Removed the orphaned demo grading scaffolding: `state.queue` / `state.assignment`,

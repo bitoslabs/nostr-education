@@ -6,6 +6,7 @@
   "description": "BitOS Education — Nostr-native education identity and credentials.",
   "scripts": {
     "dev": "python3 -m http.server 5173",
+    "server": "node server/index.js",
     "test": "node --test"
   },
   "dependencies": {

@@ -8,6 +8,7 @@ Start with [School system design](school-system.md). It defines the product, rol
 2. [Build progress](architecture/progress.md) — what is built in the prototype, and the next task.
 3. [Data model](architecture/data-model.md) — records, relationships, constraints, and privacy rules.
 4. [Nostr event strategy](architecture/nostr-events.md) — current NIP mappings, kind choices, and publication limits.
+5. [Private API](architecture/private-api.md) — NIP-98 auth and server-side authorization core.
 
 The following files are earlier design explorations, not the implementation contract:
 
