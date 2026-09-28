@@ -7,11 +7,13 @@ import { createScope } from './core/scope.js';
 import { createStore } from './core/store.js';
 import { getPersona, getPersonaIds, hydrateProfiles, registerPersona } from './data/personas.js';
 import { DEFAULT_SIGNER } from './domain/account.js';
-import { applyRecord } from './domain/records.js';
+import { findAcademyById } from './domain/academy.js';
+import { RECORD_TYPES, applyRecord, isPublicRecord } from './domain/records.js';
 import { parseProfileMeta } from './domain/profile.js';
 import { normalizeRelayList } from './domain/relay.js';
 import { MEMBERSHIP } from './domain/school.js';
 import { APP_TAG, decodeRecord } from './services/records.js';
+import { BLOSSOM_SERVERS } from './services/blossom.js';
 import { createConfirmService } from './services/confirm.js';
 import { createIconifyLoader } from './services/iconify.js';
 import {
@@ -85,6 +87,7 @@ const store = createStore({
   homework: persisted.homework ?? [],
   submissions: persisted.submissions ?? [],
   profiles: persisted.profiles ?? {},
+  blossomServer: persisted.blossomServer ?? BLOSSOM_SERVERS[0],
   relayConfig: normalizeRelayList(persisted.relayConfig ?? persisted.relays ?? DEFAULT_RELAYS, {
     defaults: DEFAULT_RELAYS,
   }),
@@ -93,9 +96,7 @@ const store = createStore({
   joinRequests: persisted.joinRequests ?? [],
   enrollRequests: persisted.enrollRequests ?? [],
   events: [],
-  queue: [],
   signQueue: [],
-  assignment: null,
   grants: [],
   credentials: [],
   deliveries: [],
@@ -105,6 +106,7 @@ const store = createStore({
   roleTab: 'classes',
   orgTab: 'overview',
   settingsSection: null,
+  gradebookClassId: null,
   membership: MEMBERSHIP.NONE,
 });
 
@@ -212,14 +214,66 @@ function syncProfiles() {
         id: event.pubkey,
         npub: encodeNpub(event.pubkey),
         displayName: profile.displayName || existing.displayName,
+        name: profile.name ?? existing.name,
         about: profile.about || existing.about,
         picture: profile.picture ?? existing.picture,
+        banner: profile.banner ?? existing.banner,
         handle: profile.handle ?? existing.handle,
+        lud16: profile.lud16 ?? existing.lud16,
+        lud06: profile.lud06 ?? existing.lud06,
+        website: profile.website ?? existing.website,
+        bot: profile.bot ?? existing.bot,
+        raw: profile.raw,
         avatar: existing.avatar,
       });
       store.setState({
         profiles: { ...store.getState().profiles, [event.pubkey]: getPersona(event.pubkey) },
       });
+    },
+  });
+}
+
+let catalogSub = null;
+const pendingCatalog = new Map();
+
+function applyCatalog(record) {
+  const patch = applyRecord(store.getState(), record);
+  if (patch) store.setState(patch);
+}
+
+function catalogAuthorization(record, pubkey) {
+  if (record.type === RECORD_TYPES.ACADEMY) return record.ownerId === pubkey;
+  const academy = findAcademyById(store.getState().academies ?? {}, record.academyId);
+  if (!academy) return null;
+  return academy.ownerId === pubkey;
+}
+
+function flushPendingCatalog(academyId) {
+  const queued = pendingCatalog.get(academyId);
+  if (!queued) return;
+  pendingCatalog.delete(academyId);
+  for (const { record, pubkey } of queued) {
+    if (catalogAuthorization(record, pubkey) === true) applyCatalog(record);
+  }
+}
+
+function syncCatalog() {
+  catalogSub?.close?.();
+  pendingCatalog.clear();
+  catalogSub = relayService.subscribe([{ kinds: [KIND.APP_DATA], '#t': [APP_TAG] }], {
+    onEvent: (event) => {
+      const record = decodeRecord(event.content);
+      if (!isPublicRecord(record)) return;
+      const authorization = catalogAuthorization(record, event.pubkey);
+      if (authorization === false) return;
+      if (authorization === null) {
+        const queue = pendingCatalog.get(record.academyId) ?? [];
+        queue.push({ record, pubkey: event.pubkey });
+        pendingCatalog.set(record.academyId, queue);
+        return;
+      }
+      applyCatalog(record);
+      if (record.type === RECORD_TYPES.ACADEMY) flushPendingCatalog(record.id);
     },
   });
 }
@@ -277,6 +331,7 @@ const router = createRouter({
 restoreSigner().finally(() => {
   router.start();
   syncProfiles();
+  syncCatalog();
   if (store.getState().authed) {
     relayService.check().then(() => store.setState({ relays: relayService.statuses() }));
   }

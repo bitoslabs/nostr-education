@@ -5,6 +5,8 @@ import {
   SUBMISSION_STATUS,
   classroomsForStudent,
   homeworkForClassroom,
+  homeworkStatusBadge,
+  isHomeworkOpen,
   submissionFor,
   submissionStatusBadge,
   subjectById,
@@ -69,7 +71,7 @@ function classCard(state, app, persona, room) {
   const subject = subjectById(state.subjects ?? [], room.subjectId);
   const teacher = room.teacherId ? getPersona(room.teacherId) : null;
   const homework = homeworkForClassroom(state.homework ?? [], room.id).filter(
-    (item) => item.status === HOMEWORK_STATUS.PUBLISHED,
+    (item) => item.status !== HOMEWORK_STATUS.DRAFT,
   );
 
   return el('div', { class: 'card' }, [
@@ -88,18 +90,38 @@ function homeworkRow(state, app, persona, item) {
   const submission = submissionFor(state.submissions ?? [], item.id, persona.id);
   const token = submissionStatusBadge(submission);
   const graded = submission?.status === SUBMISSION_STATUS.GRADED;
-  const label = graded ? 'Resubmit' : submission ? 'Submit new version' : 'Submit homework';
+  const revision = submission?.status === SUBMISSION_STATUS.REVISION;
+  const open = isHomeworkOpen(item);
+  const label = !open
+    ? 'Closed'
+    : revision
+      ? 'Revise & resubmit'
+      : graded
+        ? 'Resubmit'
+        : submission
+          ? 'Submit new version'
+          : 'Submit homework';
 
   const children = [
-    el('h3', {}, `${item.title} · due ${item.due} · out of ${item.maxScore}`),
+    el('div', { class: 'crow' }, [
+      el('span', { class: 'who' }, `${item.title} · due ${item.due} · out of ${item.maxScore}`),
+      !open
+        ? statusBadge(homeworkStatusBadge(item.status)?.label ?? 'closed', homeworkStatusBadge(item.status)?.tone ?? 'muted')
+        : null,
+    ]),
     item.instructions ? el('p', { class: 'muted small' }, item.instructions) : null,
     el('div', { class: 'arow' }, [
       statusBadge(token.label, token.tone),
-      button(label, { variant: graded ? 'default' : 'gold', small: true, onClick: () => app.openSubmitHomework(item.id) }),
+      button(label, {
+        variant: graded ? 'default' : 'gold',
+        small: true,
+        disabled: !open,
+        onClick: () => app.openSubmitHomework(item.id),
+      }),
     ]),
   ];
 
-  if (graded && submission.feedback) {
+  if ((graded || revision) && submission.feedback) {
     children.push(el('blockquote', { class: 'quote' }, `"${submission.feedback}"`));
   }
   return el('div', {}, children);

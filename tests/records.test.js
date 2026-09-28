@@ -6,6 +6,8 @@ import {
   PUBLIC_RECORD_TYPES,
   RECORD_TYPES,
   applyRecord,
+  isPublicRecord,
+  toPublicRecord,
 } from '../src/domain/records.js';
 
 const EMPTY = {
@@ -73,8 +75,35 @@ test('applyRecord tombstones remove subjects and classrooms', () => {
   assert.equal(applyRecord(base, { type: 'subject', id: 'sub2', deleted: true }).subjects.length, 1);
 });
 
+test('applyRecord applies a revision request to the submission', () => {
+  const base = { ...EMPTY, submissions: [{ id: 's1', status: 'graded', score: 80, feedback: 'ok' }] };
+  const patch = applyRecord(base, {
+    type: 'revision',
+    id: 'rev1',
+    submissionId: 's1',
+    feedback: 'Please expand',
+  });
+  assert.equal(patch.submissions[0].status, 'revision');
+  assert.equal(patch.submissions[0].score, null);
+  assert.equal(patch.submissions[0].feedback, 'Please expand');
+});
+
 test('record type groupings cover public and private data', () => {
   assert.equal(PUBLIC_RECORD_TYPES.includes(RECORD_TYPES.ACADEMY), true);
   assert.equal(PRIVATE_RECORD_TYPES.includes(RECORD_TYPES.GRADE), true);
   assert.equal(PRIVATE_RECORD_TYPES.includes(RECORD_TYPES.ACADEMY), false);
+});
+
+test('toPublicRecord strips roster fields without mutating the source', () => {
+  const classroom = { type: 'classroom', id: 'cls1', name: 'Algebra', studentIds: ['alice'] };
+  const published = toPublicRecord(classroom);
+  assert.equal('studentIds' in published, false);
+  assert.equal(published.name, 'Algebra');
+  assert.deepEqual(classroom.studentIds, ['alice']);
+});
+
+test('isPublicRecord only accepts catalog record types', () => {
+  assert.equal(isPublicRecord({ type: RECORD_TYPES.CLASSROOM }), true);
+  assert.equal(isPublicRecord({ type: RECORD_TYPES.GRADE }), false);
+  assert.equal(isPublicRecord(null), false);
 });

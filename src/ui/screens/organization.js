@@ -126,7 +126,7 @@ function academyProfileCard(academy, app) {
     ]),
     el('p', { class: 'muted small' }, academy.about || 'Add a public description for your academy profile.'),
     el('div', { class: 'arow' }, [
-      button('Edit info', { variant: 'gold', small: true, onClick: () => app.openEditAcademy() }),
+      button('Edit info', { variant: 'gold', small: true, onClick: () => { app.setSettingsSection('academy'); app.navigate('/settings'); } }),
       npub
         ? button('Copy org key', { small: true, onClick: () => app.copyText(npub, 'Organization npub copied.') })
         : null,
@@ -315,7 +315,7 @@ function staffBody(state, app, academy) {
       ]),
       el('p', { class: 'small muted' }, 'Authorized signers: Nadia (you). Invitations and admin access never grant signing power.'),
       el('div', { class: 'arow' }, [
-        button('Edit info', { small: true, onClick: () => app.openEditAcademy() }),
+        button('Edit info', { small: true, onClick: () => { app.setSettingsSection('academy'); app.navigate('/settings'); } }),
         button('＋ Add signer…', { small: true, onClick: () => app.stub('Signer management is coming soon.') }),
       ]),
     ]),

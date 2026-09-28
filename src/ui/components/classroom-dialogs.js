@@ -1,11 +1,57 @@
 import { el } from '../../core/dom.js';
-import { CLASS_STATUS, classStatusBadge } from '../../domain/classroom.js';
+import { CLASS_STATUS, HOMEWORK_STATUS, classStatusBadge, homeworkStatusBadge } from '../../domain/classroom.js';
+import { buildScoreSheet, normalizeRubric, rubricMax, scoresTotal } from '../../domain/rubric.js';
 import { button, noteBox } from './primitives.js';
 import { inviteLinkPanel } from './invite-dialog.js';
 import { statusBadge } from './status-badge.js';
 
 function errorLine() {
   return el('p', { class: 'small danger', 'aria-live': 'polite' });
+}
+
+function rubricEditor(initial = []) {
+  const list = el('div', { class: 'rows' });
+  const entries = [];
+
+  function addRow(criterion = {}) {
+    const labelInput = el('input', {
+      type: 'text',
+      value: criterion.label ?? '',
+      placeholder: 'Criterion',
+      'aria-label': 'Criterion',
+    });
+    const maxInput = el('input', {
+      type: 'number',
+      value: criterion.max ?? '',
+      min: '1',
+      placeholder: 'pts',
+      'aria-label': 'Points',
+    });
+    const entry = { labelInput, maxInput };
+    const node = el('div', { class: 'row' }, [
+      labelInput,
+      maxInput,
+      button('✕', {
+        small: true,
+        onClick: () => {
+          node.remove();
+          entries.splice(entries.indexOf(entry), 1);
+        },
+      }),
+    ]);
+    entries.push(entry);
+    list.append(node);
+  }
+
+  for (const criterion of normalizeRubric(initial)) addRow(criterion);
+
+  const node = el('div', {}, [list, button('＋ Add criterion', { small: true, onClick: () => addRow() })]);
+
+  function value() {
+    return entries.map((entry) => ({ label: entry.labelInput.value, max: entry.maxInput.value }));
+  }
+
+  return { node, value };
 }
 
 export function renderCreateSubject({ actions, close }) {
@@ -275,6 +321,7 @@ export function renderCreateHomework({ classroom, subject, actions, close }) {
   const instructions = el('textarea', { rows: '4', placeholder: 'What should learners do?', 'aria-label': 'Instructions' });
   const due = el('input', { type: 'text', placeholder: 'Mar 14', 'aria-label': 'Due date' });
   const maxScore = el('input', { type: 'number', value: '100', min: '1', 'aria-label': 'Max score' });
+  const rubric = rubricEditor();
 
   return el('div', {}, [
     el('h2', {}, 'Post homework'),
@@ -285,8 +332,10 @@ export function renderCreateHomework({ classroom, subject, actions, close }) {
     instructions,
     el('label', {}, 'Due'),
     due,
-    el('label', {}, 'Max score'),
+    el('label', {}, 'Max score (used when no rubric)'),
     maxScore,
+    el('label', {}, 'Rubric (optional)'),
+    rubric.node,
     error,
     el('div', { class: 'dlg-foot' }, [
       button('Cancel', { onClick: close }),
@@ -303,8 +352,80 @@ export function renderCreateHomework({ classroom, subject, actions, close }) {
             instructions: instructions.value,
             due: due.value,
             maxScore: maxScore.value,
+            rubric: rubric.value(),
           });
           if (item) close();
+        },
+      }),
+    ]),
+  ]);
+}
+
+export function renderManageHomework({ homeworkItem, actions, close }) {
+  const error = errorLine();
+  const closed = homeworkItem.status === HOMEWORK_STATUS.CLOSED;
+  const badge = homeworkStatusBadge(homeworkItem.status);
+  const titleInput = el('input', { type: 'text', value: homeworkItem.title ?? '', 'aria-label': 'Homework title' });
+  const instructions = el('textarea', {
+    rows: '4',
+    value: homeworkItem.instructions ?? '',
+    placeholder: 'What should learners do?',
+    'aria-label': 'Instructions',
+  });
+  const due = el('input', { type: 'text', value: homeworkItem.due ?? '', 'aria-label': 'Due date' });
+  const maxScore = el('input', {
+    type: 'number',
+    value: String(homeworkItem.maxScore ?? 100),
+    min: '1',
+    'aria-label': 'Max score',
+  });
+  const rubric = rubricEditor(homeworkItem.rubric);
+
+  return el('div', {}, [
+    el('h2', {}, `Manage · ${homeworkItem.title}`),
+    badge ? el('p', {}, statusBadge(badge.label, badge.tone)) : null,
+    el('label', {}, 'Title'),
+    titleInput,
+    el('label', {}, 'Instructions'),
+    instructions,
+    el('label', {}, 'Due'),
+    due,
+    el('label', {}, 'Max score (used when no rubric)'),
+    maxScore,
+    el('label', {}, 'Rubric (optional)'),
+    rubric.node,
+    error,
+    el('div', { class: 'dlg-foot' }, [
+      button('Cancel', { onClick: close }),
+      button('Save changes', {
+        variant: 'gold',
+        onClick: () => {
+          if (!String(titleInput.value).trim()) {
+            error.textContent = 'Enter a homework title.';
+            return;
+          }
+          const ok = actions.updateHomework({
+            homeworkId: homeworkItem.id,
+            title: titleInput.value,
+            instructions: instructions.value,
+            due: due.value,
+            maxScore: maxScore.value,
+            rubric: rubric.value(),
+          });
+          if (ok) close();
+        },
+      }),
+    ]),
+    el('div', { class: 'arow' }, [
+      closed
+        ? button('Reopen submissions', { small: true, onClick: () => { actions.reopenHomework(homeworkItem.id); close(); } })
+        : button('Close submissions', { small: true, onClick: () => { actions.closeHomework(homeworkItem.id); close(); } }),
+      button('Delete homework', {
+        variant: 'ghost',
+        small: true,
+        onClick: async () => {
+          const ok = await actions.deleteHomework(homeworkItem.id);
+          if (ok) close();
         },
       }),
     ]),
@@ -346,6 +467,18 @@ export function renderSubmitHomework({ homeworkItem, submission, actions, close 
 
 export function renderGradeSubmission({ submission, homeworkItem, learnerName, actions, close }) {
   const error = errorLine();
+  const criteria = normalizeRubric(homeworkItem.rubric);
+  const usesRubric = criteria.length > 0;
+  const rubricInputs = criteria.map((criterion, index) => {
+    const existing = (submission.scores ?? [])[index];
+    return el('input', {
+      type: 'number',
+      min: '0',
+      max: String(criterion.max),
+      value: existing ? String(existing.score) : '',
+      'aria-label': criterion.label,
+    });
+  });
   const score = el('input', {
     type: 'number',
     min: '0',
@@ -360,30 +493,67 @@ export function renderGradeSubmission({ submission, homeworkItem, learnerName, a
   });
   if (submission.feedback) feedback.value = submission.feedback;
 
+  const scoringBlock = usesRubric
+    ? el(
+        'div',
+        {},
+        criteria.map((criterion, index) => [
+          el('label', {}, `${criterion.label} (0–${criterion.max})`),
+          rubricInputs[index],
+        ]),
+      )
+    : el('div', {}, [el('label', {}, `Score (0–${submission.maxScore})`), score]);
+
+  const saveScore = () => {
+    if (usesRubric) {
+      if (rubricInputs.some((input) => input.value === '')) {
+        error.textContent = 'Score every rubric criterion.';
+        return;
+      }
+      const sheet = buildScoreSheet(criteria, rubricInputs.map((input) => input.value));
+      const ok = actions.gradeSubmission({
+        submissionId: submission.id,
+        score: scoresTotal(sheet),
+        scores: sheet,
+        feedback: feedback.value,
+      });
+      if (ok) close();
+      else error.textContent = 'Check the rubric scores and try again.';
+      return;
+    }
+    const ok = actions.gradeSubmission({
+      submissionId: submission.id,
+      score: score.value,
+      feedback: feedback.value,
+    });
+    if (ok) close();
+    else error.textContent = `Enter a number between 0 and ${submission.maxScore}.`;
+  };
+
+  const requestRevision = () => {
+    const ok = actions.requestRevision({ submissionId: submission.id, feedback: feedback.value });
+    if (ok) close();
+    else error.textContent = 'Write what the learner should change.';
+  };
+
   return el('div', {}, [
     el('h2', {}, `Score · ${learnerName}`),
-    el('p', { class: 'muted small' }, `${homeworkItem.title} · out of ${submission.maxScore}`),
+    el(
+      'p',
+      { class: 'muted small' },
+      usesRubric
+        ? `${homeworkItem.title} · rubric out of ${rubricMax(criteria)}`
+        : `${homeworkItem.title} · out of ${submission.maxScore}`,
+    ),
     el('h3', {}, 'Submission'),
     el('blockquote', { class: 'quote' }, submission.text || '(no text)'),
-    el('label', {}, `Score (0–${submission.maxScore})`),
-    score,
+    scoringBlock,
     el('label', {}, 'Feedback'),
     feedback,
     error,
     el('div', { class: 'dlg-foot' }, [
-      button('Cancel', { onClick: close }),
-      button('Save score', {
-        variant: 'gold',
-        onClick: () => {
-          const ok = actions.gradeSubmission({
-            submissionId: submission.id,
-            score: score.value,
-            feedback: feedback.value,
-          });
-          if (ok) close();
-          else error.textContent = `Enter a number between 0 and ${submission.maxScore}.`;
-        },
-      }),
+      button('Request revision', { onClick: requestRevision }),
+      button('Save score', { variant: 'gold', onClick: saveScore }),
     ]),
   ]);
 }

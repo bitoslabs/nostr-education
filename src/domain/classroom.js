@@ -7,11 +7,13 @@ export const CLASS_STATUS = Object.freeze({
 export const HOMEWORK_STATUS = Object.freeze({
   DRAFT: 'draft',
   PUBLISHED: 'published',
+  CLOSED: 'closed',
 });
 
 export const SUBMISSION_STATUS = Object.freeze({
   SUBMITTED: 'submitted',
   GRADED: 'graded',
+  REVISION: 'revision',
 });
 
 export function subjectsForAcademy(subjects = [], academyId) {
@@ -72,7 +74,11 @@ export function homeworkForStudent(homework = [], classrooms = [], studentId) {
   const enrolled = new Set(classroomsForStudent(classrooms, studentId).map((room) => room.id));
   return homework
     .filter((item) => enrolled.has(item.classroomId))
-    .filter((item) => item.status === HOMEWORK_STATUS.PUBLISHED);
+    .filter((item) => item.status !== HOMEWORK_STATUS.DRAFT);
+}
+
+export function isHomeworkOpen(homework) {
+  return homework?.status === HOMEWORK_STATUS.PUBLISHED;
 }
 
 export function submissionsForHomework(submissions = [], homeworkId) {
@@ -108,6 +114,7 @@ export function classStatusBadge(status) {
 export function homeworkStatusBadge(status) {
   if (status === HOMEWORK_STATUS.DRAFT) return { label: 'draft', tone: 'info' };
   if (status === HOMEWORK_STATUS.PUBLISHED) return { label: 'published ✓', tone: 'ok' };
+  if (status === HOMEWORK_STATUS.CLOSED) return { label: 'closed — no new submissions', tone: 'muted' };
   return null;
 }
 
@@ -116,10 +123,47 @@ export function submissionStatusBadge(submission) {
   if (submission.status === SUBMISSION_STATUS.GRADED) {
     return { label: `✓ scored ${submission.score}/${submission.maxScore}`, tone: 'ok' };
   }
+  if (submission.status === SUBMISSION_STATUS.REVISION) {
+    return { label: '▲ revision requested', tone: 'warn' };
+  }
   return { label: 'submitted · awaiting score', tone: 'info' };
 }
 
 export function gradingProgress(submissions = [], studentIds = []) {
   const graded = submissions.filter((submission) => submission.status === SUBMISSION_STATUS.GRADED).length;
   return { graded, total: studentIds.length };
+}
+
+export function reviewQueue(submissions = [], homework = [], classrooms = []) {
+  const byClassroom = new Map(classrooms.map((room) => [room.id, room]));
+  const byHomework = new Map(homework.map((item) => [item.id, item]));
+  return submissions
+    .map((submission) => ({
+      submission,
+      homework: byHomework.get(submission.homeworkId) ?? null,
+      classroom: byClassroom.get(submission.classroomId) ?? null,
+    }))
+    .filter((entry) => entry.homework && entry.classroom);
+}
+
+export function reviewCounts(queue = []) {
+  const pending = queue.filter((entry) => entry.submission.status === SUBMISSION_STATUS.SUBMITTED).length;
+  const graded = queue.filter((entry) => entry.submission.status === SUBMISSION_STATUS.GRADED).length;
+  return { pending, graded };
+}
+
+export function submissionsForClassroom(submissions = [], classroomId) {
+  return submissions.filter((submission) => submission.classroomId === classroomId);
+}
+
+export function averagePercent(submissions = []) {
+  const graded = submissions.filter(
+    (submission) => submission.status === SUBMISSION_STATUS.GRADED && Number(submission.maxScore) > 0,
+  );
+  if (!graded.length) return null;
+  const total = graded.reduce(
+    (sum, submission) => sum + Number(submission.score) / Number(submission.maxScore),
+    0,
+  );
+  return Math.round((total / graded.length) * 100);
 }

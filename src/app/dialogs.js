@@ -3,8 +3,7 @@ import { getPersona, getPersonaIds } from '../data/personas.js';
 import { SEED_CONTACTS } from '../data/seed.js';
 import { classroomById, subjectById, submissionFor, subjectsForAcademy } from '../domain/classroom.js';
 import { ROLE } from '../domain/school.js';
-import { renderCreateAcademy, renderEditAcademy } from '../ui/components/academy-dialog.js';
-import { renderAssignment } from '../ui/components/assignment-drawer.js';
+import { renderCreateAcademy } from '../ui/components/academy-dialog.js';
 import {
   renderCreateClassroom,
   renderCreateHomework,
@@ -14,13 +13,13 @@ import {
   renderInviteClassTeacher,
   renderInviteStudent,
   renderManageClassroom,
+  renderManageHomework,
   renderSubmitHomework,
 } from '../ui/components/classroom-dialogs.js';
 import { renderComposer } from '../ui/components/composer.js';
 import { inviteLinkPanel, renderInviteLink, renderInviteTeacher } from '../ui/components/invite-dialog.js';
 import { noteBox } from '../ui/components/primitives.js';
-import { renderEditProfile } from '../ui/components/profile-dialog.js';
-import { renderReview } from '../ui/components/review-drawer.js';
+import { renderCropper } from '../ui/components/image-cropper.js';
 import { renderShare } from '../ui/components/share-dialog.js';
 import { renderSign } from '../ui/components/sign-drawer.js';
 
@@ -40,30 +39,6 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
   }
 
   const closeNamed = (name) => () => handles[name]?.close();
-
-  function openAssignment() {
-    const { assignment } = store.getState();
-    return openNamed('assignment', {
-      kind: 'drawer',
-      label: 'Assignment detail',
-      content: renderAssignment({
-        assignment,
-        actions,
-        close: closeNamed('assignment'),
-        reopen: openAssignment,
-      }),
-    });
-  }
-
-  function openReview(queueId, mode = 'review') {
-    const item = store.getState().queue.find((entry) => entry.id === queueId);
-    if (!item) return null;
-    return openNamed('review', {
-      kind: 'drawer-wide',
-      label: 'Review and score',
-      content: renderReview({ item, mode, actions, close: closeNamed('review') }),
-    });
-  }
 
   function openSign(signId) {
     const item = store.getState().signQueue.find((entry) => entry.id === signId);
@@ -103,16 +78,6 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     return openNamed('academy', {
       label: 'Create academy',
       content: renderCreateAcademy({ actions, close: closeNamed('academy'), roleNotice }),
-    });
-  }
-
-  function openEditAcademy() {
-    const state = store.getState();
-    const academy = state.academies?.[state.personaId];
-    if (!academy) return null;
-    return openNamed('edit-academy', {
-      label: 'Academy info',
-      content: renderEditAcademy({ academy, actions, close: closeNamed('edit-academy') }),
     });
   }
 
@@ -244,6 +209,20 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     });
   }
 
+  function openManageHomework(homeworkId) {
+    const state = store.getState();
+    const homeworkItem = (state.homework ?? []).find((entry) => entry.id === homeworkId);
+    if (!homeworkItem) return null;
+    return openNamed('manage-homework', {
+      label: `Manage · ${homeworkItem.title}`,
+      content: renderManageHomework({
+        homeworkItem,
+        actions,
+        close: closeNamed('manage-homework'),
+      }),
+    });
+  }
+
   function openGradeSubmission(submissionId) {
     const state = store.getState();
     const submission = (state.submissions ?? []).find((entry) => entry.id === submissionId);
@@ -261,12 +240,34 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     });
   }
 
-  function openEditProfile() {
-    const state = store.getState();
-    const persona = getPersona(state.personaId);
-    return openNamed('edit-profile', {
-      label: 'Edit profile',
-      content: renderEditProfile({ persona, actions, close: closeNamed('edit-profile') }),
+  function cropImage({ file, aspect = 1, title, outputWidth = 512 }) {
+    const url = URL.createObjectURL(file);
+    return new Promise((resolve) => {
+      let settled = false;
+      const settle = (value) => {
+        if (settled) return;
+        settled = true;
+        URL.revokeObjectURL(url);
+        resolve(value);
+      };
+      const handle = overlay.open({
+        label: title ?? 'Crop image',
+        content: renderCropper({
+          imageUrl: url,
+          aspect,
+          title,
+          outputWidth,
+          onApply: (blob) => {
+            settle(blob);
+            handle.close();
+          },
+          onCancel: () => {
+            settle(null);
+            handle.close();
+          },
+        }),
+        onClose: () => settle(null),
+      });
     });
   }
 
@@ -284,14 +285,11 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
   }
 
   return {
-    openAssignment,
-    openReview,
     openSign,
     openShare,
-    openEditProfile,
+    cropImage,
     openComposer,
     openCreateAcademy,
-    openEditAcademy,
     openInviteTeacher,
     openInviteLink,
     openCreateSubject,
@@ -302,6 +300,7 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     openInviteClassTeacher,
     openClassLink,
     openCreateHomework,
+    openManageHomework,
     openSubmitHomework,
     openGradeSubmission,
   };

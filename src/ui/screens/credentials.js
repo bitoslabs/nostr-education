@@ -2,19 +2,34 @@ import { el } from '../../core/dom.js';
 import { getPersona } from '../../data/personas.js';
 import { ROLE } from '../../domain/school.js';
 import { credentialCard } from '../components/credential-card.js';
+import { createIssuedPanel } from '../components/issued-credentials.js';
 import { profileCard } from '../components/profile-card.js';
-import { button, pageTitle, row } from '../components/primitives.js';
+import { button, pageTitle } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
 
 export function renderCredentials({ store, app, scope }) {
   const node = el('section', { class: 'screen' });
+  let issuedPanel = null;
 
   function render() {
     const state = store.getState();
     const persona = getPersona(state.personaId);
-    const credentials = state.credentials ?? [];
+
+    if (persona.role === ROLE.OWNER) {
+      if (!issuedPanel) {
+        issuedPanel = createIssuedPanel({ app });
+        node.replaceChildren(pageTitle('Issued by your organization'), issuedPanel.root);
+      }
+      issuedPanel.update(state);
+      return;
+    }
+
+    issuedPanel = null;
     const profile = profileCard(persona, {
-      onEdit: () => app.openEditProfile(),
+      onEdit: () => {
+        app.setSettingsSection('profile');
+        app.navigate('/settings');
+      },
       onRefresh: () => app.refreshMyProfile(),
       onCopy: () => app.copyText(persona.npub, 'Public key copied.'),
     });
@@ -34,28 +49,7 @@ export function renderCredentials({ store, app, scope }) {
       return;
     }
 
-    if (persona.role === ROLE.OWNER) {
-      node.replaceChildren(
-        pageTitle('Issued by your organization'),
-        profile,
-        el('div', { class: 'rows' }, [
-          state.signed
-            ? row([
-                el('span', { class: 'who' }, 'Certificate · Alice'),
-                el('span', { class: 'muted small' }, 'CS-101 · issued today'),
-                statusBadge('✓ delivered', 'ok'),
-              ])
-            : null,
-          row([
-            el('span', { class: 'who' }, 'Certificate · Carol'),
-            el('span', { class: 'muted small' }, 'CS-101 · Jan 30'),
-            statusBadge('✓ delivered', 'ok'),
-          ]),
-        ]),
-      );
-      return;
-    }
-
+    const credentials = state.credentials ?? [];
     node.replaceChildren(
       pageTitle('Credentials'),
       profile,

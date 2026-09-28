@@ -13,6 +13,9 @@ import {
   encodeNsec,
 } from '../services/nostr.js';
 import { encodeRecord, recordTags } from '../services/records.js';
+import { normalizeBlossomServer, uploadBlob } from '../services/blossom.js';
+import { toPublicRecord } from '../domain/records.js';
+import { buildScoreSheet, normalizeRubric, rubricMax, scoresComplete, scoresTotal } from '../domain/rubric.js';
 import { clearState, loadOrgSecret, saveOrgSecret, saveSecretKey } from '../services/storage.js';
 import {
   ACADEMY_TYPES,
@@ -32,6 +35,7 @@ import {
   classroomActivity,
   classroomById,
   isEnrollable,
+  isHomeworkOpen,
   isValidScore,
   subjectById,
   subjectInUse,
@@ -40,7 +44,7 @@ import {
 import { DELIVERY_STATE } from '../domain/delivery.js';
 import { normalizeHandle, validateHandle } from '../domain/handle.js';
 import { truncateNpub } from '../domain/identity.js';
-import { normalizePicture, parseProfileMeta, profileContent } from '../domain/profile.js';
+import { normalizeUrl, parseProfileMeta, profileContent } from '../domain/profile.js';
 import {
   addRelay as addRelayToList,
   nextRelayMode,
@@ -50,12 +54,10 @@ import {
   setRelayMode as setRelayModeInList,
 } from '../domain/relay.js';
 import {
-  ASSIGNMENT_STATUS,
   MEMBERSHIP,
   REQUEST_STATUS,
   ROLE,
 } from '../domain/school.js';
-import { formatScore, isRubricComplete, rubricPercent } from '../domain/review.js';
 import {
   clearRegistry,
   findPersonaByKey,
@@ -105,6 +107,10 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     update({ settingsSection: section ?? null });
   }
 
+  function setGradebookClass(gradebookClassId) {
+    update({ gradebookClassId: gradebookClassId ?? null });
+  }
+
   async function copyText(text, label = 'Copied') {
     try {
       await navigator.clipboard.writeText(String(text));
@@ -127,6 +133,16 @@ export function createActions({ store, bus, signer, confirm, relay }) {
 
   function ownedAcademy(current, personaId) {
     return current.academies?.[personaId] ?? null;
+  }
+
+  function canManageClassroom(current, classroom) {
+    if (!classroom) return false;
+    if (classroom.teacherId === current.personaId) return true;
+    return findAcademyById(current.academies ?? {}, classroom.academyId)?.ownerId === current.personaId;
+  }
+
+  function homeworkRecipients(classroom) {
+    return [classroom?.teacherId, ...(classroom?.studentIds ?? [])].filter(Boolean);
   }
 
   function normalizeInviteTarget(raw) {
@@ -378,25 +394,32 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     });
   }
 
-  async function updateProfile({ displayName, about = '', picture = '' } = {}) {
+  async function updateProfile(fields = {}) {
     const persona = getPersona(state().personaId);
-    const name = String(displayName ?? '').trim();
-    if (!name) {
+    const displayName = String(fields.displayName ?? '').trim();
+    if (!displayName) {
       toast('Add a display name before saving.', 'warn');
       return false;
     }
     const next = {
       ...persona,
-      displayName: name,
-      about: String(about ?? '').trim(),
-      picture: normalizePicture(picture),
+      displayName,
+      name: String(fields.name ?? '').trim() || persona.name || '',
+      about: String(fields.about ?? '').trim(),
+      picture: normalizeUrl(fields.picture),
+      banner: normalizeUrl(fields.banner),
+      handle: String(fields.handle ?? '').trim() || persona.handle || null,
+      lud16: String(fields.lud16 ?? '').trim() || null,
+      lud06: String(fields.lud06 ?? '').trim() || persona.lud06 || null,
+      website: normalizeUrl(fields.website),
+      bot: fields.bot === true,
     };
     const published = await publishProfileEvent(next, {
       title: 'Update profile',
       action: el('span', {}, [
         el('strong', {}, 'Publish profile'),
         el('br'),
-        `${name} · `,
+        `${displayName} · `,
         el('span', { class: 'mono' }, truncateNpub(persona.npub)),
       ]),
     });
@@ -410,13 +433,49 @@ export function createActions({ store, bus, signer, confirm, relay }) {
           ? {
               ...state().session,
               displayName: updated.displayName,
+              name: updated.name,
               about: updated.about,
               picture: updated.picture,
+              banner: updated.banner,
+              handle: updated.handle,
             }
           : state().session,
     });
     toast('Profile published to your relays.', 'ok');
     return true;
+  }
+
+  async function uploadImage(blob, { server } = {}) {
+    if (!blob) return null;
+    if (!signer.canSign()) {
+      toast('Connect a signer to upload images.', 'warn');
+      return null;
+    }
+    const target = normalizeBlossomServer(server ?? state().blossomServer);
+    try {
+      toast('Uploading image to Blossom…', 'info');
+      const result = await uploadBlob({
+        blob,
+        server: target,
+        signer,
+        title: 'Upload image',
+        action: el('span', {}, [
+          el('strong', {}, 'Upload to Blossom'),
+          el('br'),
+          `${target.replace(/^https?:\/\//, '')} · ${Math.max(1, Math.round(blob.size / 1024))} KB`,
+        ]),
+      });
+      if (!result) return null;
+      toast('Image uploaded.', 'ok');
+      return result.url;
+    } catch (error) {
+      toast(error?.message ?? 'Image upload failed.', 'warn');
+      return null;
+    }
+  }
+
+  function setBlossomServer(server) {
+    update({ blossomServer: normalizeBlossomServer(server) });
   }
 
   function fetchProfile(targetId) {
@@ -444,9 +503,16 @@ export function createActions({ store, bus, signer, confirm, relay }) {
             id: me,
             npub: encodeNpub(me),
             displayName: meta.displayName || existing.displayName,
+            name: meta.name ?? existing.name,
             about: meta.about || existing.about,
             picture: meta.picture ?? existing.picture,
+            banner: meta.banner ?? existing.banner,
             handle: meta.handle ?? existing.handle,
+            lud16: meta.lud16 ?? existing.lud16,
+            lud06: meta.lud06 ?? existing.lud06,
+            website: meta.website ?? existing.website,
+            bot: meta.bot ?? existing.bot,
+            raw: meta.raw,
           });
           update({
             profiles: { ...state().profiles, [me]: merged },
@@ -455,8 +521,10 @@ export function createActions({ store, bus, signer, confirm, relay }) {
                 ? {
                     ...state().session,
                     displayName: merged.displayName,
+                    name: merged.name,
                     about: merged.about,
                     picture: merged.picture,
+                    banner: merged.banner,
                     handle: merged.handle,
                   }
                 : state().session,
@@ -785,7 +853,6 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       joinRequests: [],
       enrollRequests: [],
       events: [],
-      queue: [],
       signQueue: [],
       credentials: [],
       deliveries: [],
@@ -1257,7 +1324,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     publishRecord({
       type: 'classroom',
       id: classroom.id,
-      payload: classroom,
+      payload: toPublicRecord(classroom),
       title: 'Publish classroom',
       action: el('span', {}, `Publish ${className} (${subject.name}).`),
     });
@@ -1276,10 +1343,16 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       toast('Assign a teacher before publishing.', 'warn');
       return false;
     }
+    const updated = { ...classroom, status: CLASS_STATUS.PUBLISHED };
     update({
-      classrooms: current.classrooms.map((room) =>
-        room.id === classroomId ? { ...room, status: CLASS_STATUS.PUBLISHED } : room,
-      ),
+      classrooms: current.classrooms.map((room) => (room.id === classroomId ? updated : room)),
+    });
+    publishRecord({
+      type: 'classroom',
+      id: updated.id,
+      payload: toPublicRecord(updated),
+      title: 'Publish classroom',
+      action: el('span', {}, `Publish ${classroom.name} to the catalog.`),
     });
     toast(`${classroom.name} published — students can see it.`, 'ok');
     return true;
@@ -1289,10 +1362,16 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     const current = state();
     const classroom = classroomById(current.classrooms ?? [], classroomId);
     if (!classroom) return false;
+    const updated = { ...classroom, teacherId, status: CLASS_STATUS.PUBLISHED };
     update({
-      classrooms: current.classrooms.map((room) =>
-        room.id === classroomId ? { ...room, teacherId, status: CLASS_STATUS.PUBLISHED } : room,
-      ),
+      classrooms: current.classrooms.map((room) => (room.id === classroomId ? updated : room)),
+    });
+    publishRecord({
+      type: 'classroom',
+      id: updated.id,
+      payload: toPublicRecord(updated),
+      title: 'Assign teacher',
+      action: el('span', {}, `Assign a teacher to ${classroom.name}.`),
     });
     toast(`${classroom.name} assigned and published.`, 'ok');
     return true;
@@ -1351,7 +1430,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     publishRecord({
       type: 'classroom',
       id: updated.id,
-      payload: updated,
+      payload: toPublicRecord(updated),
       title: 'Update classroom',
       action: el('span', {}, `Publish changes to ${nextName}.`),
     });
@@ -1386,7 +1465,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     publishRecord({
       type: 'classroom',
       id: updated.id,
-      payload: updated,
+      payload: toPublicRecord(updated),
       title: status === CLASS_STATUS.ARCHIVED ? 'Archive classroom' : 'Restore classroom',
       action: el('span', {}, `${message}`),
     });
@@ -1456,7 +1535,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     publishRecord({
       type: 'classroom',
       id: classroomId,
-      payload: { ...classroom, deleted: true },
+      payload: toPublicRecord({ ...classroom, deleted: true }),
       title: 'Delete classroom',
       action: el('span', {}, `Remove ${classroom.name} from your academy.`),
     });
@@ -1556,11 +1635,15 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     return { ...invite, url: inviteUrl(invite.code, appBase()) };
   }
 
-  function createHomework({ classroomId, title, instructions = '', due = '', maxScore = 100 } = {}) {
+  function createHomework({ classroomId, title, instructions = '', due = '', maxScore = 100, rubric = [] } = {}) {
     const current = state();
     const classroom = classroomById(current.classrooms ?? [], classroomId);
     if (!classroom) {
       toast('Pick a classroom first.', 'warn');
+      return null;
+    }
+    if (!canManageClassroom(current, classroom)) {
+      toast('Only the class teacher or academy owner can post homework.', 'warn');
       return null;
     }
     const homeworkTitle = String(title ?? '').trim();
@@ -1568,9 +1651,10 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       toast('Add a homework title.', 'warn');
       return null;
     }
-    const max = Number(maxScore);
+    const criteria = normalizeRubric(rubric);
+    const max = criteria.length ? rubricMax(criteria) : Number(maxScore);
     if (!Number.isFinite(max) || max <= 0) {
-      toast('Max score must be a positive number.', 'warn');
+      toast(criteria.length ? 'Each rubric criterion needs a positive maximum.' : 'Max score must be a positive number.', 'warn');
       return null;
     }
     const persona = getPersona(current.personaId);
@@ -1584,6 +1668,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       instructions: String(instructions ?? '').trim(),
       due: String(due ?? '').trim() || 'no due date',
       maxScore: max,
+      rubric: criteria,
       status: HOMEWORK_STATUS.PUBLISHED,
       createdBy: persona.id,
     };
@@ -1619,6 +1704,10 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     const current = state();
     const item = (current.homework ?? []).find((entry) => entry.id === homeworkId);
     if (!item) return false;
+    if (!isHomeworkOpen(item)) {
+      toast('This homework is closed to new submissions.', 'warn');
+      return false;
+    }
     const persona = getPersona(current.personaId);
     const body = String(text ?? '').trim();
     if (!body) {
@@ -1636,6 +1725,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       version,
       status: SUBMISSION_STATUS.SUBMITTED,
       score: null,
+      scores: null,
       maxScore: item.maxScore,
       feedback: '',
       submittedAt: 'now',
@@ -1673,22 +1763,41 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     return true;
   }
 
-  function gradeSubmission({ submissionId, score, feedback = '' } = {}) {
+  function gradeSubmission({ submissionId, score, feedback = '', scores = null } = {}) {
     const current = state();
     const submission = (current.submissions ?? []).find((entry) => entry.id === submissionId);
     if (!submission) return false;
-    if (!isValidScore(score, submission.maxScore)) {
+    const classroom = classroomById(current.classrooms ?? [], submission.classroomId);
+    if (!canManageClassroom(current, classroom)) {
+      toast('Only the class teacher or academy owner can score this.', 'warn');
+      return false;
+    }
+    const homeworkItem = (current.homework ?? []).find((entry) => entry.id === submission.homeworkId);
+    const rubric = normalizeRubric(homeworkItem?.rubric);
+    let sheet = null;
+    let numeric = Number(score);
+    let maxScore = submission.maxScore;
+    if (rubric.length) {
+      sheet = Array.isArray(scores) ? scores : [];
+      if (!scoresComplete(sheet, rubric)) {
+        toast('Score every rubric criterion.', 'warn');
+        return false;
+      }
+      numeric = scoresTotal(sheet);
+      maxScore = rubricMax(rubric);
+    } else if (!isValidScore(score, submission.maxScore)) {
       toast(`Enter a score between 0 and ${submission.maxScore}.`, 'warn');
       return false;
     }
     const persona = getPersona(current.personaId);
-    const numeric = Number(score);
     update({
       submissions: current.submissions.map((entry) =>
         entry.id === submissionId
           ? {
               ...entry,
               score: numeric,
+              maxScore,
+              scores: sheet,
               feedback: String(feedback ?? '').trim(),
               status: SUBMISSION_STATUS.GRADED,
               gradedAt: 'now',
@@ -1705,7 +1814,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
           context: submission.homeworkId,
           audience: [submission.studentId],
           homeworkId: submission.homeworkId,
-          text: `scored a submission ${numeric}/${submission.maxScore}.`,
+          text: `scored a submission ${numeric}/${maxScore}.`,
         },
         ...current.events,
       ],
@@ -1718,6 +1827,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
         studentId: submission.studentId,
         homeworkId: submission.homeworkId,
         score: numeric,
+        scores: sheet,
         feedback: String(feedback ?? '').trim(),
         gradedAt: 'now',
         gradedBy: persona.id,
@@ -1725,9 +1835,235 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       recipients: [submission.studentId],
       encrypted: true,
       title: 'Send score',
-      action: el('span', {}, `Send ${numeric}/${submission.maxScore} to the learner (encrypted).`),
+      action: el('span', {}, `Send ${numeric}/${maxScore} to the learner (encrypted).`),
     });
-    toast(`Score saved — ${numeric}/${submission.maxScore}.`, 'ok');
+    toast(`Score saved — ${numeric}/${maxScore}.`, 'ok');
+    return true;
+  }
+
+  function requestRevision({ submissionId, feedback = '' } = {}) {
+    const current = state();
+    const submission = (current.submissions ?? []).find((entry) => entry.id === submissionId);
+    if (!submission) return false;
+    const classroom = classroomById(current.classrooms ?? [], submission.classroomId);
+    if (!canManageClassroom(current, classroom)) {
+      toast('Only the class teacher or academy owner can request a revision.', 'warn');
+      return false;
+    }
+    const note = String(feedback ?? '').trim();
+    if (!note) {
+      toast('Write what the learner should change.', 'warn');
+      return false;
+    }
+    const persona = getPersona(current.personaId);
+    const homeworkItem = (current.homework ?? []).find((entry) => entry.id === submission.homeworkId);
+    update({
+      submissions: current.submissions.map((entry) =>
+        entry.id === submissionId
+          ? {
+              ...entry,
+              status: SUBMISSION_STATUS.REVISION,
+              score: null,
+              scores: null,
+              feedback: note,
+              gradedAt: null,
+              gradedBy: null,
+            }
+          : entry,
+      ),
+      events: [
+        {
+          id: nextId('e'),
+          type: 'revision',
+          author: persona.id,
+          time: 'now',
+          context: homeworkItem?.title ?? classroom?.name ?? 'Homework',
+          audience: [submission.studentId],
+          homeworkId: submission.homeworkId,
+          actionNeeded: true,
+          quote: note,
+          text: `requested a revision on a submission.`,
+        },
+        ...current.events,
+      ],
+    });
+    publishRecord({
+      type: 'revision',
+      id: nextId('rev'),
+      payload: {
+        submissionId: submission.id,
+        studentId: submission.studentId,
+        homeworkId: submission.homeworkId,
+        feedback: note,
+        requestedAt: 'now',
+        requestedBy: persona.id,
+      },
+      recipients: [submission.studentId],
+      encrypted: true,
+      title: 'Request revision',
+      action: el('span', {}, 'Send revision feedback to the learner (encrypted).'),
+    });
+    toast('Revision requested — the learner can resubmit.', 'ok');
+    return true;
+  }
+
+  function updateHomework({ homeworkId, title, instructions = '', due = '', maxScore, rubric } = {}) {
+    const current = state();
+    const item = (current.homework ?? []).find((entry) => entry.id === homeworkId);
+    if (!item) return false;
+    const classroom = classroomById(current.classrooms ?? [], item.classroomId);
+    if (!canManageClassroom(current, classroom)) {
+      toast('Only the class teacher or academy owner can edit this homework.', 'warn');
+      return false;
+    }
+    const nextTitle = String(title ?? '').trim();
+    if (!nextTitle) {
+      toast('Add a homework title.', 'warn');
+      return false;
+    }
+    const criteria = rubric === undefined ? normalizeRubric(item.rubric) : normalizeRubric(rubric);
+    const max = criteria.length ? rubricMax(criteria) : Number(maxScore ?? item.maxScore);
+    if (!Number.isFinite(max) || max <= 0) {
+      toast(criteria.length ? 'Each rubric criterion needs a positive maximum.' : 'Max score must be a positive number.', 'warn');
+      return false;
+    }
+    const updated = {
+      ...item,
+      title: nextTitle,
+      instructions: String(instructions ?? '').trim(),
+      due: String(due ?? '').trim() || 'no due date',
+      maxScore: max,
+      rubric: criteria,
+    };
+    update({
+      homework: (current.homework ?? []).map((entry) => (entry.id === homeworkId ? updated : entry)),
+      events: [
+        {
+          id: nextId('e'),
+          type: 'homework',
+          author: current.personaId,
+          time: 'now',
+          context: `${classroom?.name ?? 'Class'} ▸ ${nextTitle}`,
+          audience: 'all',
+          text: `updated “${nextTitle}” · due ${updated.due} · out of ${max}.`,
+        },
+        ...current.events,
+      ],
+    });
+    publishRecord({
+      type: 'homework',
+      id: updated.id,
+      payload: updated,
+      recipients: homeworkRecipients(classroom),
+      encrypted: true,
+      title: 'Update homework',
+      action: el('span', {}, `Send the updated “${nextTitle}” to the class (encrypted).`),
+    });
+    toast(`Homework “${nextTitle}” updated.`, 'ok');
+    return true;
+  }
+
+  function setHomeworkStatus(homeworkId, status, message, tone = 'info') {
+    const current = state();
+    const item = (current.homework ?? []).find((entry) => entry.id === homeworkId);
+    if (!item) return false;
+    const classroom = classroomById(current.classrooms ?? [], item.classroomId);
+    if (!canManageClassroom(current, classroom)) {
+      toast('Only the class teacher or academy owner can change this homework.', 'warn');
+      return false;
+    }
+    const updated = { ...item, status };
+    update({
+      homework: (current.homework ?? []).map((entry) => (entry.id === homeworkId ? updated : entry)),
+      events: [
+        {
+          id: nextId('e'),
+          type: 'homework',
+          author: current.personaId,
+          time: 'now',
+          context: classroom?.name ?? 'Class',
+          audience: 'all',
+          text: message,
+        },
+        ...current.events,
+      ],
+    });
+    publishRecord({
+      type: 'homework',
+      id: updated.id,
+      payload: updated,
+      recipients: homeworkRecipients(classroom),
+      encrypted: true,
+      title: status === HOMEWORK_STATUS.CLOSED ? 'Close homework' : 'Reopen homework',
+      action: el('span', {}, message),
+    });
+    toast(message, tone);
+    return true;
+  }
+
+  function closeHomework(homeworkId) {
+    const item = (state().homework ?? []).find((entry) => entry.id === homeworkId);
+    if (!item) return false;
+    return setHomeworkStatus(
+      homeworkId,
+      HOMEWORK_STATUS.CLOSED,
+      `closed “${item.title}” — no new submissions.`,
+      'warn',
+    );
+  }
+
+  function reopenHomework(homeworkId) {
+    const item = (state().homework ?? []).find((entry) => entry.id === homeworkId);
+    if (!item) return false;
+    return setHomeworkStatus(homeworkId, HOMEWORK_STATUS.PUBLISHED, `reopened “${item.title}” for submissions.`, 'ok');
+  }
+
+  async function deleteHomework(homeworkId) {
+    const current = state();
+    const item = (current.homework ?? []).find((entry) => entry.id === homeworkId);
+    if (!item) return false;
+    const classroom = classroomById(current.classrooms ?? [], item.classroomId);
+    if (!canManageClassroom(current, classroom)) {
+      toast('Only the class teacher or academy owner can delete this homework.', 'warn');
+      return false;
+    }
+    const submitted = (current.submissions ?? []).some((entry) => entry.homeworkId === homeworkId);
+    if (submitted) {
+      toast('Close the homework instead — learners have already submitted.', 'warn');
+      return false;
+    }
+    const ok = await confirm({
+      title: `Delete “${item.title}”?`,
+      body: 'The homework is removed here and a deletion record is sent to the class.',
+      confirmLabel: 'Delete',
+    });
+    if (!ok) return false;
+
+    update({
+      homework: (current.homework ?? []).filter((entry) => entry.id !== homeworkId),
+      events: [
+        {
+          id: nextId('e'),
+          type: 'homework',
+          author: current.personaId,
+          time: 'now',
+          context: classroom?.name ?? 'Class',
+          audience: 'all',
+          text: `removed “${item.title}”.`,
+        },
+        ...current.events,
+      ],
+    });
+    publishRecord({
+      type: 'homework',
+      id: homeworkId,
+      payload: { id: homeworkId, classroomId: item.classroomId, deleted: true },
+      recipients: homeworkRecipients(classroom),
+      encrypted: true,
+      title: 'Delete homework',
+      action: el('span', {}, `Remove “${item.title}” from the class.`),
+    });
+    toast(`Homework “${item.title}” removed.`, 'warn');
     return true;
   }
 
@@ -2028,164 +2364,6 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     toast('Posted — public to your followers.', 'ok');
   }
 
-  function removeAssignmentFile(fileName) {
-    const assignment = state().assignment;
-    update({ assignment: { ...assignment, files: assignment.files.filter((file) => file !== fileName) } });
-  }
-
-  async function submitVersion(close) {
-    const assignment = state().assignment;
-    const versions = assignment.versions + 1;
-    const ok = await confirm({
-      title: `Submit version ${versions}?`,
-      body: `Submitting creates version ${versions}. Version ${assignment.versions} stays in history.`,
-      confirmLabel: 'Submit',
-    });
-    if (!ok) return;
-
-    const queueId = nextId('q');
-    update({
-      assignment: {
-        ...assignment,
-        status: ASSIGNMENT_STATUS.SUBMITTED,
-        versions,
-        history: [...assignment.history, `v${versions} · now · submitted`],
-      },
-      queue: [
-        {
-          id: queueId,
-          learner: 'alice',
-          learnerName: 'Alice',
-          title: 'A2 · Hash functions',
-          version: `v${versions}`,
-          time: 'now',
-          status: 'review',
-          files: [...assignment.files],
-        },
-        ...state().queue,
-      ],
-      events: [
-        {
-          id: nextId('e'),
-          type: 'submission',
-          author: 'alice',
-          time: 'now',
-          context: 'CS-101 ▸ A2',
-          audience: ['bob'],
-          queueId,
-          text: `Submitted version ${versions} — hash functions.`,
-          files: [...assignment.files],
-        },
-        ...state().events,
-      ],
-    });
-    close?.();
-    toast(`Version ${versions} submitted — Bob can now review it.`, 'ok');
-  }
-
-  function sendRevision(queueId, text, close) {
-    const item = state().queue.find((entry) => entry.id === queueId);
-    if (!item) return;
-
-    const feedback = String(text ?? '').trim();
-    if (!feedback) {
-      toast('Write the feedback first — the learner needs to know what to change.', 'warn');
-      return;
-    }
-
-    const assignment = state().assignment;
-    update({
-      events: [
-        {
-          id: nextId('e'),
-          type: 'revision',
-          author: 'bob',
-          time: 'now',
-          context: `CS-101 ▸ ${item.title.split(' · ')[0]}`,
-          audience: [item.learner],
-          text: `Requested a revision on ${item.learnerName}'s submission.`,
-          quote: feedback,
-          actionNeeded: true,
-        },
-        ...state().events,
-      ],
-      queue: state().queue.filter((entry) => entry.id !== queueId),
-      assignment:
-        item.learner === 'alice'
-          ? { ...assignment, status: ASSIGNMENT_STATUS.REVISION, feedback, history: [...assignment.history, 'revision requested · now'] }
-          : assignment,
-    });
-    close?.();
-    toast(`Revision requested — ${item.learnerName} can resubmit.`, 'ok');
-  }
-
-  async function finalize(queueId, scores, correcting, close) {
-    const item = state().queue.find((entry) => entry.id === queueId);
-    if (!item) return;
-    if (!isRubricComplete(scores)) {
-      toast('Score all three rubric criteria first.', 'warn');
-      return;
-    }
-
-    const percent = rubricPercent(scores);
-    const ok = await confirm({
-      title: correcting ? 'Finalize corrected grade?' : 'Finalize grade?',
-      body: correcting
-        ? `This supersedes ${item.score}. Both grades stay visible in history.`
-        : 'Finalizing records this grade permanently. Corrections create a new event — history is never edited.',
-      confirmLabel: correcting ? 'Finalize correction' : 'Finalize',
-    });
-    if (!ok) return;
-
-    const previousPercent = item.pct;
-    const assignment = state().assignment;
-    update({
-      queue: state().queue.map((entry) =>
-        entry.id === queueId
-          ? { ...entry, status: 'final', scores: [...scores], pct: percent, score: formatScore(scores) }
-          : entry,
-      ),
-      assignment:
-        item.learner === 'alice'
-          ? {
-              ...assignment,
-              status: correcting ? ASSIGNMENT_STATUS.CORRECTED : ASSIGNMENT_STATUS.FINAL,
-              grade: percent,
-              history: [
-                ...assignment.history,
-                correcting
-                  ? `grade corrected · ${percent}% (supersedes ${previousPercent}%)`
-                  : `grade finalized · ${percent}%`,
-              ],
-            }
-          : assignment,
-      criteriaMet: item.learner === 'alice' && !correcting ? true : state().criteriaMet,
-      events: [
-        {
-          id: nextId('e'),
-          type: correcting ? 'gradec' : 'grade',
-          author: 'bob',
-          time: 'now',
-          context: 'CS-101 ▸ A2',
-          audience: [item.learner, 'bob'],
-          queueId,
-          text: correcting
-            ? `Corrected grade — ${item.learnerName} · ${item.title} · ${percent}% (supersedes ${previousPercent}%).`
-            : `Finalized grade — ${item.learnerName} · ${item.title} · ${percent}%`,
-        },
-        ...state().events,
-      ],
-    });
-
-    close?.();
-    toast(
-      correcting
-        ? `Correction recorded — ${percent}%. Previous grade marked superseded.`
-        : `Grade finalized — ${percent}%.`,
-      'ok',
-    );
-  }
-
   async function sendCompletion() {
     const ok = await confirm({
       title: 'Send completion?',
@@ -2207,7 +2385,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
           course: 'CS-101',
           time: 'now',
           status: 'pending',
-          grade: state().assignment.grade ?? 78,
+          grade: 78,
         },
         ...state().signQueue,
       ],
@@ -2259,6 +2437,11 @@ export function createActions({ store, bus, signer, confirm, relay }) {
           privacyLevel: 'L1',
           expiresAt: null,
           meta: 'CS-101 completion',
+          recipient: { name: item.learnerName ?? 'Alice', handle: null, pubkey: null },
+          course: item.course ?? null,
+          issuedAt: Date.now(),
+          delivery: 'delivered',
+          sourceSignId: signId,
         },
       ],
       events: [
@@ -2436,6 +2619,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     setRoleTab,
     setOrgTab,
     setSettingsSection,
+    setGradebookClass,
     copyText,
     signInWithExtension,
     createAccount,
@@ -2463,10 +2647,17 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     inviteClassTeacher,
     createClassLink,
     createHomework,
+    updateHomework,
+    closeHomework,
+    reopenHomework,
+    deleteHomework,
     submitHomework,
     gradeSubmission,
+    requestRevision,
     claimHandle,
     updateProfile,
+    uploadImage,
+    setBlossomServer,
     refreshMyProfile,
     requestMembership,
     acceptJoin,
@@ -2479,10 +2670,6 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     like,
     openThread,
     postNote,
-    removeAssignmentFile,
-    submitVersion,
-    sendRevision,
-    finalize,
     sendCompletion,
     signIssue,
     declineSign,

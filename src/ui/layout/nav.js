@@ -1,8 +1,8 @@
 import { el } from '../../core/dom.js';
 import { getPersona } from '../../data/personas.js';
+import { SUBMISSION_STATUS, classroomsForTeacher } from '../../domain/classroom.js';
 import { isActionNeededFor } from '../../domain/feed.js';
 import { identitySecondary } from '../../domain/identity.js';
-import { queueByStatus } from '../../domain/review.js';
 import { ROLE, roleSpaceLabel } from '../../domain/school.js';
 import { icon } from '../components/icon.js';
 import { avatar, button } from '../components/primitives.js';
@@ -15,7 +15,12 @@ const ROLE_ICON = Object.freeze({
 
 export function badgeCount(state) {
   const persona = getPersona(state.personaId);
-  if (persona.role === ROLE.TEACHER) return queueByStatus(state.queue, 'review').length;
+  if (persona.role === ROLE.TEACHER) {
+    const scope = new Set(classroomsForTeacher(state.classrooms ?? [], persona.id).map((room) => room.id));
+    return (state.submissions ?? []).filter(
+      (submission) => submission.status === SUBMISSION_STATUS.SUBMITTED && scope.has(submission.classroomId),
+    ).length;
+  }
   if (persona.role === ROLE.OWNER) {
     return state.signQueue.filter((entry) => entry.status === 'pending').length;
   }

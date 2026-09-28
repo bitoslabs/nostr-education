@@ -148,22 +148,6 @@ function actionFor(event, { persona, actions, enrollments }) {
     button(label, { variant: 'gold', small: true, className: 'spacer', onClick });
 
   switch (event.type) {
-    case 'revision':
-      return actor === 'alice' ? primary('Open assignment', () => actions.openAssignment()) : null;
-
-    case 'submission':
-      return actor === 'bob'
-        ? primary('Review', () => actions.openReview(event.queueId, 'review'))
-        : null;
-
-    case 'grade':
-      if (actor === 'alice') return primary('View grade', () => actions.openAssignment());
-      if (actor === 'bob') return primary('Correct grade', () => actions.openReview(event.queueId, 'correct'));
-      return null;
-
-    case 'gradec':
-      return actor === 'alice' ? primary('View grade', () => actions.openAssignment()) : null;
-
     case 'completion':
       return actor === 'nadia'
         ? primary('Review & sign', () => actions.openSign(event.signId))

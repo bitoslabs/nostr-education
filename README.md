@@ -12,6 +12,7 @@ Design context lives in [`docs/`](./docs) (index: [`docs/README.md`](./docs/READ
 - [`docs/idea-prototype.md`](./docs/idea-prototype.md) — usability test guide
 - [`docs/architecture.md`](./docs/architecture.md) — code structure and conventions
 - [`docs/architecture/`](./docs/architecture) — implementation plan, data model, Nostr events
+- [`docs/architecture/progress.md`](./docs/architecture/progress.md) — build progress and next task
 
 When an exploration contradicts `school-system.md`, the system design wins.
 

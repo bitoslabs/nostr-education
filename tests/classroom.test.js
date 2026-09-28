@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   CLASS_STATUS,
   SUBMISSION_STATUS,
+  averagePercent,
   classStatusBadge,
   classroomActivity,
   classroomById,
@@ -13,15 +14,20 @@ import {
   classroomsForTeacher,
   gradingProgress,
   homeworkForStudent,
+  homeworkStatusBadge,
   isEnrollable,
+  isHomeworkOpen,
   isValidScore,
   publishedClassrooms,
+  reviewCounts,
+  reviewQueue,
   scorePercent,
   subjectById,
   subjectInUse,
   subjectsForAcademy,
   submissionFor,
   submissionStatusBadge,
+  submissionsForClassroom,
   submissionsForHomework,
 } from '../src/domain/classroom.js';
 
@@ -86,6 +92,7 @@ test('class, homework, and submission badges describe state', () => {
   assert.equal(classStatusBadge(CLASS_STATUS.DRAFT).tone, 'info');
   assert.equal(submissionStatusBadge(null).tone, 'warn');
   assert.equal(submissionStatusBadge({ status: SUBMISSION_STATUS.SUBMITTED }).tone, 'info');
+  assert.equal(submissionStatusBadge({ status: SUBMISSION_STATUS.REVISION }).tone, 'warn');
   assert.equal(
     submissionStatusBadge({ status: SUBMISSION_STATUS.GRADED, score: 90, maxScore: 100 }).tone,
     'ok',
@@ -114,4 +121,45 @@ test('publishedClassrooms and isEnrollable gate the catalog', () => {
   assert.equal(isEnrollable({ status: CLASS_STATUS.PUBLISHED, teacherId: null }), false);
   assert.equal(isEnrollable({ status: CLASS_STATUS.DRAFT, teacherId: 'bob' }), false);
   assert.equal(isEnrollable(null), false);
+});
+
+test('homework visibility keeps closed work and hides drafts', () => {
+  const rooms = [{ id: 'c1', status: CLASS_STATUS.PUBLISHED, studentIds: ['alice'] }];
+  const items = [
+    { id: 'h1', classroomId: 'c1', status: 'published' },
+    { id: 'h2', classroomId: 'c1', status: 'closed' },
+    { id: 'h3', classroomId: 'c1', status: 'draft' },
+  ];
+  assert.deepEqual(homeworkForStudent(items, rooms, 'alice').map((item) => item.id), ['h1', 'h2']);
+  assert.equal(isHomeworkOpen(items[0]), true);
+  assert.equal(isHomeworkOpen(items[1]), false);
+  assert.equal(isHomeworkOpen(null), false);
+  assert.equal(homeworkStatusBadge('closed').tone, 'muted');
+});
+
+test('reviewQueue joins submissions to scoped homework and classrooms', () => {
+  const homework = [{ id: 'hw1', classroomId: 'cls1', title: 'A1' }];
+  const classrooms = [{ id: 'cls1', name: 'Algebra' }];
+  const submissions = [
+    { id: 's1', homeworkId: 'hw1', classroomId: 'cls1', status: 'submitted' },
+    { id: 's2', homeworkId: 'hw1', classroomId: 'cls1', status: 'graded' },
+    { id: 's3', homeworkId: 'hwX', classroomId: 'cls1', status: 'submitted' },
+    { id: 's4', homeworkId: 'hw1', classroomId: 'cls2', status: 'submitted' },
+  ];
+  const queue = reviewQueue(submissions, homework, classrooms);
+  assert.deepEqual(queue.map((entry) => entry.submission.id), ['s1', 's2']);
+  assert.deepEqual(reviewCounts(queue), { pending: 1, graded: 1 });
+});
+
+test('gradebook helpers average graded work per class', () => {
+  const submissions = [
+    { id: 's1', classroomId: 'c1', status: 'graded', score: 80, maxScore: 100 },
+    { id: 's2', classroomId: 'c1', status: 'graded', score: 90, maxScore: 100 },
+    { id: 's3', classroomId: 'c1', status: 'submitted', score: null, maxScore: 100 },
+    { id: 's4', classroomId: 'c2', status: 'graded', score: 50, maxScore: 100 },
+  ];
+  assert.equal(submissionsForClassroom(submissions, 'c1').length, 3);
+  assert.equal(averagePercent(submissions), 73);
+  assert.equal(averagePercent([{ status: 'submitted', score: null, maxScore: 100 }]), null);
+  assert.equal(averagePercent([]), null);
 });

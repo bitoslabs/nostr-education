@@ -401,3 +401,9 @@
 .is-auth .fab-create {
   display: none !important;
 }
+
+/* Settings hosts in-page edit forms with their own sticky-free footer;
+   the compose FAB would overlap that footer, so hide it on Settings. */
+.is-settings .fab-create {
+  display: none;
+}

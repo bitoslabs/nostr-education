@@ -22,6 +22,7 @@ export function createShell({ root, store, app, theme }) {
   function render() {
     const state = store.getState();
     root.classList.toggle('is-auth', !state.authed);
+    root.classList.toggle('is-settings', state.route === '/settings');
     sidebar.replaceChildren(renderNav({ state, app }));
     tabbar.replaceChildren(...renderBottomTabs({ state, app }));
   }

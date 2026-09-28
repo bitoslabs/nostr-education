@@ -6,6 +6,7 @@ const PERSISTED_FIELDS = [
   'session',
   'relayConfig',
   'profiles',
+  'blossomServer',
   'academies',
   'invites',
   'subjects',

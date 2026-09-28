@@ -11,11 +11,15 @@ import { loadOrgSecret, loadSecretKey } from '../../services/storage.js';
 import { ACCENTS, THEME_CHOICES } from '../../services/theme.js';
 import { icon } from '../components/icon.js';
 import { identityChip } from '../components/identity-chip.js';
+import { renderEditAcademy } from '../components/academy-dialog.js';
+import { renderEditProfile } from '../components/profile-dialog.js';
 import { avatar, button, emptyState, noteBox, segmented, swatchGroup } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
 
 const SECTIONS = Object.freeze({
   appearance: { title: 'Appearance', icon: 'lucide:palette', fallback: '🎨', sub: 'theme · accent · density' },
+  profile: { title: 'My profile', icon: 'lucide:id-card', fallback: '🪪', sub: 'name · picture · links' },
+  academy: { title: 'Academy info', icon: 'lucide:building-2', fallback: '🏫', sub: 'name · logo · time zone' },
   identity: { title: 'Account & identity', icon: 'lucide:user-round', fallback: '👤', sub: 'keys · handle · signers' },
   membership: { title: 'Membership', icon: 'lucide:school', fallback: '🎓', sub: 'academy access' },
   relays: { title: 'Relays & network', icon: 'lucide:server', fallback: '📡', sub: 'health · delivery' },
@@ -66,7 +70,9 @@ function hubView(state, app) {
     el(
       'div',
       { class: 'list-divide' },
-      Object.entries(SECTIONS).map(([id, meta]) => settingRow(meta, () => app.setSettingsSection(id))),
+      Object.entries(SECTIONS)
+        .filter(([id]) => id !== 'academy' || Boolean(state.academies?.[persona.id]))
+        .map(([id, meta]) => settingRow(meta, () => app.setSettingsSection(id))),
     ),
 
     el('span', { class: 'field-label' }, 'Support'),
@@ -84,6 +90,27 @@ function sectionView(section, state, app, theme, registerBackupHide) {
 
   const bodies = {
     appearance: () => [appearanceBody(theme)],
+    profile: () => [
+      renderEditProfile({
+        persona,
+        actions: app,
+        close: () => app.setSettingsSection(null),
+        cropImage: app.cropImage,
+        blossomServer: state.blossomServer,
+      }),
+    ],
+    academy: () => {
+      const academy = state.academies?.[persona.id];
+      if (!academy) return [emptyState('You do not own an academy yet.')];
+      return [
+        renderEditAcademy({
+          academy,
+          actions: app,
+          close: () => app.setSettingsSection(null),
+          cropImage: app.cropImage,
+        }),
+      ];
+    },
     identity: () => [
       identityCard(persona, app),
       backupCard({
@@ -115,10 +142,10 @@ function sectionView(section, state, app, theme, registerBackupHide) {
     session: () => [sessionCard(app)],
   };
 
-  return [sectionHeader(meta.title, app), ...(bodies[section]?.() ?? []).filter(Boolean)];
+  return [sectionHeader(meta, app), ...(bodies[section]?.() ?? []).filter(Boolean)];
 }
 
-function sectionHeader(title, app) {
+function sectionHeader(meta, app) {
   return el('div', { class: 'secthead' }, [
     el(
       'button',
@@ -130,7 +157,10 @@ function sectionHeader(title, app) {
       },
       icon('lucide:chevron-left', { size: 20, fallback: '←' }),
     ),
-    el('h1', { class: 'font-display secthead__title' }, title),
+    el('div', { class: 'secthead__txt' }, [
+      el('h1', { class: 'font-display secthead__title' }, meta.title),
+      meta.sub ? el('span', { class: 'list-row__sub' }, meta.sub) : null,
+    ]),
   ]);
 }
 
@@ -208,6 +238,7 @@ function identityCard(persona, app) {
     el('span', { class: 'field-label', style: { marginTop: '12px' } }, 'Public key (npub)'),
     el('p', { class: 'mono small' }, persona.npub),
     el('div', { class: 'arow' }, [
+      button('Edit profile', { variant: 'gold', small: true, onClick: () => app.setSettingsSection('profile') }),
       button('Copy public key', { small: true, onClick: () => app.copyText(persona.npub, 'Public key copied.') }),
     ]),
     noteBox('Your npub is safe to share. Back up your secret key below before changing devices or clearing browser data.'),
@@ -300,6 +331,7 @@ function membershipCard(state, app, persona, membership) {
       el('p', { class: 'muted small' }, `${academyTypeLabel(owned.type)} · owner`),
       el('div', { class: 'arow' }, [
         button('Open organization', { variant: 'gold', small: true, onClick: () => app.navigate('/role') }),
+        button('Edit academy info', { small: true, onClick: () => app.setSettingsSection('academy') }),
         button('Invite a teacher', { small: true, onClick: () => app.openInviteTeacher() }),
         button('Copy learner link', { small: true, onClick: () => app.openInviteLink(ROLE.STUDENT) }),
       ]),

@@ -7,6 +7,7 @@ export const RECORD_TYPES = Object.freeze({
   HOMEWORK: 'homework',
   SUBMISSION: 'submission',
   GRADE: 'grade',
+  REVISION: 'revision',
   INVITE: 'invite',
   JOIN_REQUEST: 'joinreq',
   MEMBER: 'member',
@@ -18,10 +19,24 @@ export const PUBLIC_RECORD_TYPES = Object.freeze([
   RECORD_TYPES.CLASSROOM,
 ]);
 
+export const PRIVATE_RECORD_FIELDS = Object.freeze(['studentIds']);
+
+export function isPublicRecord(record) {
+  return Boolean(record?.type) && PUBLIC_RECORD_TYPES.includes(record.type);
+}
+
+export function toPublicRecord(record) {
+  if (!record || typeof record !== 'object') return record;
+  const copy = { ...record };
+  for (const field of PRIVATE_RECORD_FIELDS) delete copy[field];
+  return copy;
+}
+
 export const PRIVATE_RECORD_TYPES = Object.freeze([
   RECORD_TYPES.HOMEWORK,
   RECORD_TYPES.SUBMISSION,
   RECORD_TYPES.GRADE,
+  RECORD_TYPES.REVISION,
   RECORD_TYPES.INVITE,
   RECORD_TYPES.JOIN_REQUEST,
   RECORD_TYPES.MEMBER,
@@ -53,6 +68,7 @@ export function applyRecord(state, record) {
       if (record.deleted) return { classrooms: removeById(state.classrooms ?? [], record.id) };
       return { classrooms: upsert(state.classrooms ?? [], record) };
     case RECORD_TYPES.HOMEWORK:
+      if (record.deleted) return { homework: removeById(state.homework ?? [], record.id) };
       return { homework: upsert(state.homework ?? [], record) };
     case RECORD_TYPES.SUBMISSION:
       return { submissions: upsert(state.submissions ?? [], record) };
@@ -63,10 +79,28 @@ export function applyRecord(state, record) {
           ? {
               ...submission,
               score: record.score,
+              scores: record.scores ?? submission.scores,
               feedback: record.feedback ?? submission.feedback,
               status: 'graded',
               gradedAt: record.gradedAt ?? submission.gradedAt,
               gradedBy: record.gradedBy ?? submission.gradedBy,
+            }
+          : submission,
+      );
+      return { submissions };
+    }
+    case RECORD_TYPES.REVISION: {
+      if (!record.submissionId) return null;
+      const submissions = (state.submissions ?? []).map((submission) =>
+        submission.id === record.submissionId
+          ? {
+              ...submission,
+              status: 'revision',
+              score: null,
+              scores: null,
+              feedback: record.feedback ?? submission.feedback,
+              gradedAt: null,
+              gradedBy: null,
             }
           : submission,
       );
