@@ -1,0 +1,444 @@
+/* ============================================================
+   Auth & onboarding — welcome, sign in, create account, import.
+   Scoped to .screen--auth so it never leaks into the app shell.
+   ============================================================ */
+
+.is-auth .pv-scroll {
+  padding: 20px 18px calc(48px + env(safe-area-inset-bottom, 0px));
+  background: radial-gradient(560px 240px at 50% -40px, rgba(247, 147, 26, 0.16), transparent 72%);
+}
+
+[data-theme='light'] .is-auth .pv-scroll {
+  background: radial-gradient(560px 240px at 50% -40px, rgba(247, 147, 26, 0.1), transparent 72%);
+}
+
+.screen--auth {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  max-width: 440px;
+  margin: 0 auto;
+}
+
+/* ---------- top row ---------- */
+.auth-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+}
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.auth-brand__mark {
+  width: 34px;
+  height: 34px;
+  display: inline-grid;
+  place-items: center;
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  background: linear-gradient(135deg, var(--orange), var(--amber));
+  font-size: 17px;
+  flex: none;
+}
+
+.auth-brand__name {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 0.2px;
+}
+
+.auth-brand__tag {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--orange);
+  background: var(--key-bg);
+  border-radius: var(--r-pill);
+  padding: 2px 8px;
+}
+
+.auth-tag {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--r-pill);
+  padding: 3px 10px;
+}
+
+.auth-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 0 12px 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--bg-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.auth-back:hover {
+  background: var(--bg-3);
+  border-color: var(--border-hi);
+}
+
+/* ---------- hero ---------- */
+.auth-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.auth-eyebrow {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.auth-title {
+  font-family: var(--display);
+  font-size: 1.6rem;
+  line-height: 1.18;
+  margin: 0;
+}
+
+.auth-sub {
+  margin: 0;
+  font-size: 0.95rem;
+  max-width: 40ch;
+}
+
+/* ---------- welcome feature list ---------- */
+.auth-features {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.auth-feature {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px 14px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.auth-feature__ico {
+  width: 38px;
+  height: 38px;
+}
+
+.auth-feature__txt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.auth-feature__txt strong {
+  font-size: 0.92rem;
+}
+
+/* ---------- welcome actions ---------- */
+.auth-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.auth-action {
+  width: 100%;
+  min-height: 50px;
+  font-size: 15px;
+}
+
+.auth-alt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ---------- form scaffolding ---------- */
+.auth-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 22px;
+  min-width: 0;
+}
+
+.auth-section {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+}
+
+.auth-section__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.auth-section__num {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--orange);
+  background: var(--key-bg);
+  border-radius: 8px;
+  padding: 3px 8px;
+  margin-top: 1px;
+  flex: none;
+}
+
+.auth-section__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.auth-section__copy h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.auth-field {
+  display: block;
+  font-weight: 400;
+  margin: 0;
+  width: 100%;
+  min-width: 0;
+}
+
+.auth-field .field-label {
+  margin-bottom: 6px;
+}
+
+.auth-hint {
+  display: block;
+  margin-top: 6px;
+}
+
+/* ---------- pickers (radio cards) ---------- */
+.picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+}
+
+.picker__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px 14px;
+  margin: 0;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  font-weight: 400;
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.picker__item:hover {
+  border-color: var(--border-hi);
+}
+
+.picker__item input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  opacity: 0;
+  margin: 0;
+}
+
+.picker__item:has(input:checked) {
+  border-color: var(--orange);
+  background: var(--key-bg);
+  box-shadow: inset 0 0 0 1px var(--orange);
+}
+
+.picker__item:has(input:focus-visible) {
+  outline: 2px solid var(--orange);
+  outline-offset: 2px;
+}
+
+.picker__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.picker__title {
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+
+.picker__sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker__meta {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  background: var(--bg-3);
+  border-radius: var(--r-pill);
+  padding: 3px 9px;
+  flex: none;
+}
+
+.picker__item:has(input:checked) .picker__meta {
+  color: var(--orange);
+  background: rgba(247, 147, 26, 0.16);
+}
+
+.picker__ico {
+  width: 38px;
+  height: 38px;
+}
+
+/* ---------- input group (@ handle, reveal key) ---------- */
+.input-group {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-2);
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+
+.input-group:focus-within {
+  border-color: var(--orange);
+}
+
+.input-group input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.input-group input:focus {
+  border: 0;
+}
+
+.input-addon {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  background: var(--bg-3);
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 14px;
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.input-addon--end {
+  border-right: 0;
+  border-left: 1px solid var(--border);
+}
+
+.input-group__btn {
+  flex: none;
+  min-height: 0;
+  border: 0;
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+  padding: 0 14px;
+}
+
+/* ---------- demo key chips ---------- */
+.auth-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ---------- join checkbox card ---------- */
+.auth-check {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  margin: 0;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  font-weight: 400;
+}
+
+.auth-check input {
+  width: 1.15rem;
+  height: 1.15rem;
+  min-height: 0;
+  margin-top: 1px;
+  flex: none;
+  accent-color: var(--orange);
+}
+
+.auth-check__txt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ---------- footer CTA ---------- */
+.auth-foot {
+  display: grid;
+  gap: 12px;
+  margin-top: 2px;
+}
+
+.auth-cta {
+  width: 100%;
+  min-height: 52px;
+  font-size: 15px;
+}
+
+@media (max-width: 420px) {
+  .auth-title {
+    font-size: 1.45rem;
+  }
+
+  .auth-alt {
+    justify-content: flex-start;
+  }
+}

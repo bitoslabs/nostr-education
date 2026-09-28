@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="BitOS · Education platform." />
+    <title>BitOS · Education</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    />
+    <link rel="stylesheet" href="./src/styles/tokens.css" />
+    <link rel="stylesheet" href="./src/styles/base.css" />
+    <link rel="stylesheet" href="./src/styles/layout.css" />
+    <link rel="stylesheet" href="./src/styles/components.css" />
+    <link rel="stylesheet" href="./src/styles/auth.css" />
+    <script>
+      window.addEventListener('error', function (event) {
+        var box = document.getElementById('jserr');
+        if (!box) {
+          box = document.createElement('div');
+          box.id = 'jserr';
+          box.style.cssText =
+            'position:fixed;top:0;left:0;right:0;z-index:9999;font:11px monospace;color:#ff8080;background:rgba(0,0,0,.9);padding:6px;white-space:pre-wrap;';
+          (document.body || document.documentElement).appendChild(box);
+        }
+        box.textContent +=
+          (box.textContent ? ' | ' : '') +
+          event.message +
+          ' @' +
+          (event.filename || '').split('/').pop() +
+          ':' +
+          event.lineno;
+      });
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <div id="app" data-app-root></div>
+    <div id="overlays" data-overlay-root></div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,80 @@
+:root,
+[data-theme='dark'] {
+  --bg: #000000;
+  --bg-1: #0a0a0f;
+  --bg-2: #12121a;
+  --bg-3: #1a1a26;
+  --overlay: #22222e;
+  --border: #26262f;
+  --border-hi: #383844;
+  --text: #f8f8ff;
+  --muted: #9ca3af;
+  --dim: #52525b;
+
+  --orange: #f7931a;
+  --orange-hi: #ffa628;
+  --orange-dark: #d4790f;
+  --amber: #ffb000;
+  --green: #50e3a0;
+  --red: #ff4d4d;
+  --pink: #ec4899;
+  --blue: #3b82f6;
+  --cyan: #06b6d4;
+  --wing: rgba(255, 255, 255, 0.45);
+  --wing-stroke: rgba(255, 255, 255, 0.25);
+}
+
+[data-theme='light'] {
+  --bg: #f7f7fa;
+  --bg-1: #ffffff;
+  --bg-2: #ffffff;
+  --bg-3: #edeef2;
+  --overlay: #e6e7ee;
+  --border: #e3e4ea;
+  --border-hi: #c9cbd6;
+  --text: #101018;
+  --muted: #5b5f6e;
+  --dim: #9aa0ae;
+  --wing: rgba(255, 255, 255, 0.7);
+  --wing-stroke: rgba(0, 0, 0, 0.15);
+}
+
+:root {
+  --font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --surface: var(--bg-2);
+  --surface-2: var(--bg-3);
+  --accent: var(--orange);
+  --accent-hi: var(--orange-hi);
+  --accent-ink: #000000;
+  --ok: var(--green);
+  --warn: var(--amber);
+  --err: var(--red);
+  --info: var(--blue);
+
+  --ok-bg: rgba(80, 227, 160, 0.12);
+  --warn-bg: rgba(255, 176, 0, 0.12);
+  --err-bg: rgba(255, 77, 77, 0.12);
+  --info-bg: rgba(59, 130, 246, 0.12);
+  --key: var(--orange);
+  --key-ink: #000000;
+  --key-bg: rgba(247, 147, 26, 0.14);
+
+  --r-card: 14px;
+  --r-inner: 12px;
+  --r-pill: 999px;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --tap: 44px;
+  --shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+
+  --app-max: 600px;
+  --nav-w: 232px;
+  --feed-w: 600px;
+}
