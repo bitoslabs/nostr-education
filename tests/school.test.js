@@ -7,6 +7,7 @@ import {
   ROLE,
   assignmentBadge,
   enrollmentBadge,
+  enrollmentStateFor,
   roleSpaceLabel,
   roleSpaceShort,
 } from '../src/domain/school.js';
@@ -22,6 +23,17 @@ test('enrollmentBadge reflects state', () => {
   assert.equal(enrollmentBadge(ENROLLMENT.NONE), null);
   assert.equal(enrollmentBadge(ENROLLMENT.PENDING).tone, 'info');
   assert.equal(enrollmentBadge(ENROLLMENT.APPROVED).tone, 'ok');
+});
+
+test('enrollmentStateFor reads the latest request per learner and course', () => {
+  const requests = [
+    { learnerId: 'alice', courseId: 'c1', status: 'declined' },
+    { learnerId: 'alice', courseId: 'c1', status: 'pending' },
+    { learnerId: 'bob', courseId: 'c1', status: 'approved' },
+  ];
+  assert.equal(enrollmentStateFor(requests, 'alice', 'c1'), ENROLLMENT.PENDING);
+  assert.equal(enrollmentStateFor(requests, 'bob', 'c1'), ENROLLMENT.APPROVED);
+  assert.equal(enrollmentStateFor(requests, 'carol', 'c1'), ENROLLMENT.NONE);
 });
 
 test('assignmentBadge reflects assignment status', () => {

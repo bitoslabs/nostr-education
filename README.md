@@ -1,8 +1,8 @@
 # BitOS ID / BitOS Education
 
-Nostr-native education identity and credential prototype. A dark social shell that hosts the
-education workflow — one shell, three roles (owner, teacher, student), where the feed *is* the
-ledger and every workflow event is a card.
+Nostr-native education identity and credentials. A dark social shell that hosts the education
+workflow — one shell, three roles (owner, teacher, student) — where real Nostr keys sign events
+and records are published to relays.
 
 Design context lives in [`docs/`](./docs) (index: [`docs/README.md`](./docs/README.md)):
 
@@ -17,8 +17,10 @@ When an exploration contradicts `school-system.md`, the system design wins.
 
 ## Stack
 
-Zero dependencies. Plain HTML, CSS, and ES modules — no build step, no bundler, no npm install.
-Node is used only for the built-in test runner.
+Plain HTML, CSS, and ES modules — no build step or bundler. The only runtime dependency is
+[`nostr-tools`](https://github.com/nbd-wtf/nostr-tools), loaded in the browser through an import map
+and resolved from `node_modules` for tests. Keys, signatures, and relay messages are real; run
+`npm install` once before `npm run dev`.
 
 ## Quick start
 
@@ -33,7 +35,7 @@ because ES modules do not load over `file://`.
 
 | Command | Purpose |
 | --- | --- |
-| `npm run dev` | Static server for the prototype |
+| `npm run dev` | Static server for the app |
 | `npm test` | Run the domain unit tests (`node --test`) |
 
 ## Structure
@@ -44,8 +46,8 @@ src/
   main.js             composition root — the only place that wires modules together
   core/               dom, store, emitter, router, scope
   domain/             pure rules: feed, review, school, handle, identity, credential, delivery
-  data/               personas and seeded prototype records
-  services/           simulated effects + platform: signer, confirm, relay, theme, iconify
+  data/               account registry
+  services/           real platform: nostr (keys/sign/relay), storage, confirm, theme, iconify
   app/                orchestration: actions.js (flows), dialogs.js (drawers/dialogs)
   ui/
     components/       reusable components (event card, drawers, overlay, icons, primitives)
@@ -62,7 +64,24 @@ theme, drawers for assignment/review/sign, and mobile bottom tabs plus a compose
 The dependency rule and naming conventions are documented in
 [`docs/architecture.md`](./docs/architecture.md).
 
-## Prototype disclaimer
+## Keys and privacy
 
-All data is fictional and every interaction is simulated. Nothing here signs a real credential,
-creates a real identity, or contacts a real relay.
+Accounts generate real Nostr key pairs. The secret key is stored in this browser when you choose
+the local signer, or stays in a NIP-07 extension or NIP-46 bunker signer. Academic records are kept
+in local storage and signed events are published to the configured relays. Treat public relays as
+public: do not publish private coursework there.
+
+### Back up your keys
+
+Open **Settings → Account & identity**. Check the public `npub`, then use **Back up your account key**
+to reveal and save the matching `nsec` somewhere private and offline. The secret is hidden again
+after 60 seconds. Never share an `nsec`: anyone who has it can sign as that identity. If you use a
+browser extension or bunker, back up the key through that signer instead.
+
+To restore a personal account in another browser, choose **Import nsec / npub** on the sign-in
+screen and paste the personal `nsec`. An `npub` only opens the account for viewing; it cannot sign.
+
+Academy owners also see **Back up your academy key**. This is a separate `nsec` for the academy's
+public profile; save it alongside your personal account backup. The current app does not yet offer
+academy-key import on a new device, so keep access to the original browser as well. Signing out
+clears keys stored by this app in that browser. BitOS cannot recover a lost secret key.

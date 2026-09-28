@@ -91,7 +91,7 @@ export function renderReview({ item, mode = 'review', actions, close }) {
         el('h3', {}, 'Attachments'),
         el('div', { class: 'files' }, item.files.map((file) => fileChip(file))),
         el('h3', {}, 'Comments'),
-        button('＋ Add comment', { small: true, onClick: () => actions.stub('Comments — pilot build.') }),
+        button('＋ Add comment', { small: true, onClick: () => actions.stub('Comments are coming soon.') }),
       ]),
       el('div', {}, [
         el('h3', {}, 'Rubric'),

@@ -1,13 +1,17 @@
 import { el } from '../../core/dom.js';
 import { getPersona, getPersonaIds } from '../../data/personas.js';
 import { SIGNER_TYPES, signerType } from '../../domain/account.js';
+import { academyTypeLabel } from '../../domain/academy.js';
 import { normalizeHandle, validateHandle } from '../../domain/handle.js';
 import { identitySecondary, isVerified, truncateNpub } from '../../domain/identity.js';
-import { MEMBERSHIP, membershipBadge } from '../../domain/school.js';
+import { relayModeLabel } from '../../domain/relay.js';
+import { MEMBERSHIP, ROLE, membershipBadge } from '../../domain/school.js';
+import { backupNsecForPubkey, decodeKey } from '../../services/nostr.js';
+import { loadOrgSecret, loadSecretKey } from '../../services/storage.js';
 import { ACCENTS, THEME_CHOICES } from '../../services/theme.js';
 import { icon } from '../components/icon.js';
 import { identityChip } from '../components/identity-chip.js';
-import { avatar, button, noteBox, segmented, swatchGroup } from '../components/primitives.js';
+import { avatar, button, emptyState, noteBox, segmented, swatchGroup } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
 
 const SECTIONS = Object.freeze({
@@ -20,17 +24,21 @@ const SECTIONS = Object.freeze({
 
 export function renderSettings({ store, app, theme, scope }) {
   const node = el('section', { class: 'screen' });
+  let hideBackups = [];
 
   function render() {
+    hideBackups.forEach((hide) => hide());
+    hideBackups = [];
     const state = store.getState();
     const section = state.settingsSection;
     node.replaceChildren(
       ...(section && SECTIONS[section]
-        ? sectionView(section, state, app, theme)
+        ? sectionView(section, state, app, theme, (hide) => hideBackups.push(hide))
         : hubView(state, app)),
     );
   }
 
+  scope.add(() => hideBackups.forEach((hide) => hide()));
   scope.add(store.subscribe(render));
   scope.add(theme.subscribe(render));
   render();
@@ -63,26 +71,51 @@ function hubView(state, app) {
 
     el('span', { class: 'field-label' }, 'Support'),
     el('div', { class: 'list-divide' }, [
-      plainRow('lucide:circle-help', '❓', 'Help & support', () => app.stub('Opens help.bitos.app — simulated.')),
+      plainRow('lucide:circle-help', '❓', 'Help & support', () => app.stub('Help is coming soon.')),
       plainRow('lucide:info', 'ℹ', 'About BitOS Education', () => app.stub('BitOS Education · v1.0.0-proto')),
     ]),
   ];
 }
 
-function sectionView(section, state, app, theme) {
+function sectionView(section, state, app, theme, registerBackupHide) {
   const meta = SECTIONS[section];
   const persona = getPersona(state.personaId);
   const membership = state.memberships?.[persona.id] ?? state.membership ?? MEMBERSHIP.NONE;
 
   const bodies = {
     appearance: () => [appearanceBody(theme)],
-    identity: () => [identityCard(persona, app), handleCard(persona, app), signerCard(state, app)],
-    membership: () => [membershipCard(membership, app)],
-    relays: () => [relayCard(state)],
+    identity: () => [
+      identityCard(persona, app),
+      backupCard({
+        title: 'Back up your account key',
+        description: 'This key controls your personal Nostr account, including your owner access. You can import it on the sign-in page to use another browser.',
+        pubkey: state.session?.pubkey,
+        npub: persona.npub,
+        readSecret: () => loadSecretKey(decodeKey),
+        external: state.session?.method === 'extension' || state.session?.method === 'bunker',
+        app,
+        registerHide: registerBackupHide,
+      }),
+      state.academies?.[persona.id]?.orgPubkey
+        ? backupCard({
+            title: 'Back up your academy key',
+            description: 'Your academy has a separate key for its public profile. Keep both backups. Academy-key import on another device is not available yet.',
+            pubkey: state.academies[persona.id].orgPubkey,
+            npub: state.academies[persona.id].orgNpub,
+            readSecret: () => loadOrgSecret(state.academies[persona.id].id, decodeKey),
+            app,
+            registerHide: registerBackupHide,
+          })
+        : null,
+      handleCard(persona, app),
+      signerCard(state, app),
+    ],
+    membership: () => [membershipCard(state, app, persona, membership)],
+    relays: () => [relayCard(state, app)],
     session: () => [sessionCard(app)],
   };
 
-  return [sectionHeader(meta.title, app), ...(bodies[section]?.() ?? [])];
+  return [sectionHeader(meta.title, app), ...(bodies[section]?.() ?? []).filter(Boolean)];
 }
 
 function sectionHeader(title, app) {
@@ -167,16 +200,6 @@ function appearanceBody(theme) {
 }
 
 function identityCard(persona, app) {
-  const secret = el('p', { class: 'mono small', hidden: true }, persona.nsec);
-  const reveal = button('Reveal', {
-    variant: 'ghost',
-    small: true,
-    onClick: () => {
-      secret.hidden = !secret.hidden;
-      reveal.replaceChildren(secret.hidden ? 'Reveal' : 'Hide');
-    },
-  });
-
   return el('div', { class: 'card' }, [
     el('div', { class: 'dhead' }, [
       identityChip(persona, { size: 44 }),
@@ -185,39 +208,134 @@ function identityCard(persona, app) {
     el('span', { class: 'field-label', style: { marginTop: '12px' } }, 'Public key (npub)'),
     el('p', { class: 'mono small' }, persona.npub),
     el('div', { class: 'arow' }, [
-      button('Copy full key', { small: true, onClick: () => app.copyText(persona.npub, 'Full key copied — 63 characters.') }),
-      button('Copy backup key', { small: true, onClick: () => app.copyText(persona.nsec, 'Backup key copied — keep it secret.') }),
+      button('Copy public key', { small: true, onClick: () => app.copyText(persona.npub, 'Public key copied.') }),
     ]),
-    el('div', { class: 'keyrow' }, [secret, reveal]),
+    noteBox('Your npub is safe to share. Back up your secret key below before changing devices or clearing browser data.'),
   ]);
 }
 
-function membershipCard(membership, app) {
+function backupCard({ title, description, pubkey, npub, readSecret, external = false, app, registerHide }) {
+  const card = el('div', { class: 'card' });
+  const status = el('p', { class: 'muted small', role: 'status', 'aria-live': 'polite' });
+  const secret = el('code', { class: 'backup-key mono' });
+  const secretArea = el('div', { class: 'backup-key-area', hidden: true }, [
+    el('span', { class: 'field-label' }, 'Secret key (nsec)'),
+    secret,
+  ]);
+  let revealedNsec = null;
+  let hideTimer = null;
+
+  const copy = button('Copy secret key', {
+    small: true,
+    disabled: true,
+    onClick: () => {
+      if (revealedNsec) app.copyText(revealedNsec, 'Secret key copied. Clear your clipboard after saving it.');
+    },
+  });
+  const toggle = button('Reveal secret key', {
+    small: true,
+    variant: 'gold',
+    onClick: () => {
+      if (revealedNsec) {
+        hide();
+        return;
+      }
+      const nsec = backupNsecForPubkey(readSecret(), pubkey);
+      if (!nsec) {
+        status.textContent = 'A matching key is not available in this browser. Use the original signer or backup.';
+        return;
+      }
+      revealedNsec = nsec;
+      secret.textContent = nsec;
+      secretArea.hidden = false;
+      copy.disabled = false;
+      toggle.textContent = 'Hide secret key';
+      status.textContent = 'Visible for 60 seconds. Save it somewhere private and offline.';
+      document.addEventListener('visibilitychange', hideWhenHidden);
+      hideTimer = setTimeout(hide, 60_000);
+    },
+  });
+
+  function hide() {
+    clearTimeout(hideTimer);
+    hideTimer = null;
+    document.removeEventListener('visibilitychange', hideWhenHidden);
+    revealedNsec = null;
+    secret.textContent = '';
+    secretArea.hidden = true;
+    copy.disabled = true;
+    toggle.textContent = 'Reveal secret key';
+    status.textContent = 'Secret key hidden.';
+  }
+
+  function hideWhenHidden() {
+    if (document.hidden) hide();
+  }
+
+  registerHide(hide);
+
+  card.append(
+    el('h3', {}, title),
+    el('p', { class: 'muted small' }, description),
+    el('span', { class: 'field-label' }, 'Key to back up'),
+    el('p', { class: 'mono small' }, npub ?? pubkey ?? ''),
+    external
+      ? noteBox('This account uses an external signer. Back up the key in your extension or bunker; BitOS cannot show it here.')
+      : el('div', {}, [
+          noteBox('Anyone with your nsec can act as you. Reveal it only in private. Never send it in chat or email.', 'warn'),
+          el('div', { class: 'arow' }, [toggle, copy]),
+          secretArea,
+          status,
+        ]),
+  );
+  return card;
+}
+
+function membershipCard(state, app, persona, membership) {
+  const owned = state.academies?.[persona.id];
+
+  if (owned) {
+    return el('div', { class: 'card card--accent' }, [
+      el('h3', {}, `You own ${owned.name}`),
+      el('p', { class: 'muted small' }, `${academyTypeLabel(owned.type)} · owner`),
+      el('div', { class: 'arow' }, [
+        button('Open organization', { variant: 'gold', small: true, onClick: () => app.navigate('/role') }),
+        button('Invite a teacher', { small: true, onClick: () => app.openInviteTeacher() }),
+        button('Copy learner link', { small: true, onClick: () => app.openInviteLink(ROLE.STUDENT) }),
+      ]),
+    ]);
+  }
+
   const badge = membershipBadge(membership);
-  const children = [el('h3', {}, 'BitOS Academy membership')];
+  const children = [el('h3', {}, 'Academy membership')];
   if (badge) children.push(el('p', {}, statusBadge(badge.label, badge.tone)));
   if (membership !== MEMBERSHIP.ACTIVE) {
     children.push(
       el('p', { class: 'muted small' }, 'Enroll in classes once the academy owner approves your membership.'),
-      button('Request to join', { variant: 'gold', small: true, onClick: () => app.requestMembership() }),
+      button('Request to join BitOS Academy', { variant: 'gold', small: true, onClick: () => app.requestMembership() }),
     );
   } else {
     children.push(el('p', { class: 'muted small' }, 'You can request class enrollment from Discover.'));
   }
+  children.push(
+    el('div', { class: 'arow' }, [
+      button('Create an academy', { small: true, onClick: () => app.openCreateAcademy() }),
+      button('Join with a link', { small: true, onClick: () => app.navigate('/join') }),
+    ]),
+  );
   return el('div', { class: 'card' }, children);
 }
 
 function signerCard(state, app) {
-  const signer = signerType(state.signerType ?? 'demo');
+  const signer = signerType(state.signerType);
   return el('div', { class: 'card' }, [
     el('h3', {}, 'Keys & signer'),
     el('p', { class: 'small' }, ['Signer: ', el('strong', {}, signer.label)]),
     el('p', { class: 'muted small' }, signer.sub),
     el('div', { class: 'arow' }, [
       button('Sign a test challenge', { small: true, onClick: () => app.testSigner() }),
-      button('Lost your key?', { small: true, onClick: () => app.stub('BitOS cannot restore a lost key. Recovery options are being designed for the pilot.') }),
     ]),
-    noteBox('BitOS cannot restore a lost key. Back up your key or use social recovery when it ships.'),
+    noteBox('BitOS cannot restore a lost key. Keep your account backup and, if you own an academy, its separate key backup.'),
   ]);
 }
 
@@ -281,17 +399,86 @@ function handleCard(persona, app) {
   ]);
 }
 
-function relayCard(state) {
+function relayCard(state, app) {
+  const relays = state.relays ?? [];
+  const healthy = relays.filter((relay) => relay.health === 'connected').length;
+
+  const input = el('input', {
+    type: 'text',
+    placeholder: 'wss://relay.example.com or ws://relay.local:7777',
+    autocomplete: 'off',
+    spellcheck: 'false',
+    'aria-label': 'Relay URL',
+  });
+  const addRelay = () => {
+    if (app.addRelay(input.value)) input.value = '';
+  };
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      addRelay();
+    }
+  });
+
   return el('div', {}, [
-    el('h3', {}, 'Relays'),
-    el('div', { class: 'list-divide' }, state.relays.map((relay) =>
-      el('div', { class: 'list-row' }, [
-        el('span', { class: 'mono small' }, relay.url),
-        el('span', { class: 'spacer' }),
-        statusBadge(relay.mode, 'info'),
-        statusBadge(relay.health, relay.health === 'connected' ? 'ok' : relay.health === 'offline' ? 'err' : 'warn'),
-      ]),
-    )),
+    el('div', { class: 'dhead' }, [
+      el('h3', {}, 'Relays'),
+      statusBadge(
+        relays.length ? `${healthy}/${relays.length} online` : 'none configured',
+        healthy ? 'ok' : relays.length ? 'warn' : 'muted',
+      ),
+    ]),
+    relays.length
+      ? el('div', { class: 'list-divide' }, relays.map((relay) => relayRow(relay, app)))
+      : emptyState('No relays configured yet — add one below.'),
+    el('div', { class: 'arow' }, [
+      button('Check relays', { small: true, onClick: () => app.checkRelays() }),
+    ]),
+    el('span', { class: 'field-label', style: { marginTop: '14px' } }, 'Add relay'),
+    el('div', { class: 'keyrow' }, [
+      input,
+      button('Add', { variant: 'gold', small: true, onClick: addRelay }),
+    ]),
+    noteBox('BitOS reads from read relays and publishes to write relays. Tap a relay to cycle its mode. Both wss:// and plaintext ws:// URLs are accepted.'),
+  ]);
+}
+
+function relayRow(relay, app) {
+  const tone = relay.health === 'connected' ? 'ok' : relay.health === 'offline' ? 'err' : 'warn';
+  const detail = relay.latencyMs != null ? `${relay.health} · ${relay.latencyMs} ms` : relay.health;
+  return el('div', { class: 'list-row' }, [
+    el(
+      'span',
+      { class: 'listrow__ico' },
+      icon(relay.health === 'offline' ? 'lucide:server-off' : 'lucide:server', {
+        size: 18,
+        fallback: '📡',
+      }),
+    ),
+    el('span', { class: 'listrow__txt' }, [
+      el('span', { class: 'mono small' }, relay.url),
+      el('span', { class: `list-row__sub ${tone === 'err' ? 'danger' : ''}` }, detail),
+    ]),
+    el(
+      'button',
+      {
+        class: 'chip',
+        type: 'button',
+        title: 'Change read/write mode',
+        onClick: () => app.cycleRelayMode(relay.id),
+      },
+      relayModeLabel(relay.mode),
+    ),
+    el(
+      'button',
+      {
+        class: 'icon-btn',
+        type: 'button',
+        'aria-label': `Remove ${relay.url}`,
+        onClick: () => app.removeRelay(relay.id),
+      },
+      icon('lucide:trash-2', { size: 16, fallback: '🗑' }),
+    ),
   ]);
 }
 

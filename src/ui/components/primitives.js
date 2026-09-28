@@ -2,25 +2,37 @@ import { el } from '../../core/dom.js';
 import { icon } from './icon.js';
 
 export function avatar(person, size = 32) {
-  return el(
+  const fallback = person?.avatar ?? '🙂';
+  const node = el(
     'span',
     {
       class: 'ava',
       style: { width: `${size}px`, height: `${size}px`, fontSize: `${Math.round(size * 0.5)}px` },
       'aria-hidden': 'true',
     },
-    person?.avatar ?? '🙂',
   );
+  const picture = typeof person?.picture === 'string' ? person.picture.trim() : '';
+  if (picture) {
+    const img = el('img', { src: picture, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' });
+    img.addEventListener('error', () => {
+      img.remove();
+      node.textContent = fallback;
+    });
+    node.append(img);
+  } else {
+    node.textContent = fallback;
+  }
+  return node;
 }
 
-export function button(label, { variant = 'default', small = false, onClick, disabled, className } = {}) {
+export function button(label, { variant = 'default', small = false, onClick, disabled, className, type = 'button' } = {}) {
   return el(
     'button',
     {
       class: ['btn', variant !== 'default' && `btn--${variant}`, small && 'btn--sm', className]
         .filter(Boolean)
         .join(' '),
-      type: 'button',
+      type,
       disabled: Boolean(disabled),
       onClick,
     },

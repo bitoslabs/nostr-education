@@ -4,9 +4,17 @@ export function createRouter({ routes, fallback, onChange }) {
     return hash || '/';
   }
 
+  function match(path) {
+    if (routes[path]) return routes[path];
+    for (const key of Object.keys(routes)) {
+      if (key.endsWith('/*') && path.startsWith(key.slice(0, -1))) return routes[key];
+    }
+    return fallback;
+  }
+
   function resolve() {
     const path = currentPath();
-    onChange(routes[path] ?? fallback, path);
+    onChange(match(path), path);
   }
 
   function start() {

@@ -1,5 +1,5 @@
 import { el } from '../../core/dom.js';
-import { getPersona, getPersonaIds } from '../../data/personas.js';
+import { getPersona } from '../../data/personas.js';
 import { isActionNeededFor } from '../../domain/feed.js';
 import { identitySecondary } from '../../domain/identity.js';
 import { queueByStatus } from '../../domain/review.js';
@@ -20,20 +20,6 @@ export function badgeCount(state) {
     return state.signQueue.filter((entry) => entry.status === 'pending').length;
   }
   return state.events.filter((event) => isActionNeededFor(event, state.personaId)).length;
-}
-
-export function personaSelect(selectedId, app) {
-  return el(
-    'select',
-    { class: 'psel', 'aria-label': 'Persona', onChange: (event) => app.setPersona(event.target.value) },
-    getPersonaIds().map((id) =>
-      el(
-        'option',
-        { value: id, selected: id === selectedId },
-        `${getPersona(id).displayName} · ${getPersona(id).role}`,
-      ),
-    ),
-  );
 }
 
 export function renderNav({ state, app }) {
@@ -59,7 +45,6 @@ export function renderNav({ state, app }) {
     el('div', { class: 'brand' }, [
       el('span', { 'aria-hidden': 'true' }, '🐝'),
       el('span', {}, 'BitOS Education'),
-      el('span', { class: 'tag' }, 'simulated'),
     ]),
     button('＋ New post', { variant: 'gold', className: 'navbtn--gold', onClick: () => app.openComposer() }),
     ...items.map((item) => navButton(item, state.route, app)),
@@ -71,7 +56,7 @@ export function renderNav({ state, app }) {
         type: 'button',
         disabled: true,
         'aria-disabled': 'true',
-        title: 'Planned for the pilot build',
+        title: 'Coming soon',
       },
       [el('span', { class: 'navbtn__ico' }, icon('lucide:zap', { size: 18, fallback: '⚡' })), 'Bitz'],
     ),

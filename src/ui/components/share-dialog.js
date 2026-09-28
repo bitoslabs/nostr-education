@@ -86,7 +86,7 @@ export function renderShare({ credential, contacts, actions, close }) {
     confirmWrap,
     el('label', {}, 'Access expires'),
     duration,
-    noteBox('Recipients receive the whole credential in this prototype. You can revoke access anytime — already-downloaded copies cannot be recalled.'),
+    noteBox('You can revoke access at any time — already-downloaded copies cannot be recalled.'),
     el('div', { class: 'dlg-foot' }, [button('Cancel', { onClick: close }), createButton]),
   ];
 }

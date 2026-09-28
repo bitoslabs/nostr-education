@@ -1,7 +1,13 @@
 import { el } from '../../core/dom.js';
 import { getPersona } from '../../data/personas.js';
-import { queueCounts } from '../../domain/review.js';
-import { MEMBERSHIP, pendingRequestCount, ROLE } from '../../domain/school.js';
+import {
+  SUBMISSION_STATUS,
+  classroomsForAcademy,
+  classroomsForStudent,
+  classroomsForTeacher,
+  homeworkForStudent,
+} from '../../domain/classroom.js';
+import { pendingRequestCount, ROLE } from '../../domain/school.js';
 import { button, widget } from '../components/primitives.js';
 
 function healthyRelays(relays) {
@@ -14,27 +20,32 @@ export function renderRail({ state, app }) {
   const relays = el('p', {}, healthyRelays(state.relays));
 
   if (persona.role === ROLE.TEACHER) {
-    const counts = queueCounts(state.queue);
+    const classes = classroomsForTeacher(state.classrooms ?? [], persona.id);
+    const ids = new Set(classes.map((room) => room.id));
+    const toGrade = (state.submissions ?? []).filter(
+      (submission) => ids.has(submission.classroomId) && submission.status === SUBMISSION_STATUS.SUBMITTED,
+    ).length;
     return el('div', { class: 'rail__stack' }, [
-      widget('📥 To review', [
-        el('p', {}, `${counts.review} submission${counts.review === 1 ? '' : 's'}`),
-        button('Open queue', { small: true, onClick: () => app.navigate('/role') }),
+      widget('🏫 My classes', el('p', {}, `${classes.length} assigned`)),
+      widget('📥 To score', [
+        el('p', {}, toGrade ? `${toGrade} submission${toGrade === 1 ? '' : 's'}` : 'Nothing waiting ✓'),
+        button('Open classes', { small: true, onClick: () => app.navigate('/role') }),
       ]),
-      widget('📝 Draft grades', el('p', {}, `${counts.draft} unfinished`)),
-      widget('👥 Roster', el('p', {}, '3 learners in CS-101')),
       widget('📡 Relays', relays),
     ]);
   }
 
   if (persona.role === ROLE.OWNER) {
-    const pending = state.signQueue.filter((entry) => entry.status === 'pending').length;
+    const academy = state.academies?.[persona.id];
+    const classes = academy ? classroomsForAcademy(state.classrooms ?? [], academy.id) : [];
     const requests = pendingRequestCount(state.joinRequests, state.enrollRequests);
     return el('div', { class: 'rail__stack' }, [
-      widget('🔏 Pending signatures', [
-        el('p', {}, pending ? `${pending} waiting` : 'Nothing pending ✓'),
-        button('Open sign queue', { small: true, onClick: () => app.navigate('/role') }),
+      widget('🏫 Academy', el('p', {}, academy ? academy.name : 'No academy yet')),
+      widget('🧑‍🏫 Classrooms', [
+        el('p', {}, `${classes.length} classroom${classes.length === 1 ? '' : 's'}`),
+        button('Open organization', { small: true, onClick: () => app.navigate('/role') }),
       ]),
-      widget('👤 Enrollment requests', [
+      widget('👤 Requests', [
         el('p', {}, requests ? `${requests} waiting` : 'Nothing pending ✓'),
         button('Review', { small: true, onClick: () => { app.setOrgTab('enrollment'); app.navigate('/role'); } }),
       ]),
@@ -42,27 +53,14 @@ export function renderRail({ state, app }) {
     ]);
   }
 
-  const membership = state.memberships?.[persona.id] ?? MEMBERSHIP.NONE;
-  const learnerWidgets = [
-    widget('⏰ Due soon', [
-      el('p', {}, 'A2 revision · due in 2 days'),
-      button('Open', { small: true, onClick: () => app.openAssignment() }),
+  const classes = classroomsForStudent(state.classrooms ?? [], persona.id);
+  const homework = homeworkForStudent(state.homework ?? [], state.classrooms ?? [], persona.id);
+  return el('div', { class: 'rail__stack' }, [
+    widget('🏫 My classes', el('p', {}, `${classes.length} enrolled`)),
+    widget('📝 Homework', [
+      el('p', {}, `${homework.length} assignment${homework.length === 1 ? '' : 's'}`),
+      button('Open', { small: true, onClick: () => app.navigate('/role') }),
     ]),
-  ];
-
-  if (membership !== MEMBERSHIP.ACTIVE) {
-    learnerWidgets.push(
-      widget('🏫 Academy', [
-        el('p', {}, membership === MEMBERSHIP.PENDING ? 'Membership pending' : 'Not a member yet'),
-        membership === MEMBERSHIP.PENDING
-          ? null
-          : button('Request to join', { small: true, onClick: () => app.requestMembership() }),
-      ]),
-    );
-  } else {
-    learnerWidgets.push(widget('📬 Awaiting feedback', el('p', {}, 'A1 · graded ✓ 78%')));
-  }
-
-  learnerWidgets.push(widget('📡 Relays', relays));
-  return el('div', { class: 'rail__stack' }, learnerWidgets);
+    widget('📡 Relays', relays),
+  ]);
 }

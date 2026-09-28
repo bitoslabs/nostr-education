@@ -2,8 +2,6 @@ import { el } from '../../core/dom.js';
 import { icon } from './icon.js';
 import { button, spinner } from './primitives.js';
 
-const SETTLE_MS = 900;
-
 function trustFact(iconName, fallback, text) {
   return el('li', { class: 'signer__fact' }, [
     icon(iconName, { size: 15, fallback }),
@@ -25,7 +23,7 @@ export function createSignerPromptHost({ bus, overlay }) {
         ),
         el('span', { class: 'signer__id' }, [
           el('span', { class: 'signer__app' }, 'BitOS Education'),
-          el('span', { class: 'signer__origin muted small' }, 'this app · simulated signer'),
+          el('span', { class: 'signer__origin muted small' }, 'your signer · BitOS Education'),
         ]),
         el(
           'button',
@@ -67,10 +65,8 @@ export function createSignerPromptHost({ bus, overlay }) {
           footer.replaceChildren(
             el('div', { class: 'signer__waiting' }, spinner('Waiting for your signer…')),
           );
-          setTimeout(() => {
-            resolve({ approved: true });
-            entry.close();
-          }, SETTLE_MS);
+          resolve({ approved: true });
+          entry.close();
         },
       }),
     );

@@ -25,7 +25,7 @@ export function renderAssignment({ assignment, actions, close, reopen }) {
           }),
         ),
       ),
-      button('＋ Add asset', { small: true, onClick: () => actions.stub('File picker — simulated.') }),
+      button('＋ Add asset', { small: true, onClick: () => actions.stub('File upload is coming soon.') }),
       noteBox(`⚠ Submitting creates version ${assignment.versions + 1}. Version ${assignment.versions} stays in history.`),
       noteBox('Only the course teacher and BitOS Academy can see your files.'),
     ];

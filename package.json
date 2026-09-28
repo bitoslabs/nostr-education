@@ -3,9 +3,12 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "BitOS ID — Nostr-native education identity and credential prototype.",
+  "description": "BitOS Education — Nostr-native education identity and credentials.",
   "scripts": {
     "dev": "python3 -m http.server 5173",
     "test": "node --test"
+  },
+  "dependencies": {
+    "nostr-tools": "^2.25.2"
   }
 }

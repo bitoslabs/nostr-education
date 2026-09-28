@@ -1,17 +1,118 @@
-import { DELIVERY_STATE } from '../domain/delivery.js';
+import { SimplePool } from 'nostr-tools/pool';
+import { normalizeRelayList, relaysForKind } from '../domain/relay.js';
+import { DEFAULT_RELAYS } from './nostr.js';
 
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+export const RELAY_STATE = Object.freeze({
+  CONNECTED: 'connected',
+  CONNECTING: 'connecting',
+  OFFLINE: 'offline',
+});
 
-export function createRelayService({ latencyMs = 1200 } = {}) {
-  async function publish() {
-    await wait(latencyMs);
-    return { state: DELIVERY_STATE.DELIVERED, relays: 2 };
+const CONNECT_TIMEOUT_MS = 5000;
+
+export function createRelayService({ relays = DEFAULT_RELAYS } = {}) {
+  let list = normalizeRelayList(relays, { defaults: DEFAULT_RELAYS });
+  const pool = new SimplePool();
+  const health = new Map();
+  const latency = new Map();
+  for (const relay of list) health.set(relay.url, RELAY_STATE.CONNECTING);
+
+  function mark(url, state, latencyMs) {
+    health.set(url, state);
+    if (typeof latencyMs === 'number') latency.set(url, latencyMs);
   }
 
-  async function retry() {
-    await wait(latencyMs);
-    return { state: DELIVERY_STATE.DELIVERED, relays: 2 };
+  async function publishTo(url, event) {
+    const started = Date.now();
+    try {
+      await Promise.all(pool.publish([url], event));
+      mark(url, RELAY_STATE.CONNECTED, Date.now() - started);
+      return true;
+    } catch {
+      mark(url, RELAY_STATE.OFFLINE);
+      return false;
+    }
   }
 
-  return { publish, retry };
+  async function publish(event) {
+    const targets = relaysForKind(list, 'write');
+    const results = await Promise.all(targets.map((url) => publishTo(url, event)));
+    const ok = targets.filter((_, index) => results[index]);
+    const failed = targets.filter((_, index) => !results[index]);
+    return { ok, failed, count: ok.length, total: targets.length };
+  }
+
+  function subscribe(filters, { onEvent, onEose, onClose } = {}) {
+    const targets = relaysForKind(list, 'read');
+    if (!targets.length) {
+      onEose?.();
+      return { close() {} };
+    }
+    return pool.subscribeMany(targets, filters, {
+      onevent: onEvent,
+      oneose: onEose,
+      onclose: onClose,
+    });
+  }
+
+  async function check(urls) {
+    const targets = Array.isArray(urls) && urls.length ? urls : list.map((relay) => relay.url);
+    await Promise.all(
+      targets.map(async (url) => {
+        const started = Date.now();
+        try {
+          const relay = await pool.ensureRelay(url, { connectionTimeout: CONNECT_TIMEOUT_MS });
+          if (relay?.connected === false) throw new Error('not connected');
+          mark(url, RELAY_STATE.CONNECTED, Date.now() - started);
+        } catch {
+          mark(url, RELAY_STATE.OFFLINE);
+        }
+      }),
+    );
+    return statuses();
+  }
+
+  function setRelays(next) {
+    list = normalizeRelayList(next, { defaults: DEFAULT_RELAYS });
+    const active = new Set(list.map((relay) => relay.url));
+    for (const url of [...health.keys()]) if (!active.has(url)) health.delete(url);
+    for (const url of [...latency.keys()]) if (!active.has(url)) latency.delete(url);
+    for (const relay of list) {
+      if (!health.has(relay.url)) health.set(relay.url, RELAY_STATE.CONNECTING);
+    }
+    return list;
+  }
+
+  function statuses() {
+    return list.map((relay) => ({
+      id: relay.id,
+      url: relay.url,
+      mode: relay.mode,
+      health: health.get(relay.url) ?? RELAY_STATE.CONNECTING,
+      latencyMs: latency.get(relay.url) ?? null,
+    }));
+  }
+
+  function close() {
+    try {
+      pool.close(list.map((relay) => relay.url));
+    } catch {
+      /* pool may already be closed */
+    }
+  }
+
+  return {
+    publish,
+    subscribe,
+    check,
+    setRelays,
+    statuses,
+    close,
+    get config() {
+      return list.map((relay) => ({ ...relay }));
+    },
+    get relays() {
+      return list.map((relay) => relay.url);
+    },
+  };
 }

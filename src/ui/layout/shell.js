@@ -1,12 +1,11 @@
 import { el } from '../../core/dom.js';
 import { icon } from '../components/icon.js';
-import { renderTopBar, renderBottomTabs } from './mobile-chrome.js';
+import { renderBottomTabs } from './mobile-chrome.js';
 import { renderNav } from './nav.js';
 
 export function createShell({ root, store, app, theme }) {
-  const topBar = el('header', { class: 'appbar' });
   const content = el('div', { id: 'main', class: 'pv-scroll' });
-  const screen = el('section', { class: 'pv-screen' }, [topBar, content]);
+  const screen = el('section', { class: 'pv-screen' }, [content]);
   const stage = el('div', { class: 'stage' }, screen);
   const sidebar = el('aside', { class: 'sidebar', 'aria-label': 'Primary navigation' });
   const tabbar = el('div', { class: 'tabbar' });
@@ -24,12 +23,10 @@ export function createShell({ root, store, app, theme }) {
     const state = store.getState();
     root.classList.toggle('is-auth', !state.authed);
     sidebar.replaceChildren(renderNav({ state, app }));
-    topBar.replaceChildren(...renderTopBar({ state, app, theme }));
     tabbar.replaceChildren(...renderBottomTabs({ state, app }));
   }
 
   store.subscribe(render);
-  theme.subscribe(render);
   render();
 
   return { frame, content };

@@ -2,26 +2,7 @@ import { el } from '../../core/dom.js';
 import { getPersona } from '../../data/personas.js';
 import { roleSpaceLabel, roleSpaceShort } from '../../domain/school.js';
 import { icon } from '../components/icon.js';
-import { badgeCount, personaSelect } from './nav.js';
-
-export function renderTopBar({ state, app, theme }) {
-  const persona = getPersona(state.personaId);
-
-  return [
-    el('span', { class: 'brand' }, [
-      el('span', { 'aria-hidden': 'true' }, '🐝'),
-      el('span', {}, 'BitOS Education'),
-      el('span', { class: 'tag' }, 'simulated'),
-    ]),
-    el('span', { class: 'spacer' }),
-    personaSelect(state.personaId, app),
-    el(
-      'button',
-      { class: 'icon-btn themeBtn', type: 'button', 'aria-label': `Switch to ${theme.resolved() === 'dark' ? 'light' : 'dark'} theme`, onClick: () => theme.toggle() },
-      icon('lucide:contrast', { size: 20, fallback: '◐' }),
-    ),
-  ].map((node) => node);
-}
+import { badgeCount } from './nav.js';
 
 export function renderBottomTabs({ state, app }) {
   const persona = getPersona(state.personaId);

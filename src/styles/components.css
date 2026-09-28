@@ -1,29 +1,3 @@
-/* ---------- tabs ---------- */
-.tabs {
-  display: flex;
-  gap: 2px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 14px;
-  flex-wrap: wrap;
-}
-
-.tab {
-  background: none;
-  border: 0;
-  padding: 10px 14px;
-  font: inherit;
-  font-weight: 700;
-  color: var(--muted);
-  cursor: pointer;
-  border-bottom: 3px solid transparent;
-  min-height: var(--tap);
-}
-
-.tab[aria-selected='true'] {
-  color: var(--text);
-  border-bottom-color: var(--accent);
-}
-
 /* ---------- rows / stats / grid ---------- */
 .rows {
   display: grid;
@@ -99,6 +73,12 @@
   margin: 0 -16px;
 }
 
+/* Bare text in the full-bleed feed (e.g. the empty state) has no card to
+   supply the inset, so align it back to the content column. */
+.feed > .muted {
+  padding: 14px 16px;
+}
+
 .crow {
   display: flex;
   align-items: center;
@@ -113,6 +93,13 @@
   display: inline-grid;
   place-items: center;
   flex: none;
+}
+
+.ava img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .who {
@@ -214,6 +201,25 @@
   gap: 14px;
   margin-top: 8px;
   flex-wrap: wrap;
+}
+
+/* ---------- invites ---------- */
+.invite-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-2);
+  border: 1px dashed var(--border-hi);
+  border-radius: var(--r-inner);
+  padding: 10px 12px;
+  margin: 8px 0;
+}
+
+.invite-code {
+  font-size: 1.05rem;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+  word-break: break-all;
 }
 
 /* ---------- engagement bar (feed social actions) ---------- */
@@ -1158,6 +1164,56 @@ label {
   color: var(--orange);
 }
 
+/* ---------- profile hero (credentials) ---------- */
+.profile-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.profile-hero__names {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.profile-hero__name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.profile-card .field-label {
+  margin-top: 14px;
+}
+
+.profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.profile-edit {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 6px;
+}
+
+.profile-edit__preview {
+  flex: none;
+}
+
+.profile-edit__fields {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 /* ---------- buttons / chips / inputs ---------- */
 .btn {
   display: inline-flex;
@@ -1434,7 +1490,10 @@ textarea:focus {
   display: flex;
   gap: 4px;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 14px;
+  /* Pull the row out by the tab's own horizontal padding so the first and
+     last labels line up with the content column; the divider reads slightly
+     wider than the content, matching the full-bleed feed. */
+  margin: 0 -12px 14px;
   flex-wrap: wrap;
 }
 
@@ -1448,6 +1507,7 @@ textarea:focus {
   color: var(--dim);
   cursor: pointer;
   position: relative;
+  min-height: var(--tap);
 }
 
 .tab[aria-selected='true'] {
@@ -1457,8 +1517,8 @@ textarea:focus {
 .tab[aria-selected='true']::after {
   content: '';
   position: absolute;
-  left: 8px;
-  right: 8px;
+  left: 12px;
+  right: 12px;
   bottom: -1px;
   height: 2.5px;
   border-radius: 2px;
@@ -1590,4 +1650,17 @@ textarea:focus {
   transform: translateX(-50%) translateY(0);
   pointer-events: auto;
   cursor: pointer;
+}
+.backup-key-area {
+  margin-top: 14px;
+}
+
+.backup-key {
+  display: block;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-1);
+  overflow-wrap: anywhere;
+  user-select: all;
 }
