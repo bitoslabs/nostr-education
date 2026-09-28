@@ -5,6 +5,7 @@ import {
   enrollmentBadge,
   enrollmentStateFor,
 } from '../../domain/school.js';
+import { icon } from './icon.js';
 import { identityChip } from './identity-chip.js';
 import { button, fileChip } from './primitives.js';
 import { statusBadge } from './status-badge.js';
@@ -41,7 +42,7 @@ export function eventCard(event, { persona, actions, enrollments = [] } = {}) {
   }
 
   const actionRow = el('div', { class: 'arow' });
-  if (event.type === 'social') actionRow.append(countsRow(event, actions));
+  if (event.type === 'social') actionRow.append(engagementBar(event, actions));
   const action = actionFor(event, { persona, actions, enrollments });
   if (action) actionRow.append(action);
   children.push(actionRow);
@@ -60,23 +61,85 @@ function badgeFor(event, persona) {
   return token;
 }
 
-function countsRow(event, actions) {
-  const likes = event.counts?.likes ?? 0;
+function engagementBar(event, actions) {
+  const counts = event.counts ?? {};
   const liked = Boolean(event.liked);
-  return el('span', { class: 'counts' }, [
-    el(
-      'button',
-      {
-        class: `likeb${liked ? ' on' : ''}`,
-        type: 'button',
-        'aria-pressed': String(liked),
-        onClick: () => actions?.like?.(event.id),
-      },
-      `♥ ${likes + (liked ? 1 : 0)}`,
-    ),
-    el('span', { 'aria-hidden': 'true' }, `⟲ ${event.counts?.bitz ?? 0}`),
-    el('span', { 'aria-hidden': 'true' }, `💬 ${event.counts?.replies ?? 0}`),
+  const likeCount = (counts.likes ?? 0) + (liked ? 1 : 0);
+  const replyCount = counts.replies ?? 0;
+  const bitz = counts.bitz ?? 0;
+
+  return el('div', { class: 'actions', role: 'group', 'aria-label': 'Post engagement' }, [
+    actionButton({
+      kind: 'like',
+      on: liked,
+      icon: 'lucide:heart',
+      fallback: '♥',
+      count: likeCount,
+      title: liked ? 'Unlike' : 'Like',
+      label: `${liked ? 'Unlike' : 'Like'} · ${countLabel(likeCount, 'like')}`,
+      pressed: liked,
+      onClick: () => actions?.like?.(event.id),
+    }),
+    bitzStat(bitz),
+    actionButton({
+      kind: 'reply',
+      icon: 'lucide:message-circle',
+      fallback: '💬',
+      count: replyCount,
+      title: 'Reply',
+      label: `Reply · ${countLabel(replyCount, 'reply')}`,
+      onClick: () => actions?.openThread?.(event.id),
+    }),
   ]);
+}
+
+function actionButton({ kind, icon: name, fallback, count, label, title, pressed, on, onClick }) {
+  return el(
+    'button',
+    {
+      class: `action action--${kind}${on ? ' is-on' : ''}`,
+      type: 'button',
+      title,
+      'aria-label': label,
+      'aria-pressed': pressed == null ? null : String(pressed),
+      onClick,
+    },
+    [icon(name, { size: 18, fallback }), countNode(count)],
+  );
+}
+
+function bitzStat(value) {
+  return el(
+    'span',
+    { class: 'action action--stat action--bitz', title: 'Bitz · kudos & tips' },
+    [
+      icon('lucide:zap', { size: 18, fallback: '⚡' }),
+      countNode(value),
+      el('span', { class: 'sr' }, countLabel(value, 'bitz', 'bitz')),
+    ],
+  );
+}
+
+function countNode(value) {
+  if (!value) return null;
+  return el('span', { class: 'action__count', 'aria-hidden': 'true' }, formatCount(value));
+}
+
+function countLabel(value, singular, plural = `${singular}s`) {
+  const total = Number(value) || 0;
+  return `${formatCount(total)} ${total === 1 ? singular : plural}`;
+}
+
+function formatCount(value) {
+  const total = Number(value) || 0;
+  if (total < 1000) return String(total);
+  if (total < 1000000) return `${trimZero(total / 1000)}k`;
+  return `${trimZero(total / 1000000)}m`;
+}
+
+function trimZero(value) {
+  const digits = value < 10 ? 1 : 0;
+  return value.toFixed(digits).replace(/\.0$/, '');
 }
 
 function actionFor(event, { persona, actions, enrollments }) {

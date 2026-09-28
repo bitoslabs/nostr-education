@@ -484,6 +484,10 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     });
   }
 
+  function openThread() {
+    toast('Thread view — not in this prototype slice.', 'info');
+  }
+
   function postNote(text) {
     const trimmed = String(text ?? '').trim();
     if (!trimmed) {
@@ -858,6 +862,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     dismissCreated,
     testSigner,
     like,
+    openThread,
     postNote,
     removeAssignmentFile,
     submitVersion,

@@ -96,6 +96,7 @@
 
 .feed {
   display: block;
+  margin: 0 -16px;
 }
 
 .crow {
@@ -215,26 +216,82 @@
   flex-wrap: wrap;
 }
 
-.counts {
+/* ---------- engagement bar (feed social actions) ---------- */
+.actions {
   display: flex;
-  gap: 14px;
-  color: var(--muted);
-  font-size: 0.85rem;
+  align-items: center;
+  gap: 2px;
+  margin: -2px 0 0 -8px;
 }
 
-.likeb {
-  background: none;
+.action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 5px 10px;
   border: 0;
-  color: inherit;
-  cursor: pointer;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--muted);
   font: inherit;
-  padding: 4px 2px;
-  min-height: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, transform 0.1s ease;
 }
 
-.likeb.on {
-  color: var(--err);
-  font-weight: 700;
+.action:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.action:active {
+  transform: scale(0.95);
+}
+
+.action:focus-visible {
+  border-radius: var(--r-pill);
+}
+
+.action__count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* like previews and locks its accent on hover / when active */
+.action--like:hover,
+.action--like.is-on {
+  color: var(--pink);
+}
+
+.action--like.is-on .icon > svg {
+  fill: currentColor;
+}
+
+.action--reply:hover {
+  color: var(--blue);
+}
+
+/* bitz is a decorative kudos/tip counter, not a control */
+.action--stat {
+  cursor: default;
+}
+
+.action--stat:hover {
+  background: none;
+  color: var(--muted);
+}
+
+.action--bitz .icon {
+  color: var(--orange);
+}
+
+@media (pointer: coarse) {
+  .action {
+    min-height: var(--tap);
+    padding: 8px 12px;
+  }
 }
 
 .inline-actions {
@@ -531,28 +588,122 @@ label {
   margin-top: 14px;
 }
 
-.signer-app {
-  font-weight: 700;
-  color: var(--muted);
-  margin: 0 0 2px;
+/* ---------- signer approval prompt ---------- */
+.signer__head {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 12px;
+  padding-bottom: 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.signer__ico {
+  width: 40px;
+  height: 40px;
+}
+
+.signer__id {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.signer__app {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.signer__origin {
+  font-size: 12px;
+}
+
+.signer__close {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-2);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.signer__close:hover {
+  background: var(--bg-3);
+  color: var(--text);
+}
+
+.signer__eyebrow {
+  margin: 14px 0 10px;
+}
+
+.signer__title {
+  margin: 0 0 4px;
+  font-family: var(--display);
+  font-size: 1.25rem;
+}
+
+.signer__lede {
+  margin: 0;
+  font-size: 0.9rem;
 }
 
 .signer-action {
-  background: var(--surface-2);
-  border-radius: 8px;
-  padding: 0.7rem 0.9rem;
-  margin: 8px 0;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 12px 0 0;
 }
 
-.keyline {
+.signer-action .field-label {
+  margin-bottom: 8px;
+}
+
+.signer-action__body {
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.signer-action__body strong {
+  font-weight: 700;
+}
+
+.signer-action__body .mono {
+  font-size: 0.85em;
+}
+
+.signer__facts {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0;
+}
+
+.signer__fact {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   font-size: 0.82rem;
   color: var(--muted);
-  border-top: 1px solid var(--border);
-  padding-top: 0.7rem;
-  margin: 0.8rem 0 0;
+}
+
+.signer__fact .icon {
+  color: var(--ok);
+}
+
+.signer__waiting {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 600;
 }
 
 .resolve {
@@ -1112,6 +1263,19 @@ textarea:focus {
   margin-bottom: 12px;
 }
 
+/* Feed items: flat rows split by hairline dividers (social-feed style). */
+.feed > .card {
+  background: none;
+  border: 0;
+  border-radius: 0;
+  margin: 0;
+  padding: 14px 16px;
+}
+
+.feed > .card + .card {
+  border-top: 1px solid var(--border);
+}
+
 /* Full-bleed divided list: no card cover, just hairline dividers. */
 .list-divide {
   background: none;
@@ -1314,6 +1478,7 @@ textarea:focus {
   align-items: center;
   justify-content: center;
   padding: 24px;
+  transition: opacity 0.2s ease;
 }
 
 .overlay--drawer,
@@ -1322,8 +1487,30 @@ textarea:focus {
   padding: 0;
 }
 
+/* On desktop the app sits in a centred phone frame beside the sidebar, so a
+   frame-scoped backdrop leaves the sidebar and page chrome undimmed and
+   clickable. Paint the backdrop on a viewport-fixed pseudo-element instead,
+   while the panel stays sized and centred to the frame. */
+@media (min-width: 900px) {
+  .overlay {
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .overlay::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background: rgba(0, 0, 0, 0.6);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+  }
+}
+
 .panel {
-  width: 100%;
+  width: min(520px, 100%);
   background: var(--bg-1);
   border: 1px solid var(--border-hi);
   border-radius: 22px;
@@ -1340,6 +1527,41 @@ textarea:focus {
   border-radius: 26px 26px 0 0;
   border: none;
   border-top: 1px solid var(--border-hi);
+  will-change: transform;
+  overscroll-behavior: contain;
+  box-shadow: 0 -18px 50px rgba(0, 0, 0, 0.5);
+}
+
+/* Drag handle for bottom sheets (see makeSheetDraggable in overlay.js). */
+.sheet-grabber {
+  width: 40px;
+  height: 4px;
+  margin: -8px auto 12px;
+  border-radius: 999px;
+  background: var(--border-hi);
+  flex-shrink: 0;
+  touch-action: none;
+  cursor: grab;
+}
+
+.overlay.is-closing {
+  animation: sheetFadeOut 0.22s ease forwards;
+}
+
+.overlay.is-closing .panel {
+  animation: sheetDown 0.24s ease forwards;
+}
+
+@keyframes sheetDown {
+  to {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes sheetFadeOut {
+  to {
+    opacity: 0;
+  }
 }
 
 /* ---------- toast (pill inside the frame) ---------- */
