@@ -170,14 +170,14 @@ function actionFor(event, { persona, actions, enrollments }) {
     }
 
     case 'enrollreq':
-      if (actor !== 'nadia' || !event.requestId) return null;
+      if (!event.requestId || !actions.canDecideEnrollment?.(event.requestId)) return null;
       return el('span', { class: 'spacer inline-actions' }, [
         button('Decline', { small: true, onClick: () => actions.declineEnrollment(event.requestId) }),
         primary('Accept', () => actions.acceptEnrollment(event.requestId)),
       ]);
 
     case 'joinreq':
-      if (actor !== 'nadia' || !event.requestId) return null;
+      if (!event.requestId || !actions.canDecideJoin?.(event.requestId)) return null;
       return el('span', { class: 'spacer inline-actions' }, [
         button('Decline', { small: true, onClick: () => actions.declineJoin(event.requestId) }),
         primary('Accept', () => actions.acceptJoin(event.requestId)),

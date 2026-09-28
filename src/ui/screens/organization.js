@@ -1,5 +1,5 @@
 import { el } from '../../core/dom.js';
-import { getPersona } from '../../data/personas.js';
+import { findPersonaByKey, getPersona } from '../../data/personas.js';
 import { INVITE_STATUS, academyTypeLabel, inviteBadge } from '../../domain/academy.js';
 import {
   CLASS_STATUS,
@@ -30,7 +30,6 @@ export function renderOrganization({ store, app, scope }) {
     const persona = getPersona(state.personaId);
     const academy = state.academies?.[persona.id] ?? null;
     const pending = state.signQueue.filter((entry) => entry.status === 'pending').length;
-    const pendingRequests = pendingRequestCount(state.joinRequests, state.enrollRequests);
 
     if (!academy) {
       node.replaceChildren(
@@ -43,6 +42,11 @@ export function renderOrganization({ store, app, scope }) {
       );
       return;
     }
+
+    const pendingRequests = pendingRequestCount(
+      academyJoinRequests(state, academy),
+      academyEnrollRequests(state, academy),
+    );
 
     const tabsView = tabs(
       ORG_TABS.map((tab) => {
@@ -85,9 +89,22 @@ function bodyFor(state, app, pending, academy) {
   }
 }
 
+function academyJoinRequests(state, academy) {
+  return (state.joinRequests ?? []).filter((entry) =>
+    entry.academyId ? entry.academyId === academy.id : entry.academy === academy.name,
+  );
+}
+
+function academyEnrollRequests(state, academy) {
+  return (state.enrollRequests ?? []).filter((entry) => entry.academyId === academy.id);
+}
+
 function overviewBody(state, app, pending, academy) {
   const healthy = state.relays.filter((relay) => relay.health === 'connected').length;
-  const requests = pendingRequestCount(state.joinRequests, state.enrollRequests);
+  const requests = pendingRequestCount(
+    academyJoinRequests(state, academy),
+    academyEnrollRequests(state, academy),
+  );
   const liveCourses = classroomsForAcademy(state.classrooms ?? [], academy.id).filter(
     (room) => room.status === CLASS_STATUS.PUBLISHED,
   ).length;
@@ -216,9 +233,7 @@ function classroomRow(state, app, room) {
 
 function enrollmentBody(state, app, academy) {
   const requestsByMember = new Map();
-  for (const entry of state.joinRequests ?? []) {
-    const belongsHere = entry.academyId ? entry.academyId === academy.id : entry.academy === academy.name;
-    if (!belongsHere) continue;
+  for (const entry of academyJoinRequests(state, academy)) {
     const key = entry.accountId ?? entry.id;
     if (!requestsByMember.has(key)) requestsByMember.set(key, entry);
   }
@@ -237,7 +252,7 @@ function enrollmentBody(state, app, academy) {
     ]),
   );
 
-  const enrollRows = (state.enrollRequests ?? []).map((entry) =>
+  const enrollRows = academyEnrollRequests(state, academy).map((entry) =>
     row([
       el('span', { class: 'who' }, entry.learnerName),
       el('span', { class: 'muted small' }, entry.courseTitle || entry.courseId),
@@ -290,6 +305,41 @@ function enrollmentBody(state, app, academy) {
   ]);
 }
 
+function shortTarget(target) {
+  const value = String(target ?? '').trim();
+  if (!value) return 'unknown key';
+  return value.startsWith('npub1') ? truncateNpub(value) : value;
+}
+
+function staffIdentity(invite) {
+  const persona = (invite.acceptedBy ? getPersona(invite.acceptedBy) : findPersonaByKey(invite.target)) ?? null;
+  const target = shortTarget(invite.target);
+  const named = String(invite.name ?? '').trim() || persona?.displayName || '';
+  const name = named || target;
+  return {
+    persona: persona?.loaded ? persona : null,
+    name,
+    secondary: named && named !== target ? target : null,
+  };
+}
+
+function staffRow({ persona, name, secondary, badge, actions }) {
+  const face = persona?.picture
+    ? persona
+    : { avatar: String(name ?? '').trim().charAt(0).toUpperCase() || '🙂' };
+  return el('div', { class: 'staff-row' }, [
+    el('div', { class: 'staff-row__who' }, [
+      avatar(face, 36),
+      el('span', { class: 'staff-row__id' }, [
+        el('span', { class: 'staff-row__name' }, name),
+        secondary ? el('span', { class: 'staff-row__sub mono' }, secondary) : null,
+      ]),
+    ]),
+    actions?.length ? el('div', { class: 'staff-row__actions' }, actions) : null,
+    el('div', { class: 'staff-row__meta' }, [badge]),
+  ]);
+}
+
 function staffBody(state, app, academy) {
   const invites = state.invites.filter((invite) => invite.academyId === academy.id);
   const accepted = invites.filter(
@@ -298,28 +348,35 @@ function staffBody(state, app, academy) {
   const pending = invites.filter(
     (invite) => invite.role === ROLE.TEACHER && invite.status === INVITE_STATUS.PENDING,
   );
+  const owner = getPersona(state.personaId);
+  const ownerName = owner.displayName || truncateNpub(owner.npub);
 
   const teacherRows = accepted.map((invite) => {
-    const persona = invite.acceptedBy ? getPersona(invite.acceptedBy) : null;
-    return row([
-      el('span', { class: 'who' }, invite.name || persona?.displayName || invite.target),
-      statusBadge('teacher ✓', 'info'),
-      el('span', { class: 'muted small mono' }, invite.target),
-      el('span', { class: 'spacer' }),
-      button('Roles ▾', { small: true, onClick: () => app.stub('Role editing is coming soon.') }),
-    ]);
+    const info = staffIdentity(invite);
+    return staffRow({
+      persona: info.persona,
+      name: info.name,
+      secondary: info.secondary,
+      badge: statusBadge('teacher ✓', 'ok'),
+      actions: [
+        button('Roles ▾', { small: true, onClick: () => app.stub('Role editing is coming soon.') }),
+      ],
+    });
   });
 
-  const pendingRows = pending.map((invite) =>
-    row([
-      el('span', { class: 'who' }, invite.name || invite.target),
-      statusBadge(inviteBadge(invite.status)?.label ?? 'invite pending', inviteBadge(invite.status)?.tone ?? 'info'),
-      el('span', { class: 'muted small mono' }, invite.target),
-      el('span', { class: 'spacer' }),
-      button('Copy link', { small: true, onClick: () => app.copyInviteLink(invite.id) }),
-      button('Revoke', { small: true, onClick: () => app.revokeInvite(invite.id) }),
-    ]),
-  );
+  const pendingRows = pending.map((invite) => {
+    const info = staffIdentity(invite);
+    return staffRow({
+      persona: info.persona,
+      name: info.name,
+      secondary: info.secondary,
+      badge: statusBadge(inviteBadge(invite.status)?.label ?? 'invite pending', inviteBadge(invite.status)?.tone ?? 'info'),
+      actions: [
+        button('Copy link', { small: true, onClick: () => app.copyInviteLink(invite.id) }),
+        button('Revoke', { small: true, className: 'btn--danger', onClick: () => app.revokeInvite(invite.id) }),
+      ],
+    });
+  });
 
   return el('div', {}, [
     el('div', { class: 'arow' }, [
@@ -327,7 +384,7 @@ function staffBody(state, app, academy) {
     ]),
     el('h3', {}, 'Teachers'),
     teacherRows.length ? el('div', { class: 'rows' }, teacherRows) : emptyState('No teachers yet — invite one.'),
-    pending.length ? el('h3', {}, 'Pending teacher invites') : null,
+    pending.length ? el('h3', {}, `Pending teacher invites (${pending.length})`) : null,
     pending.length ? el('div', { class: 'rows' }, pendingRows) : null,
     el('h3', {}, 'Issuer authorization'),
     el('div', { class: 'card' }, [
@@ -337,7 +394,7 @@ function staffBody(state, app, academy) {
         ' ',
         statusBadge(academy.orgNpub ? '✓ active' : 'not created', academy.orgNpub ? 'ok' : 'muted'),
       ]),
-      el('p', { class: 'small muted' }, 'Authorized signers: Nadia (you). Invitations and admin access never grant signing power.'),
+      el('p', { class: 'small muted' }, `Authorized signers: ${ownerName} (you). Invitations and admin access never grant signing power.`),
       el('div', { class: 'arow' }, [
         button('Edit info', { small: true, onClick: () => { app.setSettingsSection('academy'); app.navigate('/settings'); } }),
         button('＋ Add signer…', { small: true, onClick: () => app.stub('Signer management is coming soon.') }),

@@ -2458,7 +2458,11 @@ export function createActions({ store, bus, signer, confirm, relay }) {
 
   function acceptJoin(requestId) {
     const request = state().joinRequests.find((entry) => entry.id === requestId);
-    if (!request) return;
+    if (!request) return false;
+    if (!canDecideJoin(requestId)) {
+      toast('Only the academy owner can approve memberships.', 'warn');
+      return false;
+    }
     const sameRequest = (entry) =>
       entry.accountId === request.accountId &&
       (request.academyId
@@ -2501,6 +2505,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       });
     }
     toast(`Approved — ${request.displayName} is now a member.`, 'ok');
+    return true;
   }
 
   function declineJoin(requestId) {
@@ -2651,6 +2656,24 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     });
     toast(`Declined — ${request.learnerName} was notified.`, 'warn');
     return true;
+  }
+
+  function canDecideEnrollment(requestId) {
+    const current = state();
+    const request = (current.enrollRequests ?? []).find((entry) => entry.id === requestId);
+    if (!request || request.status !== REQUEST_STATUS.PENDING) return false;
+    const classroom = classroomById(current.classrooms ?? [], request.courseId);
+    return authorize(ACTION.DECIDE_ENROLLMENT, classroomContext(current, classroom));
+  }
+
+  function canDecideJoin(requestId) {
+    const current = state();
+    const request = current.joinRequests.find((entry) => entry.id === requestId);
+    if (!request || request.status !== REQUEST_STATUS.PENDING) return false;
+    const academy = request.academyId
+      ? findAcademyById(current.academies ?? {}, request.academyId)
+      : Object.values(current.academies ?? {}).find((entry) => entry.name === request.academy);
+    return Boolean(academy) && academy.ownerId === current.personaId;
   }
 
   function dismissCreated() {
@@ -3123,6 +3146,8 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     requestEnrollment,
     acceptEnrollment,
     declineEnrollment,
+    canDecideEnrollment,
+    canDecideJoin,
     dismissCreated,
     testSigner,
     like,
