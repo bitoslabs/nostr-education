@@ -30,9 +30,13 @@ export function inviteLinkPanel({ invite, copyText, actions, close }) {
       publishButton.disabled = true;
       publishButton.replaceChildren(icon('lucide:loader', { size: 16, fallback: '…' }), 'Publishing…');
       shareTitle.replaceChildren('Publishing to relays…');
-      await actions?.publishJoinLinkToRelays?.(invite.id);
+      const published = await actions?.publishJoinLinkToRelays?.(invite.id);
       busy = false;
       publishButton.disabled = false;
+      if (published) {
+        showLive();
+        return;
+      }
       await verify();
     },
   });
@@ -46,6 +50,16 @@ export function inviteLinkPanel({ invite, copyText, actions, close }) {
   ]);
   shareBox.hidden = !canCheck;
 
+  function showLive() {
+    shareBox.classList.add('is-live');
+    shareTitle.replaceChildren('Public link is live');
+    shareMsg.textContent = 'A relay accepted this code. Anyone with it can join from another device.';
+    publishButton.replaceChildren(
+      icon('lucide:globe', { size: 16, fallback: '🌐' }),
+      'Republish public link',
+    );
+  }
+
   async function verify() {
     if (!canCheck) return;
     shareBox.classList.remove('is-live');
@@ -56,14 +70,16 @@ export function inviteLinkPanel({ invite, copyText, actions, close }) {
       await new Promise((resolve) => setTimeout(resolve, 1200));
       live = await actions.checkJoinLink(invite.id);
     }
-    shareBox.classList.toggle('is-live', live);
-    shareTitle.replaceChildren(live ? 'Public link is live' : 'Not published yet');
-    shareMsg.textContent = live
-      ? 'Anyone with this code can join from another device.'
-      : 'Publish it so the code is readable on public relays and the link works on other devices.';
+    if (live) {
+      showLive();
+      return;
+    }
+    shareBox.classList.remove('is-live');
+    shareTitle.replaceChildren('Not published yet');
+    shareMsg.textContent = 'Publish it so the code is readable on public relays and the link works on other devices.';
     publishButton.replaceChildren(
       icon('lucide:globe', { size: 16, fallback: '🌐' }),
-      live ? 'Republish public link' : 'Publish public link',
+      'Publish public link',
     );
   }
 

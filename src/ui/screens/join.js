@@ -2,11 +2,12 @@ import { el } from '../../core/dom.js';
 import { getPersona } from '../../data/personas.js';
 import {
   INVITE_STATUS,
+  academyTypeLabel,
   findInviteByCode,
   inviteRoleLabel,
   parseInviteReference,
 } from '../../domain/academy.js';
-import { MEMBERSHIP, ROLE } from '../../domain/school.js';
+import { REQUEST_STATUS, ROLE } from '../../domain/school.js';
 import { icon } from '../components/icon.js';
 import { button, noteBox, spinner } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
@@ -52,7 +53,7 @@ export function renderJoin({ store, app, scope }) {
       node.replaceChildren(...checkingView(app));
       return;
     }
-    node.replaceChildren(...view({ state, app, invite, academy, code }));
+    node.replaceChildren(...view({ state, app, invite, academy, code }).filter((child) => child != null && child !== false));
   }
 
   scope.add(store.subscribe(render));
@@ -168,6 +169,7 @@ function inviteView({ state, app, invite, academy, code }) {
   const place = classroom ? `${classroom.name} · ${academyName}` : academyName;
   const roleLabel = inviteRoleLabel(invite.role);
   const isTeacher = invite.role === ROLE.TEACHER;
+  const academyKind = academyTypeLabel(academy?.type);
 
   const children = [
     topBar(app, '/welcome'),
@@ -178,35 +180,53 @@ function inviteView({ state, app, invite, academy, code }) {
         : `You are invited to join ${place} as a learner.`,
     ),
     el('div', { class: 'card' }, [
-      el('p', {}, [
-        'Invited by ',
-        el('strong', {}, inviter.displayName),
-        ' · ',
-        el('span', { class: 'chip__context' }, `as ${roleLabel}`),
+      el('div', { class: 'crow' }, [
+        el('span', { class: 'who' }, academyName),
+        el('span', { class: 'chip__context' }, academyKind),
+        el('span', { class: 'chip__context' }, roleLabel),
       ]),
+      el('p', { class: 'muted small' }, ['Invited by ', el('strong', {}, inviter.displayName)]),
       el('p', { class: 'muted small' }, isTeacher
         ? 'Accepting gives you class tools. You still need a class assignment to teach.'
         : 'The owner approves memberships, so your request joins the queue.'),
-      statusBadge('invite pending', 'info'),
+      el('div', { class: 'invite-link invite-reference' }, [
+        el('span', { class: 'invite-reference__label' }, 'Invitation code'),
+        el('span', { class: 'invite-code mono' }, code),
+      ]),
+      el('p', {}, statusBadge('invite pending', 'info')),
     ]),
   ];
 
   if (state.authed) {
     const persona = getPersona(state.personaId);
-    const already = state.memberships?.[persona.id];
+    const alreadyHere = (state.joinRequests ?? []).some(
+      (request) =>
+        request.accountId === persona.id &&
+        (request.academyId === invite.academyId || (!request.academyId && request.academy === academyName)) &&
+        request.status === REQUEST_STATUS.APPROVED,
+    ) || (state.classrooms ?? []).some(
+      (room) =>
+        room.academyId === invite.academyId &&
+        (room.teacherId === persona.id || (room.studentIds ?? []).includes(persona.id)),
+    );
     children.push(
       el('p', { class: 'muted small' }, `You are signed in as ${persona.displayName}.`),
-      already === MEMBERSHIP.ACTIVE
+      alreadyHere
         ? noteBox('You are already an active member here.')
         : null,
-      el('div', { class: 'auth-foot' }, [
+      el('div', { class: 'auth-actions' }, [
         button('Accept invitation', {
           variant: 'gold',
-          className: 'auth-cta',
+          className: 'auth-action',
           onClick: async () => {
             const ok = await app.acceptInvite(code);
-            if (ok) app.navigate('/home');
+            if (ok) app.navigate('/role');
           },
+        }),
+        button('Use a different link', {
+          variant: 'ghost',
+          className: 'auth-action',
+          onClick: () => app.navigate('/join'),
         }),
       ]),
     );
@@ -233,11 +253,13 @@ function inviteView({ state, app, invite, academy, code }) {
     );
   }
 
-  children.push(
-    el('div', { class: 'auth-alt' }, [
-      button('Use a different link', { variant: 'ghost', small: true, onClick: () => app.navigate('/join') }),
-    ]),
-  );
+  if (!state.authed) {
+    children.push(
+      el('div', { class: 'auth-alt' }, [
+        button('Use a different link', { variant: 'ghost', small: true, onClick: () => app.navigate('/join') }),
+      ]),
+    );
+  }
 
   return children;
 }

@@ -165,7 +165,7 @@ function coursesBody(state, app, academy) {
   });
 
   return el('div', {}, [
-    el('div', { class: 'arow' }, [
+    el('div', { class: 'arow courses-toolbar' }, [
       button('＋ New subject', { variant: 'gold', small: true, onClick: () => app.openCreateSubject() }),
       button('＋ New classroom', { small: true, onClick: () => app.openCreateClassroom() }),
     ]),
@@ -201,18 +201,16 @@ function classroomRow(state, app, room) {
   ].filter(Boolean);
 
   return el('div', { class: 'classroom-row' }, [
-    el('div', { class: 'classroom-row__body' }, [
-      el('div', { class: 'classroom-row__title' }, [
-        el('span', { class: 'who' }, room.name),
-        room.term ? el('span', { class: 'muted small' }, room.term) : null,
-        badge ? statusBadge(badge.label, badge.tone) : null,
-      ]),
-      el('div', { class: 'classroom-row__meta' }, [
-        el('span', { class: 'muted small' }, teacherLine),
-        teacher ? el('span', { class: 'muted small' }, `${learners} learner${learners === 1 ? '' : 's'}`) : null,
-      ]),
+    el('div', { class: 'classroom-row__title' }, [
+      el('span', { class: 'who' }, room.name),
+      room.term ? el('span', { class: 'muted small' }, room.term) : null,
     ]),
-    el('div', { class: 'inline-actions' }, actions),
+    el('div', { class: 'classroom-row__actions' }, actions),
+    el('div', { class: 'classroom-row__meta' }, [
+      badge ? statusBadge(badge.label, badge.tone) : null,
+      el('span', { class: 'muted small' }, teacherLine),
+      teacher ? el('span', { class: 'muted small' }, `${learners} learner${learners === 1 ? '' : 's'}`) : null,
+    ]),
   ]);
 }
 

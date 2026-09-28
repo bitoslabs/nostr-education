@@ -44,15 +44,40 @@ export function createRelayService({ relays = DEFAULT_RELAYS } = {}) {
 
   function subscribe(filters, { onEvent, onEose, onClose } = {}) {
     const targets = relaysForKind(list, 'read');
+    const requests = Array.isArray(filters) ? filters : [filters];
     if (!targets.length) {
       onEose?.();
       return { close() {} };
     }
-    return pool.subscribeMany(targets, filters, {
-      onevent: onEvent,
-      oneose: onEose,
-      onclose: onClose,
-    });
+
+    // nostr-tools 2.25 expects one Filter object here, not Filter[]. Passing
+    // the array produces an invalid nested REQ command. Use one pooled
+    // subscription per filter and expose them as a single closer.
+    let eoseCount = 0;
+    let closeCount = 0;
+    const closeReasons = [];
+      const subscriptions = requests.map((filter) => pool.subscribeMany(targets, filter, {
+        onevent(event) {
+          onEvent?.(event);
+        },
+        oneose() {
+          eoseCount += 1;
+          if (eoseCount !== requests.length) return;
+          onEose?.();
+        },
+        onclose(reasons) {
+          closeCount += 1;
+          closeReasons.push(...(reasons ?? []));
+          if (closeCount !== requests.length) return;
+          onClose?.(closeReasons);
+        },
+      }));
+
+    return {
+      close(reason) {
+        for (const subscription of subscriptions) subscription.close(reason);
+      },
+    };
   }
 
   async function check(urls) {

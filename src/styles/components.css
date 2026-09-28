@@ -222,6 +222,17 @@
   word-break: break-all;
 }
 
+.invite-reference {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.invite-reference__label {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
 .invite-share {
   display: grid;
   gap: 10px;
@@ -1984,7 +1995,15 @@ textarea:focus {
      last labels line up with the content column; the divider reads slightly
      wider than the content, matching the full-bleed feed. */
   margin: 0 -12px 14px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
@@ -1998,6 +2017,8 @@ textarea:focus {
   cursor: pointer;
   position: relative;
   min-height: var(--tap);
+  flex: none;
+  white-space: nowrap;
 }
 
 .tab[aria-selected='true'] {
@@ -2201,7 +2222,9 @@ textarea:focus {
 
 .form-foot {
   position: sticky;
-  bottom: 0;
+  /* The panel has 22px bottom padding; offset the sticky pin by that much so
+     the bar sits flush with the panel edge instead of floating above a gap. */
+  bottom: -22px;
   z-index: 5;
   display: flex;
   gap: 0.6rem;
@@ -2251,19 +2274,11 @@ textarea:focus {
 }
 
 .classroom-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px 14px;
-  flex-wrap: wrap;
-  padding: 13px 16px;
-}
-
-.classroom-row__body {
   display: grid;
-  gap: 4px;
-  flex: 1 1 220px;
-  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 12px;
+  align-items: center;
+  padding: 13px 16px;
 }
 
 .classroom-row__title,
@@ -2272,14 +2287,35 @@ textarea:focus {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
-/* Group the row's actions so they wrap together and stay right-aligned
-   instead of orphaning a single button onto the next line. */
-.classroom-row > .inline-actions {
-  margin-left: auto;
+.classroom-row__title {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+/* The status badge and teacher line get the full row width so the long
+   "draft — hidden from students" badge never squeezes the class name. */
+.classroom-row__meta {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+/* Actions pin to the top-right of the row, so they line up with the class
+   name instead of orphaning onto their own line below the metadata. */
+.classroom-row__actions {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+/* Toolbar above the course cards needs breathing room from the first card. */
+.courses-toolbar {
+  margin: 4px 0 14px;
 }
 
 /* Destructive action (classroom delete) reads as danger, not a neutral ghost. */

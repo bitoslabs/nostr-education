@@ -255,6 +255,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       joinRequests: [
         {
           id: joinId,
+          academyId: invite.academyId,
           accountId: persona.id,
           displayName: persona.displayName,
           handle: persona.handle,
@@ -594,7 +595,11 @@ export function createActions({ store, bus, signer, confirm, relay }) {
         return last;
       }
 
-      const event = buildEvent({ kind: KIND.APP_DATA, tags: recordTags(type, id), content: plaintext });
+      const event = buildEvent({
+        kind: KIND.APP_DATA,
+        tags: recordTags(type, id, { code: type === RECORD_TYPES.JOIN_LINK ? payload?.code : null }),
+        content: plaintext,
+      });
       const signed = await signRecord(event, { title, action, detail });
       if (!signed) return null;
       const published = await relay.publish(signed);
@@ -1058,21 +1063,40 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     return rest;
   }
 
-  function publishJoinLink(invite, message) {
+  async function publishJoinLink(invite, message) {
     if (!invite?.id) return Promise.resolve(false);
-    return publishRecord({
+    const current = state();
+    const academy = academyById(current, invite.academyId);
+
+    // Academy records created by older builds could serialize the academy
+    // category (such as "school") over the record type. Repair an academy we
+    // own before publishing its invite so a new device can authorize the link.
+    if (academy?.ownerId === current.personaId) {
+      const academyPublished = await publishRecord({
+        type: RECORD_TYPES.ACADEMY,
+        id: academy.id,
+        payload: academy,
+        title: 'Publish academy',
+        action: el('span', {}, `Publish ${academy.name} so its join links can be verified.`),
+      });
+      if (!academyPublished?.count) {
+        toast('The academy record was not accepted by a relay yet.', 'warn');
+        return false;
+      }
+    }
+
+    const published = await publishRecord({
       type: RECORD_TYPES.JOIN_LINK,
       id: invite.id,
       payload: publicLinkPayload(invite),
       title: 'Publish join link',
       action: el('span', {}, message),
-    }).then((published) => {
-      if (!published || !published.count) {
-        toast('Join link saved on this device, but no relay accepted it yet.', 'warn');
-        return false;
-      }
-      return true;
     });
+    if (!published?.count) {
+      toast('Join link saved on this device, but no relay accepted it yet.', 'warn');
+      return false;
+    }
+    return true;
   }
 
   function findInvite(inviteId) {
@@ -1107,9 +1131,14 @@ export function createActions({ store, bus, signer, confirm, relay }) {
         resolve(value);
       };
       const timer = setTimeout(() => finish(false), timeoutMs);
-      sub = relay.subscribe([{ kinds: [KIND.APP_DATA], authors: [author], '#t': [APP_TAG] }], {
+      sub = relay.subscribe([{
+        kinds: [KIND.APP_DATA],
+        authors: [author],
+        '#d': [`${RECORD_TYPES.JOIN_LINK}:${inviteId}`],
+        '#t': [APP_TAG],
+      }], {
         onEvent: (event) => {
-          const record = decodeRecord(event.content);
+          const record = decodeRecord(event.content, event.tags);
           if (record?.type === RECORD_TYPES.JOIN_LINK && record.id === inviteId) finish(true);
         },
         onEose: () => finish(false),

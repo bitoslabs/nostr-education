@@ -12,7 +12,8 @@ import {
   subjectById,
 } from '../../domain/classroom.js';
 import { completionBadge, evaluateCompletion } from '../../domain/completion.js';
-import { MEMBERSHIP, membershipBadge } from '../../domain/school.js';
+import { academyTypeLabel, inviteRoleLabel } from '../../domain/academy.js';
+import { MEMBERSHIP, REQUEST_STATUS, membershipBadge } from '../../domain/school.js';
 import { button, emptyState, pageTitle } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
 
@@ -27,6 +28,8 @@ export function renderEducation({ store, app, scope }) {
 
     const children = [pageTitle('Education')];
     if (token) children.push(el('p', {}, statusBadge(token.label, token.tone)));
+
+    children.push(myAcademies(state, persona));
 
     if (membership !== MEMBERSHIP.ACTIVE) {
       children.push(joinCard(membership, app));
@@ -48,6 +51,85 @@ export function renderEducation({ store, app, scope }) {
   scope.add(store.subscribe(render));
   render();
   return node;
+}
+
+function academyMemberships(state, persona) {
+  const byId = new Map();
+  const academies = Object.values(state.academies ?? {});
+  const classrooms = state.classrooms ?? [];
+
+  for (const request of state.joinRequests ?? []) {
+    if (request.accountId !== persona.id) continue;
+    const academy = request.academyId
+      ? academies.find((entry) => entry.id === request.academyId)
+      : academies.find((entry) => entry.name === request.academy);
+    if (!academy) continue;
+    byId.set(academy.id, {
+      academy,
+      role: request.role ?? persona.role,
+      status: request.status === REQUEST_STATUS.APPROVED ? MEMBERSHIP.ACTIVE : request.status,
+    });
+  }
+
+  for (const invite of state.invites ?? []) {
+    if (invite.acceptedBy !== persona.id) continue;
+    const academy = academies.find((entry) => entry.id === invite.academyId);
+    if (!academy) continue;
+    const inClass = classrooms.some(
+      (room) => room.academyId === academy.id && (room.studentIds ?? []).includes(persona.id),
+    );
+    const existing = byId.get(academy.id);
+    byId.set(academy.id, {
+      academy,
+      role: invite.role ?? existing?.role ?? persona.role,
+      status: existing?.status ?? (inClass ? MEMBERSHIP.ACTIVE : MEMBERSHIP.PENDING),
+    });
+  }
+
+  for (const room of classrooms) {
+    if (!(room.studentIds ?? []).includes(persona.id)) continue;
+    const academy = academies.find((entry) => entry.id === room.academyId);
+    if (!academy) continue;
+    const existing = byId.get(academy.id);
+    byId.set(academy.id, {
+      academy,
+      role: existing?.role ?? persona.role,
+      status: MEMBERSHIP.ACTIVE,
+    });
+  }
+
+  return [...byId.values()].map((entry) => ({
+    ...entry,
+    classCount: classrooms.filter(
+      (room) => room.academyId === entry.academy.id && (room.studentIds ?? []).includes(persona.id),
+    ).length,
+  }));
+}
+
+function myAcademies(state, persona) {
+  const memberships = academyMemberships(state, persona);
+  return el('section', { class: 'card' }, [
+    el('div', { class: 'crow' }, [
+      el('h3', {}, 'My academies'),
+      el('span', { class: 'ctx' }, `${memberships.length} organizations`),
+    ]),
+    memberships.length
+      ? el('div', { class: 'list-divide' }, memberships.map(({ academy, role, status, classCount }) => {
+          const badge = membershipBadge(status);
+          return el('div', { class: 'row' }, [
+            el('div', { style: { flex: '1 1 220px' } }, [
+              el('div', { class: 'who' }, academy.name),
+              el('div', { class: 'muted small' }, [
+                academyTypeLabel(academy.type),
+                ` · ${inviteRoleLabel(role)}`,
+                ` · ${classCount} ${classCount === 1 ? 'class' : 'classes'}`,
+              ]),
+            ]),
+            badge ? statusBadge(badge.label, badge.tone) : statusBadge(String(status), 'info'),
+          ]);
+        }))
+      : el('p', { class: 'muted small' }, 'Academies and universities you join will appear here.'),
+  ]);
 }
 
 function joinCard(membership, app) {

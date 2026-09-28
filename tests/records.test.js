@@ -10,6 +10,7 @@ import {
   isPublicRecord,
   toPublicRecord,
 } from '../src/domain/records.js';
+import { decodeRecord, encodeRecord, recordTags } from '../src/services/records.js';
 
 const EMPTY = {
   academies: {},
@@ -21,6 +22,40 @@ const EMPTY = {
   joinRequests: [],
   memberships: {},
 };
+
+test('recordTags makes a public invite directly searchable by code', () => {
+  assert.deepEqual(recordTags('joinlink', 'inv1', { code: 'ABCD1234' }), [
+    ['d', 'joinlink:inv1'],
+    ['t', 'bitos-education'],
+    ['type', 'joinlink'],
+    ['code', 'abcd1234'],
+  ]);
+});
+
+test('record envelope fields cannot be overwritten by its payload', () => {
+  const encoded = encodeRecord('academy', 'org1', { type: 'school', id: 'wrong', name: 'Northgate' });
+  assert.deepEqual(decodeRecord(encoded), {
+    type: 'academy',
+    id: 'org1',
+    name: 'Northgate',
+    academyType: 'school',
+    v: 1,
+  });
+});
+
+test('decodeRecord repairs legacy envelope fields from signed tags', () => {
+  const content = JSON.stringify({ v: 1, type: 'school', id: 'org1', name: 'Northgate' });
+  assert.deepEqual(decodeRecord(content, [
+    ['d', 'academy:org1'],
+    ['t', 'bitos-education'],
+    ['type', 'academy'],
+  ]), {
+    v: 1,
+    type: 'academy',
+    id: 'org1',
+    name: 'Northgate',
+  });
+});
 
 test('applyRecord upserts subjects and classrooms without duplicates', () => {
   let state = applyRecord(EMPTY, { type: 'subject', id: 'sub1', name: 'Maths' });

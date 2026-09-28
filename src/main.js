@@ -196,7 +196,7 @@ function syncRecords() {
       } else if (event.pubkey !== me) {
         return;
       }
-      const record = decodeRecord(content);
+      const record = decodeRecord(content, event.tags);
       if (!record) return;
       const patch = applyRecord(store.getState(), record);
       if (patch) store.setState(patch);
@@ -302,9 +302,11 @@ function flushPendingCatalog(academyId) {
 function syncCatalog() {
   catalogSub?.close?.();
   pendingCatalog.clear();
-  catalogSub = relayService.subscribe([{ kinds: [KIND.APP_DATA], '#t': [APP_TAG] }], {
+  // Some public relays return an immediate EOSE for an unbounded application
+  // query. Keep this bounded so initial join-link discovery returns records.
+  catalogSub = relayService.subscribe([{ kinds: [KIND.APP_DATA], '#t': [APP_TAG], limit: 50 }], {
     onEvent: (event) => {
-      const record = decodeRecord(event.content);
+      const record = decodeRecord(event.content, event.tags);
       if (!isPublicRecord(record)) return;
       const authorization = catalogAuthorization(record, event.pubkey);
       if (authorization === false) return;

@@ -64,7 +64,15 @@ export function applyRecord(state, record) {
   switch (record.type) {
     case RECORD_TYPES.ACADEMY:
       if (!record.ownerId) return null;
-      return { academies: { ...state.academies, [record.ownerId]: { ...record } } };
+      return {
+        academies: {
+          ...state.academies,
+          [record.ownerId]: {
+            ...record,
+            type: record.academyType ?? 'school',
+          },
+        },
+      };
     case RECORD_TYPES.SUBJECT:
       if (record.deleted) return { subjects: removeById(state.subjects ?? [], record.id) };
       return { subjects: upsert(state.subjects ?? [], record) };

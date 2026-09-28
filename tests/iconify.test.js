@@ -52,3 +52,47 @@ test('loader evicts the cache on failure so a retry can succeed', async () => {
   await assert.rejects(() => loader.load('missing'), /status 404/);
   assert.equal(calls, 2);
 });
+
+test('loader bounds the in-memory cache with least-recently-used eviction', async () => {
+  const fetcher = async (url) => ({ ok: true, status: 200, text: async () => `<svg>${url}</svg>` });
+
+  const loader = createIconifyLoader({ fetcher, maxEntries: 2, persistent: null });
+  await loader.load('a');
+  await loader.load('b');
+  await loader.load('a');
+  await loader.load('c');
+
+  assert.equal(loader.cache.has('ph:b'), false);
+  assert.equal(loader.cache.has('ph:a'), true);
+  assert.equal(loader.cache.has('ph:c'), true);
+});
+
+test('loader serves from the persistent cache without a network call', async () => {
+  const store = new Map([['ph:key', '<svg>cached</svg>']]);
+  const persistent = {
+    get: async (name) => store.get(name) ?? null,
+    set: async (name, value) => void store.set(name, value),
+  };
+  let calls = 0;
+  const fetcher = async () => {
+    calls += 1;
+    return { ok: true, status: 200, text: async () => '<svg>fresh</svg>' };
+  };
+
+  const loader = createIconifyLoader({ fetcher, persistent });
+  assert.equal(await loader.load('key'), '<svg>cached</svg>');
+  assert.equal(calls, 0);
+});
+
+test('loader writes fetched icons through to the persistent cache', async () => {
+  const store = new Map();
+  const persistent = {
+    get: async (name) => store.get(name) ?? null,
+    set: async (name, value) => void store.set(name, value),
+  };
+  const fetcher = async () => ({ ok: true, status: 200, text: async () => '<svg>fresh</svg>' });
+
+  const loader = createIconifyLoader({ fetcher, persistent });
+  assert.equal(await loader.load('key'), '<svg>fresh</svg>');
+  assert.equal(store.get('ph:key'), '<svg>fresh</svg>');
+});
