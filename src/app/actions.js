@@ -16,6 +16,7 @@ import { encodeRecord, recordTags } from '../services/records.js';
 import { normalizeBlossomServer, uploadBlob } from '../services/blossom.js';
 import { toPublicRecord } from '../domain/records.js';
 import { buildScoreSheet, normalizeRubric, rubricMax, scoresComplete, scoresTotal } from '../domain/rubric.js';
+import { credentialPayload, credentialProofContent, revocationPayload } from '../domain/credential.js';
 import { clearState, loadOrgSecret, saveOrgSecret, saveSecretKey } from '../services/storage.js';
 import {
   ACADEMY_TYPES,
@@ -34,6 +35,7 @@ import {
   SUBMISSION_STATUS,
   classroomActivity,
   classroomById,
+  homeworkForClassroom,
   isEnrollable,
   isHomeworkOpen,
   isValidScore,
@@ -41,6 +43,7 @@ import {
   subjectInUse,
   submissionFor,
 } from '../domain/classroom.js';
+import { evaluateCompletion, normalizePolicy } from '../domain/completion.js';
 import { DELIVERY_STATE } from '../domain/delivery.js';
 import { normalizeHandle, validateHandle } from '../domain/handle.js';
 import { truncateNpub } from '../domain/identity.js';
@@ -854,6 +857,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       enrollRequests: [],
       events: [],
       signQueue: [],
+      recommendations: [],
       credentials: [],
       deliveries: [],
       lastCreated: null,
@@ -1540,6 +1544,134 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       action: el('span', {}, `Remove ${classroom.name} from your academy.`),
     });
     toast(`${classroom.name} removed.`, 'warn');
+    return true;
+  }
+
+  function setCompletionPolicy({ classroomId, minAverage = 0, requireAllHomework = true } = {}) {
+    const current = state();
+    const academy = ownedAcademy(current, current.personaId);
+    const classroom = classroomById(current.classrooms ?? [], classroomId);
+    if (!academy || !classroom || classroom.academyId !== academy.id) {
+      toast('Only the academy owner can set completion rules.', 'warn');
+      return false;
+    }
+    const policy = normalizePolicy({ minAverage, requireAllHomework });
+    const updated = {
+      ...classroom,
+      completion: policy,
+      completionVersion: (classroom.completionVersion ?? 0) + 1,
+      completionUpdatedAt: 'now',
+    };
+    update({
+      classrooms: current.classrooms.map((entry) => (entry.id === classroomId ? updated : entry)),
+      events: [
+        {
+          id: nextId('e'),
+          type: 'academy',
+          author: current.personaId,
+          time: 'now',
+          context: classroom.name,
+          audience: 'all',
+          text: `updated completion rules for ${classroom.name} · v${updated.completionVersion}.`,
+        },
+        ...current.events,
+      ],
+    });
+    publishRecord({
+      type: 'classroom',
+      id: updated.id,
+      payload: toPublicRecord(updated),
+      title: 'Completion rules',
+      action: el('span', {}, `Publish completion rules v${updated.completionVersion} for ${classroom.name}.`),
+    });
+    toast(`Completion rules updated (v${updated.completionVersion}).`, 'ok');
+    return true;
+  }
+
+  function recommendCompletion({ classroomId, studentId } = {}) {
+    const current = state();
+    const classroom = classroomById(current.classrooms ?? [], classroomId);
+    if (!canManageClassroom(current, classroom)) {
+      toast('Only the class teacher or academy owner can recommend completion.', 'warn');
+      return false;
+    }
+    const homework = homeworkForClassroom(current.homework ?? [], classroomId);
+    const result = evaluateCompletion({
+      policy: classroom.completion,
+      homework,
+      submissions: current.submissions ?? [],
+      studentId,
+    });
+    if (!result.eligible) {
+      toast('That learner has not met the completion rules yet.', 'warn');
+      return false;
+    }
+    const pending = (current.recommendations ?? []).some(
+      (entry) => entry.classroomId === classroomId && entry.studentId === studentId && entry.status === 'recommended',
+    );
+    if (pending) {
+      toast('Completion is already recommended for this learner.', 'info');
+      return false;
+    }
+    const persona = getPersona(current.personaId);
+    const learner = getPersona(studentId);
+    const subject = subjectById(current.subjects ?? [], classroom.subjectId);
+    const academy = findAcademyById(current.academies ?? {}, classroom.academyId);
+    const id = nextId('rec');
+    const recommendation = {
+      id,
+      academyId: classroom.academyId,
+      academyName: academy?.name ?? null,
+      classroomId,
+      studentId,
+      learnerName: learner.displayName,
+      course: subject?.name ?? classroom.name,
+      grade: result.average,
+      policyVersion: classroom.completionVersion ?? null,
+      recommendedBy: persona.id,
+      recommendedAt: 'now',
+      status: 'recommended',
+    };
+    update({
+      recommendations: [recommendation, ...(current.recommendations ?? [])],
+      signQueue: [
+        {
+          id: `sign-${id}`,
+          learnerName: learner.displayName,
+          course: recommendation.course,
+          academyName: recommendation.academyName,
+          policyVersion: recommendation.policyVersion,
+          time: 'now',
+          status: 'pending',
+          grade: result.average,
+        },
+        ...(current.signQueue ?? []),
+      ],
+      events: [
+        {
+          id: nextId('e'),
+          type: 'completion',
+          author: persona.id,
+          time: 'now',
+          context: classroom.name,
+          audience: [studentId, academy?.ownerId].filter(Boolean),
+          text: `recommended ${learner.displayName} for completion of ${classroom.name}.`,
+        },
+        ...current.events,
+      ],
+    });
+    if (academy?.ownerId) {
+      publishRecord({
+        type: 'recommendation',
+        id,
+        payload: recommendation,
+        recipients: [academy.ownerId],
+        encrypted: true,
+        title: 'Recommend completion',
+        action: el('span', {}, `Send ${learner.displayName}'s completion recommendation to the issuer (encrypted).`),
+      });
+    }
+    toast(`Completion recommended for ${learner.displayName}.`, 'ok');
     return true;
   }
 
@@ -2407,79 +2539,187 @@ export function createActions({ store, bus, signer, confirm, relay }) {
   }
 
   async function signIssue(signId, close) {
-    const item = state().signQueue.find((entry) => entry.id === signId);
-    if (!item || item.status !== 'pending') return;
+    const current = state();
+    const item = current.signQueue.find((entry) => entry.id === signId);
+    if (!item || item.status !== 'pending') return false;
 
-    const result = await signer.request({
+    const recommendation =
+      (current.recommendations ?? []).find((entry) => `sign-${entry.id}` === signId) ?? null;
+    const academy = recommendation ? findAcademyById(current.academies ?? {}, recommendation.academyId) : null;
+    const identity = academy ? ensureOrgIdentity(academy) : null;
+    if (!academy || !identity) {
+      toast('The academy key for this credential is not available on this device.', 'warn');
+      return false;
+    }
+
+    const approved = await signer.request({
       title: 'Signature request',
       action: el('span', {}, [
         el('strong', {}, 'Issue credential'),
         el('br'),
-        'BitOS Academy Certificate → Alice · ',
-        el('span', { class: 'mono' }, 'alice@bitos.id'),
+        `${academy.name} Certificate → ${item.learnerName}`,
+        el('br'),
+        el('span', { class: 'mono' }, item.course ?? ''),
       ]),
     });
-    if (!result.approved) return;
+    if (!approved.approved) return false;
 
-    const deliveryId = nextId('d');
+    const classroom = recommendation
+      ? classroomById(current.classrooms ?? [], recommendation.classroomId)
+      : null;
+    const payload = credentialPayload({
+      academyName: academy.name,
+      academyPubkey: identity.pubkey,
+      holderName: item.learnerName,
+      course: item.course,
+      average: item.grade ?? null,
+      policyVersion: classroom?.completionVersion ?? null,
+      issuedAt: Date.now(),
+    });
+    const credentialId = nextId('cred');
+    const orgSigner = localSigner(identity.secretKey);
+    let proof;
+    try {
+      const event = buildEvent({
+        kind: KIND.CREDENTIAL,
+        tags: [
+          ['d', credentialId],
+          recommendation?.studentId ? ['p', recommendation.studentId] : null,
+        ].filter(Boolean),
+        content: credentialProofContent(payload),
+      });
+      proof = await orgSigner.signEvent(event);
+    } catch (error) {
+      toast(error?.message ?? 'The credential could not be signed.', 'warn');
+      return false;
+    }
+    const published = await relay.publish(proof);
+    const delivered = published.count > 0;
+
+    const credential = {
+      id: credentialId,
+      academyId: academy.id,
+      title: payload.title,
+      issuer: getPersona(identity.pubkey),
+      issuerPubkey: identity.pubkey,
+      issuerNpub: identity.npub,
+      status: 'active',
+      privacyLevel: 'L1',
+      expiresAt: null,
+      meta: payload.course ? `${payload.course} completion` : 'Course completion',
+      recipient: { name: item.learnerName, handle: null, pubkey: recommendation?.studentId ?? null },
+      course: payload.course || null,
+      payload,
+      proof,
+      issuedAt: payload.issuedAt,
+      delivery: delivered ? 'delivered' : 'pending',
+      sourceSignId: signId,
+    };
+
     update({
       signed: true,
-      signQueue: state().signQueue.map((entry) =>
+      signQueue: current.signQueue.map((entry) =>
         entry.id === signId ? { ...entry, status: 'signed' } : entry,
       ),
-      credentials: [
-        ...state().credentials,
+      recommendations: (current.recommendations ?? []).map((entry) =>
+        recommendation && entry.id === recommendation.id ? { ...entry, status: 'issued' } : entry,
+      ),
+      credentials: [...current.credentials, credential],
+      deliveries: [
         {
-          id: nextId('c'),
-          title: 'BitOS Academy Certificate',
-          issuer: getPersona('academy'),
-          status: 'active',
-          privacyLevel: 'L1',
-          expiresAt: null,
-          meta: 'CS-101 completion',
-          recipient: { name: item.learnerName ?? 'Alice', handle: null, pubkey: null },
-          course: item.course ?? null,
-          issuedAt: Date.now(),
-          delivery: 'delivered',
-          sourceSignId: signId,
+          id: nextId('d'),
+          label: `Certificate · ${item.learnerName}`,
+          state: delivered ? DELIVERY_STATE.DELIVERED : DELIVERY_STATE.PENDING,
         },
+        ...current.deliveries,
       ],
       events: [
         {
           id: nextId('e'),
           type: 'issued',
-          author: 'academy',
+          author: identity.pubkey,
           time: 'now',
-          context: 'CS-101',
+          context: payload.course || academy.name,
           audience: 'all',
-          text: 'Issued BitOS Academy Certificate to Alice.',
+          text: `issued a ${payload.title} to ${item.learnerName}.`,
         },
-        ...state().events,
-      ],
-      deliveries: [
-        { id: deliveryId, label: 'Certificate · Alice', state: DELIVERY_STATE.PENDING },
-        ...state().deliveries,
+        ...current.events,
       ],
     });
     close?.();
-    toast('Certificate issued to Alice — visible in her Credentials.', 'ok');
-
-    const statuses = await relay.check();
-    const delivered = statuses.filter((entry) => entry.health === 'connected').length;
-    update({
-      deliveries: state().deliveries.map((entry) =>
-        entry.id === deliveryId
-          ? { ...entry, state: delivered ? DELIVERY_STATE.DELIVERED : DELIVERY_STATE.PENDING }
-          : entry,
-      ),
-      relays: statuses,
-    });
     toast(
       delivered
-        ? `Certificate delivery confirmed · ${delivered} relay${delivered === 1 ? '' : 's'}.`
-        : 'Certificate saved, but no relay is reachable yet.',
+        ? `${payload.title} issued and published to relays.`
+        : 'Credential signed locally — no relay accepted it yet.',
       delivered ? 'ok' : 'warn',
     );
+    return true;
+  }
+
+  async function revokeCredential(credentialId) {
+    const current = state();
+    const credential = (current.credentials ?? []).find((entry) => entry.id === credentialId);
+    if (!credential) return false;
+    const academy = credential.academyId
+      ? findAcademyById(current.academies ?? {}, credential.academyId)
+      : Object.values(current.academies ?? {}).find((entry) => entry.orgPubkey === credential.issuerPubkey);
+    if (!academy || academy.ownerId !== current.personaId) {
+      toast('Only the academy owner can revoke this credential.', 'warn');
+      return false;
+    }
+    const identity = ensureOrgIdentity(academy);
+    if (!identity) {
+      toast('The academy key for this credential is not available on this device.', 'warn');
+      return false;
+    }
+    const ok = await confirm({
+      title: `Revoke ${credential.title}?`,
+      body: 'Revocation is signed by the academy key and published, so verifiers see the new status. The learner keeps the certificate.',
+      confirmLabel: 'Revoke',
+    });
+    if (!ok) return false;
+
+    const statusPayload = revocationPayload({
+      credentialId,
+      issuer: identity.pubkey,
+      revokedAt: Date.now(),
+    });
+    let statusProof;
+    try {
+      const event = buildEvent({
+        kind: KIND.CREDENTIAL,
+        tags: [
+          ['d', credentialId],
+          ['status', 'revoked'],
+        ],
+        content: JSON.stringify(statusPayload),
+      });
+      statusProof = await localSigner(identity.secretKey).signEvent(event);
+    } catch (error) {
+      toast(error?.message ?? 'The revocation could not be signed.', 'warn');
+      return false;
+    }
+    await relay.publish(statusProof);
+
+    update({
+      credentials: (current.credentials ?? []).map((entry) =>
+        entry.id === credentialId ? { ...entry, status: 'revoked', statusProof, statusPayload } : entry,
+      ),
+      events: [
+        {
+          id: nextId('e'),
+          type: 'issued',
+          author: identity.pubkey,
+          time: 'now',
+          context: credential.course ?? credential.title,
+          audience: 'all',
+          text: `revoked a ${credential.title}.`,
+        },
+        ...current.events,
+      ],
+    });
+    toast('Credential revoked and published.', 'warn');
+    return true;
   }
 
   async function declineSign(signId, close) {
@@ -2642,6 +2882,8 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     archiveClassroom,
     restoreClassroom,
     deleteClassroom,
+    setCompletionPolicy,
+    recommendCompletion,
     assignClassTeacher,
     inviteStudentToClass,
     inviteClassTeacher,
@@ -2672,6 +2914,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     postNote,
     sendCompletion,
     signIssue,
+    revokeCredential,
     declineSign,
     createGrant,
     revokeGrant,

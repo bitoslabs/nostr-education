@@ -8,6 +8,7 @@ export const RECORD_TYPES = Object.freeze({
   SUBMISSION: 'submission',
   GRADE: 'grade',
   REVISION: 'revision',
+  RECOMMENDATION: 'recommendation',
   INVITE: 'invite',
   JOIN_REQUEST: 'joinreq',
   MEMBER: 'member',
@@ -37,6 +38,7 @@ export const PRIVATE_RECORD_TYPES = Object.freeze([
   RECORD_TYPES.SUBMISSION,
   RECORD_TYPES.GRADE,
   RECORD_TYPES.REVISION,
+  RECORD_TYPES.RECOMMENDATION,
   RECORD_TYPES.INVITE,
   RECORD_TYPES.JOIN_REQUEST,
   RECORD_TYPES.MEMBER,
@@ -114,6 +116,34 @@ export function applyRecord(state, record) {
       if (!record.memberId) return null;
       return {
         memberships: { ...state.memberships, [record.memberId]: record.status ?? MEMBERSHIP.ACTIVE },
+      };
+    }
+    case RECORD_TYPES.RECOMMENDATION: {
+      if (!record.studentId) return null;
+      const known = (state.recommendations ?? []).some((entry) => entry.id === record.id);
+      const recommendations = upsert(state.recommendations ?? [], record);
+      if (known) return { recommendations };
+      const signId = `sign-${record.id}`;
+      const hasSign = (state.signQueue ?? []).some((entry) => entry.id === signId);
+      return {
+        recommendations,
+        ...(hasSign
+          ? {}
+          : {
+              signQueue: [
+                {
+                  id: signId,
+                  learnerName: record.learnerName ?? 'Learner',
+                  course: record.course ?? 'Course',
+                  academyName: record.academyName ?? null,
+                  policyVersion: record.policyVersion ?? null,
+                  time: 'now',
+                  status: 'pending',
+                  grade: record.grade ?? null,
+                },
+                ...(state.signQueue ?? []),
+              ],
+            }),
       };
     }
     default:

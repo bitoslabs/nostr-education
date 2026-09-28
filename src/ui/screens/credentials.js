@@ -1,5 +1,6 @@
 import { el } from '../../core/dom.js';
 import { getPersona } from '../../data/personas.js';
+import { credentialProofText } from '../../domain/credential.js';
 import { ROLE } from '../../domain/school.js';
 import { credentialCard } from '../components/credential-card.js';
 import { createIssuedPanel } from '../components/issued-credentials.js';
@@ -62,6 +63,11 @@ export function renderCredentials({ store, app, scope }) {
                 grants: state.grants,
                 onShare: () => app.openShare(credential.id),
                 onRevoke: (index) => app.revokeGrant(index),
+                onCopyProof: (entry) =>
+                  app.copyText(
+                    credentialProofText(entry),
+                    'Credential proof copied — share it as a verifiable proof.',
+                  ),
               }),
             ),
           )

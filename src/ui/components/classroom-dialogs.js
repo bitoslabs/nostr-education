@@ -1,5 +1,6 @@
 import { el } from '../../core/dom.js';
 import { CLASS_STATUS, HOMEWORK_STATUS, classStatusBadge, homeworkStatusBadge } from '../../domain/classroom.js';
+import { normalizePolicy } from '../../domain/completion.js';
 import { buildScoreSheet, normalizeRubric, rubricMax, scoresTotal } from '../../domain/rubric.js';
 import { button, noteBox } from './primitives.js';
 import { inviteLinkPanel } from './invite-dialog.js';
@@ -554,6 +555,47 @@ export function renderGradeSubmission({ submission, homeworkItem, learnerName, a
     el('div', { class: 'dlg-foot' }, [
       button('Request revision', { onClick: requestRevision }),
       button('Save score', { variant: 'gold', onClick: saveScore }),
+    ]),
+  ]);
+}
+
+export function renderCompletionPolicy({ classroom, actions, close }) {
+  const policy = normalizePolicy(classroom.completion);
+  const error = errorLine();
+  const minAverage = el('input', {
+    type: 'number',
+    min: '0',
+    max: '100',
+    value: String(policy.minAverage),
+    'aria-label': 'Minimum average',
+  });
+  const requireAll = el('input', { type: 'checkbox', checked: policy.requireAllHomework });
+
+  return el('div', {}, [
+    el('h2', {}, `Completion rules · ${classroom.name}`),
+    el(
+      'p',
+      { class: 'muted small' },
+      `Version ${classroom.completionVersion ?? 0}. Changing the rules publishes a new version and recomputes eligibility.`,
+    ),
+    el('label', {}, 'Minimum average (%)'),
+    minAverage,
+    el('label', { class: 'check' }, [requireAll, el('span', {}, 'All homework must be graded')]),
+    error,
+    el('div', { class: 'dlg-foot' }, [
+      button('Cancel', { onClick: close }),
+      button('Save rules', {
+        variant: 'gold',
+        onClick: () => {
+          const ok = actions.setCompletionPolicy({
+            classroomId: classroom.id,
+            minAverage: minAverage.value,
+            requireAllHomework: requireAll.checked,
+          });
+          if (ok) close();
+          else error.textContent = 'Only the academy owner can change completion rules.';
+        },
+      }),
     ]),
   ]);
 }

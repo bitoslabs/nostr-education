@@ -16,6 +16,7 @@ import {
   submissionsForClassroom,
   subjectById,
 } from '../../domain/classroom.js';
+import { completionBadge, evaluateCompletion } from '../../domain/completion.js';
 import { ROLE } from '../../domain/school.js';
 import { button, emptyState, pageTitle, row, tabs } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
@@ -89,6 +90,46 @@ function classCard(state, app, room) {
     ...(homework.length
       ? homework.map((item) => homeworkBlock(state, app, item, students))
       : [emptyState('No homework posted yet.')]),
+    completionBlock(state, app, room, homework, students),
+  ]);
+}
+
+function completionBlock(state, app, room, homework, students) {
+  const rows = students.map((studentId) => {
+    const result = evaluateCompletion({
+      policy: room.completion,
+      homework,
+      submissions: state.submissions ?? [],
+      studentId,
+    });
+    const badge = completionBadge(result);
+    const recommended = (state.recommendations ?? []).some(
+      (entry) => entry.classroomId === room.id && entry.studentId === studentId && entry.status === 'recommended',
+    );
+    return row([
+      el('span', { class: 'who' }, getPersona(studentId).displayName),
+      recommended
+        ? statusBadge('recommended ✓', 'ok')
+        : statusBadge(badge.label, badge.tone),
+      el('span', { class: 'spacer' }),
+      !recommended && result.eligible
+        ? button('Recommend', {
+            variant: 'gold',
+            small: true,
+            onClick: () => app.recommendCompletion({ classroomId: room.id, studentId }),
+          })
+        : null,
+    ]);
+  });
+  if (!rows.length) rows.push(emptyState('No learners enrolled yet.'));
+
+  return el('div', {}, [
+    el('div', { class: 'crow' }, [
+      el('span', { class: 'who' }, 'Completion'),
+      el('span', { class: 'spacer' }),
+      button('Rules', { small: true, onClick: () => app.openCompletionPolicy(room.id) }),
+    ]),
+    el('div', { class: 'rows' }, rows),
   ]);
 }
 

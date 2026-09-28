@@ -3,7 +3,7 @@ import { statusLabel, statusTone } from '../../domain/credential.js';
 import { button, row } from './primitives.js';
 import { statusBadge } from './status-badge.js';
 
-export function credentialCard(credential, { grants = [], onShare, onRevoke } = {}) {
+export function credentialCard(credential, { grants = [], onShare, onRevoke, onCopyProof } = {}) {
   return el('article', { class: 'card' }, [
     el('div', { class: 'dhead' }, [
       el('h3', {}, credential.title),
@@ -16,8 +16,12 @@ export function credentialCard(credential, { grants = [], onShare, onRevoke } = 
       el('span', { class: 'mono' }, credential.expiresAt ?? 'no expiry'),
     ),
     credential.meta ? el('p', { class: 'muted small' }, credential.meta) : null,
+    credential.issuerNpub ? el('p', { class: 'mono small' }, credential.issuerNpub) : null,
     grantsList(grants, onRevoke),
-    button('Share access…', { variant: 'gold', onClick: () => onShare?.(credential) }),
+    el('div', { class: 'arow' }, [
+      button('Share access…', { variant: 'gold', onClick: () => onShare?.(credential) }),
+      button('Copy proof', { small: true, onClick: () => onCopyProof?.(credential) }),
+    ]),
   ]);
 }
 

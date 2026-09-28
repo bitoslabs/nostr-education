@@ -88,6 +88,20 @@ test('applyRecord applies a revision request to the submission', () => {
   assert.equal(patch.submissions[0].feedback, 'Please expand');
 });
 
+test('applyRecord adds a recommendation and a sign-queue entry', () => {
+  const patch = applyRecord(EMPTY, {
+    type: 'recommendation',
+    id: 'rec1',
+    studentId: 'pk1',
+    learnerName: 'Alice',
+    course: 'Maths',
+    grade: 88,
+  });
+  assert.equal(patch.recommendations[0].id, 'rec1');
+  assert.equal(patch.signQueue[0].id, 'sign-rec1');
+  assert.equal(patch.signQueue[0].status, 'pending');
+});
+
 test('record type groupings cover public and private data', () => {
   assert.equal(PUBLIC_RECORD_TYPES.includes(RECORD_TYPES.ACADEMY), true);
   assert.equal(PRIVATE_RECORD_TYPES.includes(RECORD_TYPES.GRADE), true);

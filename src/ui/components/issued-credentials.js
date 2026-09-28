@@ -2,6 +2,7 @@ import { el } from '../../core/dom.js';
 import { getPersona } from '../../data/personas.js';
 import { academyTypeLabel } from '../../domain/academy.js';
 import {
+  CREDENTIAL_STATUS,
   ISSUED_FILTERS,
   buildIssuedTimeline,
   filterIssuedEntries,
@@ -46,6 +47,7 @@ function recipientAvatar(entry) {
 
 function rowStatus(entry) {
   if (entry.kind === 'awaiting') return statusBadge('awaiting signature', 'warn');
+  if (entry.status === CREDENTIAL_STATUS.REVOKED) return statusBadge('revoked', 'err');
   if (entry.delivery === 'delivered') return statusBadge('✓ delivered', 'ok');
   if (entry.delivery === 'failed') return statusBadge('failed', 'err');
   return statusBadge('pending', 'warn');
@@ -59,7 +61,10 @@ function issuedRow(entry, app) {
       : [
           button('Verify', { small: true, onClick: () => app.navigate('/verify') }),
           button('Copy id', { small: true, onClick: () => app.copyText(entry.id, 'Credential id copied.') }),
-        ];
+          entry.status === CREDENTIAL_STATUS.ACTIVE
+            ? button('Revoke', { small: true, onClick: () => app.revokeCredential(entry.id) })
+            : null,
+        ].filter(Boolean);
 
   return el('article', { class: `issued-row issued-row--${entry.kind}` }, [
     recipientAvatar(entry),

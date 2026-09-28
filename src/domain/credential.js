@@ -32,6 +32,88 @@ export function privacyLevelLabel(level) {
   return String(level ?? '').toUpperCase();
 }
 
+/* ---------- Verifiable credential payload ---------- */
+
+export function credentialPayload({
+  academyName,
+  academyPubkey,
+  holderName,
+  course,
+  average = null,
+  policyVersion = null,
+  issuedAt = null,
+} = {}) {
+  return {
+    v: 1,
+    title: `${academyName ?? 'Academy'} Certificate`,
+    course: course ?? '',
+    holder: holderName ?? '',
+    average,
+    policyVersion,
+    issuer: academyPubkey ?? null,
+    issuedAt,
+  };
+}
+
+export function credentialProofContent(payload) {
+  return JSON.stringify(payload);
+}
+
+export function verifyCredential(credential, verifyFn) {
+  const proof = credential?.proof;
+  if (!proof?.sig) return { valid: false, reason: 'No signature on this credential.' };
+  if (typeof verifyFn !== 'function' || !verifyFn(proof)) {
+    return { valid: false, reason: 'The signature does not verify.' };
+  }
+  if (credential.issuerPubkey && proof.pubkey !== credential.issuerPubkey) {
+    return { valid: false, reason: 'The signing key does not match the issuer.' };
+  }
+  if (proof.content !== credentialProofContent(credential.payload)) {
+    return { valid: false, reason: 'The signed payload does not match this credential.' };
+  }
+  return { valid: true, reason: 'Signature verified against the issuer key.' };
+}
+
+export function credentialProofText(credential) {
+  return JSON.stringify({
+    id: credential.id,
+    title: credential.title,
+    course: credential.course ?? null,
+    issuedAt: credential.issuedAt ?? null,
+    issuer: credential.issuerPubkey ?? null,
+    payload: credential.payload ?? null,
+    proof: credential.proof ?? null,
+  });
+}
+
+export function credentialFromProof(text) {
+  try {
+    const data = JSON.parse(text);
+    const proof = data?.proof;
+    const payload = data?.payload;
+    if (!proof?.sig || !payload) return null;
+    return {
+      id: data.id ?? proof.id ?? null,
+      title: data.title ?? payload.title ?? 'Credential',
+      course: data.course ?? payload.course ?? null,
+      issuedAt: data.issuedAt ?? payload.issuedAt ?? null,
+      issuerPubkey: data.issuer ?? proof.pubkey ?? null,
+      issuerNpub: null,
+      issuer: null,
+      payload,
+      proof,
+      status: CREDENTIAL_STATUS.ACTIVE,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function revocationPayload({ credentialId, issuer, revokedAt } = {}) {
+  return { v: 1, credentialId, issuer: issuer ?? null, status: 'revoked', revokedAt: revokedAt ?? null };
+}
+
+
 /* ---------- Issuer timeline (owner "Issued by your organization") ---------- */
 
 export const ISSUED_FILTERS = Object.freeze([

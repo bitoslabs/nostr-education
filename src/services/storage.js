@@ -16,6 +16,8 @@ const PERSISTED_FIELDS = [
   'memberships',
   'joinRequests',
   'enrollRequests',
+  'recommendations',
+  'signQueue',
   'following',
 ];
 

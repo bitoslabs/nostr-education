@@ -11,6 +11,7 @@ import {
   submissionStatusBadge,
   subjectById,
 } from '../../domain/classroom.js';
+import { completionBadge, evaluateCompletion } from '../../domain/completion.js';
 import { MEMBERSHIP, membershipBadge } from '../../domain/school.js';
 import { button, emptyState, pageTitle } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
@@ -73,6 +74,16 @@ function classCard(state, app, persona, room) {
   const homework = homeworkForClassroom(state.homework ?? [], room.id).filter(
     (item) => item.status !== HOMEWORK_STATUS.DRAFT,
   );
+  const completion = evaluateCompletion({
+    policy: room.completion,
+    homework,
+    submissions: state.submissions ?? [],
+    studentId: persona.id,
+  });
+  const badge = completionBadge(completion);
+  const recommended = (state.recommendations ?? []).some(
+    (entry) => entry.classroomId === room.id && entry.studentId === persona.id && entry.status === 'recommended',
+  );
 
   return el('div', { class: 'card' }, [
     el('div', { class: 'crow' }, [
@@ -80,6 +91,11 @@ function classCard(state, app, persona, room) {
       subject ? el('span', { class: 'ctx' }, subject.name) : null,
     ]),
     el('p', { class: 'muted small' }, teacher ? `Teacher: ${teacher.displayName} ✓` : 'No teacher assigned'),
+    recommended
+      ? el('p', {}, statusBadge('✓ completion recommended', 'ok'))
+      : badge
+        ? el('p', {}, statusBadge(badge.label, badge.tone))
+        : null,
     ...(homework.length
       ? homework.map((item) => homeworkRow(state, app, persona, item))
       : [emptyState('No homework yet.')]),

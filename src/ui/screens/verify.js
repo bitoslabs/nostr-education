@@ -1,15 +1,21 @@
 import { el } from '../../core/dom.js';
-import { statusLabel, statusTone } from '../../domain/credential.js';
+import {
+  credentialFromProof,
+  statusLabel,
+  statusTone,
+  verifyCredential,
+} from '../../domain/credential.js';
+import { verify } from '../../services/nostr.js';
 import { identityChip } from '../components/identity-chip.js';
 import { button, noteBox, pageTitle, row } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
 
 export function renderVerify({ store, app }) {
   const result = el('div', { class: 'verify__result', 'aria-live': 'polite' });
-  const input = el('input', {
-    type: 'search',
-    placeholder: 'Credential id, e.g. cred-cs-bsc',
-    'aria-label': 'Credential id',
+  const input = el('textarea', {
+    rows: '4',
+    placeholder: 'Paste a credential id or a shared credential proof (JSON)',
+    'aria-label': 'Credential id or proof',
   });
 
   function run() {
@@ -17,21 +23,33 @@ export function renderVerify({ store, app }) {
     result.replaceChildren();
     if (!query) return;
 
-    const credential = store.getState().credentials.find((entry) => entry.id === query);
+    const local = store.getState().credentials.find((entry) => entry.id === query);
+    const pasted = local ? null : credentialFromProof(query);
+    const credential = local ?? pasted;
     if (!credential) {
-      result.append(noteBox('No credential matched that id.', 'warn'));
+      result.append(
+        noteBox('No credential matched that id, and this is not a valid proof. Paste the id or the shared proof (JSON).', 'warn'),
+      );
       return;
     }
 
+    const check = verifyCredential(credential, verify);
     result.append(
       el('div', { class: 'card' }, [
         el('h3', {}, credential.title),
         row([
           statusBadge(statusLabel(credential.status), statusTone(credential.status)),
+          statusBadge(check.valid ? '✓ signature valid' : '⚠ signature not verified', check.valid ? 'ok' : 'warn'),
           el('span', { class: 'spacer' }),
         ]),
+        el('p', { class: 'muted small' }, check.reason),
+        credential.course ? el('p', { class: 'muted small' }, credential.course) : null,
         el('p', { class: 'muted small' }, 'Issuer'),
-        identityChip(credential.issuer),
+        credential.issuer ? identityChip(credential.issuer) : null,
+        credential.issuerPubkey || credential.issuerNpub
+          ? el('p', { class: 'mono small' }, credential.issuerNpub ?? credential.issuerPubkey)
+          : null,
+        pasted ? el('p', { class: 'muted small' }, 'Checked from a shared proof — status is not included in the proof.') : null,
         noteBox('A valid signature alone is not endorsement. Check status and freshness.'),
       ]),
     );

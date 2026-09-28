@@ -5,6 +5,7 @@ import { classroomById, subjectById, submissionFor, subjectsForAcademy } from '.
 import { ROLE } from '../domain/school.js';
 import { renderCreateAcademy } from '../ui/components/academy-dialog.js';
 import {
+  renderCompletionPolicy,
   renderCreateClassroom,
   renderCreateHomework,
   renderCreateSubject,
@@ -147,6 +148,15 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
         actions,
         close: closeNamed('manage-classroom'),
       }),
+    });
+  }
+
+  function openCompletionPolicy(classroomId) {
+    const classroom = classroomById(store.getState().classrooms ?? [], classroomId);
+    if (!classroom) return null;
+    return openNamed('completion-policy', {
+      label: `Completion rules · ${classroom.name}`,
+      content: renderCompletionPolicy({ classroom, actions, close: closeNamed('completion-policy') }),
     });
   }
 
@@ -296,6 +306,7 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     openEditSubject,
     openCreateClassroom,
     openManageClassroom,
+    openCompletionPolicy,
     openInviteStudent,
     openInviteClassTeacher,
     openClassLink,

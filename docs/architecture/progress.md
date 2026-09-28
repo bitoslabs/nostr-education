@@ -40,31 +40,38 @@ records which parts are built and what is next.
 
 ### Slice 5 — Completion
 
-- [ ] Eligibility rules and teacher recommendation (not started; demo scaffolding has been removed)
+- [x] Versioned completion policy per class (minimum average + all-homework requirement), owner-editable
+- [x] Eligibility computed from real graded submissions, per enrolled learner
+- [x] Teacher / owner "recommend completion", recorded privately and encrypted to the issuer; no signing authority granted
+- [x] Recommendations feed the organization sign queue (`signQueue` + `openSign`)
 
 ### Slice 6 — Nostr identity pilot
 
 - [x] Public academy / staff profile (`kind:0`)
 - [ ] NIP-05 identifier lookup and signature checks for credentials
-- [ ] No coursework or roster data on a public relay (enforced for classrooms; keep verifying new events)
+- [ ] No coursework or roster data on a public relay (classroom records sanitised; keep verifying new events)
 
 ### Slice 7 — Credential pilot
 
-- [ ] Formal credential format, issuer approval, sharing, status, and verification
+- [x] Credential payload (recipient, course, average, policy version, issued-at) signed by the **academy key**
+- [x] Issuer approval: a `signQueue` recommendation becomes a signed credential and is published to relays
+- [x] Verification on the Verify screen: signature, issuer key, and payload match
+- [x] Revocation: `revokeCredential` publishes an academy-signed status event; verifiers see `revoked`
+- [x] Shareable public proof ("Copy proof") — signed event only, no roster or grade list
+- [x] Verify screen accepts a pasted proof (JSON) as well as a local id
+- [ ] Recipient receives the credential on another device (needs the private channel)
 
 ## Next task
 
-Slice 5 — completion rules and teacher recommendation.
+Slice 6 — NIP-05 identifiers for issuers.
 
-1. Define completion rules as a versioned policy on the class (for example, required homework plus a
-   minimum average), editable by the owner before the class starts; changes create a new version.
-2. Calculate eligibility per enrolled student from real graded submissions (`averagePercent`,
-   `reviewQueue`) and show who is eligible, pending, or short.
-3. Add a teacher "recommend completion" action that records the recommendation for an eligible
-   student; it must not grant issuer signing authority. Keep the recommendation in the private data
-   model, not on a public relay.
-4. Wire the existing organization sign queue (`state.signQueue`, `openSign`) to recommendations so an
-   authorized issuer can approve and sign in slice 7.
+1. Add a `resolveNip05('name@domain')` helper that fetches `https://domain/.well-known/nostr.json?name=`
+   and returns the matching `npub`, with an offline / `null` fallback.
+2. Show the issuer's verified `name@domain` beside the `npub` on the Verify screen when the credential
+   carries a NIP-05 identifier; fall back to the `npub` when nothing resolves.
+3. Put the academy's NIP-05 handle into the credential payload so a shared proof carries the
+   human-readable issuer, and let the academy set that handle (already surfaced in Academy info).
+4. Keep lookup failures non-fatal: signature first, identifier second.
 
 ## Housekeeping
 

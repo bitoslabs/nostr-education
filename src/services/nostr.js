@@ -14,6 +14,7 @@ export const KIND = Object.freeze({
   PROFILE: 0,
   NOTE: 1,
   APP_DATA: 30078,
+  CREDENTIAL: 30080,
 });
 
 export function generateKeyPair() {
