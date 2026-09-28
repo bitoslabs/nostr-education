@@ -8,6 +8,7 @@ import { createStore } from './core/store.js';
 import { getPersona, getPersonaIds, hydrateProfiles, registerPersona } from './data/personas.js';
 import { DEFAULT_SIGNER } from './domain/account.js';
 import { findAcademyById } from './domain/academy.js';
+import { classroomById } from './domain/classroom.js';
 import { credentialFromEvent } from './domain/credential.js';
 import { RECORD_TYPES, applyRecord, isPublicRecord } from './domain/records.js';
 import { parseProfileMeta } from './domain/profile.js';
@@ -280,7 +281,13 @@ function catalogAuthorization(record, pubkey) {
   if (record.type === RECORD_TYPES.ACADEMY) return record.ownerId === pubkey;
   const academy = findAcademyById(store.getState().academies ?? {}, record.academyId);
   if (!academy) return null;
-  return academy.ownerId === pubkey;
+  if (academy.ownerId === pubkey) return true;
+  if (record.type === RECORD_TYPES.JOIN_LINK && record.classroomId) {
+    const classroom = classroomById(store.getState().classrooms ?? [], record.classroomId);
+    if (!classroom) return null;
+    return classroom.academyId === academy.id && classroom.teacherId === pubkey;
+  }
+  return false;
 }
 
 function flushPendingCatalog(academyId) {
@@ -309,6 +316,7 @@ function syncCatalog() {
       }
       applyCatalog(record);
       if (record.type === RECORD_TYPES.ACADEMY) flushPendingCatalog(record.id);
+      if (record.type === RECORD_TYPES.CLASSROOM) flushPendingCatalog(record.academyId);
     },
   });
 }

@@ -183,7 +183,7 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     if (!invite) return null;
     return openNamed('class-link', {
       label: 'Class join link',
-      content: el('div', {}, inviteLinkPanel({ invite, copyText: actions.copyText, close: closeNamed('class-link') })),
+      content: el('div', {}, inviteLinkPanel({ invite, copyText: actions.copyText, actions, close: closeNamed('class-link') })),
     });
   }
 

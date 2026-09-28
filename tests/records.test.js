@@ -89,6 +89,36 @@ test('applyRecord applies a revision request to the submission', () => {
   assert.equal(patch.submissions[0].feedback, 'Please expand');
 });
 
+test('applyRecord stores a public join link invite without wrapper fields', () => {
+  const patch = applyRecord(EMPTY, {
+    v: 1,
+    type: 'joinlink',
+    id: 'inv1',
+    code: 'abcd1234',
+    academyId: 'org1',
+    role: 'student',
+    status: 'pending',
+    target: '',
+  });
+  assert.equal(patch.invites.length, 1);
+  assert.equal(patch.invites[0].code, 'abcd1234');
+  assert.equal('type' in patch.invites[0], false);
+  assert.equal('v' in patch.invites[0], false);
+
+  const merged = applyRecord({ ...EMPTY, invites: patch.invites }, {
+    v: 1,
+    type: 'joinlink',
+    id: 'inv1',
+    code: 'abcd1234',
+    academyId: 'org1',
+    role: 'student',
+    status: 'revoked',
+    target: '',
+  });
+  assert.equal(merged.invites.length, 1);
+  assert.equal(merged.invites[0].status, 'revoked');
+});
+
 test('applyRecord adds a recommendation and a sign-queue entry', () => {
   const patch = applyRecord(EMPTY, {
     type: 'recommendation',
@@ -117,8 +147,8 @@ test('toPublicRecord strips roster fields without mutating the source', () => {
   assert.deepEqual(classroom.studentIds, ['alice']);
 });
 
-test('the public record set is exactly academy, subject, classroom', () => {
-  assert.deepEqual([...PUBLIC_RECORD_TYPES].sort(), ['academy', 'classroom', 'subject']);
+test('the public record set is exactly academy, subject, classroom, joinlink', () => {
+  assert.deepEqual([...PUBLIC_RECORD_TYPES].sort(), ['academy', 'classroom', 'joinlink', 'subject']);
 });
 
 test('private record types never overlap the public set', () => {

@@ -3,6 +3,7 @@ import { CLASS_STATUS, HOMEWORK_STATUS, classStatusBadge, homeworkStatusBadge } 
 import { normalizePolicy } from '../../domain/completion.js';
 import { buildScoreSheet, normalizeRubric, rubricMax, scoresTotal } from '../../domain/rubric.js';
 import { button, noteBox } from './primitives.js';
+import { formFoot, formSection } from './form-fields.js';
 import { inviteLinkPanel } from './invite-dialog.js';
 import { statusBadge } from './status-badge.js';
 
@@ -56,61 +57,86 @@ function rubricEditor(initial = []) {
 }
 
 export function renderCreateSubject({ actions, close }) {
-  const nameInput = el('input', { type: 'text', placeholder: 'Computer Science', 'aria-label': 'Subject name' });
-  const codeInput = el('input', { type: 'text', placeholder: 'CS', 'aria-label': 'Subject code' });
+  const nameInput = el('input', { id: 'subject-name', type: 'text', placeholder: 'Computer Science' });
+  const codeInput = el('input', { id: 'subject-code', type: 'text', placeholder: 'CS' });
   const error = errorLine();
+  const cancel = button('Cancel', { onClick: close });
+  const submit = button('Add subject', { variant: 'gold', type: 'submit' });
+
+  const run = () => {
+    if (!String(nameInput.value).trim()) {
+      error.textContent = 'Enter a subject name.';
+      nameInput.focus();
+      return;
+    }
+    const subject = actions.createSubject({ name: nameInput.value, code: codeInput.value });
+    if (subject) close();
+  };
 
   return el('div', {}, [
     el('h2', {}, 'New subject'),
     el('p', { class: 'muted small' }, 'A subject is a reused area of study. Classrooms belong to a subject.'),
-    el('label', {}, 'Subject name'),
-    nameInput,
-    el('label', {}, 'Code (optional)'),
-    codeInput,
-    error,
-    el('div', { class: 'dlg-foot' }, [
-      button('Cancel', { onClick: close }),
-      button('Add subject', {
-        variant: 'gold',
-        onClick: () => {
-          if (!String(nameInput.value).trim()) {
-            error.textContent = 'Enter a subject name.';
-            return;
-          }
-          const subject = actions.createSubject({ name: nameInput.value, code: codeInput.value });
-          if (subject) close();
+    el(
+      'form',
+      {
+        onSubmit: (event) => {
+          event.preventDefault();
+          run();
         },
-      }),
-    ]),
+      },
+      [
+        formSection('Subject', [
+          el('label', { for: 'subject-name' }, 'Name'),
+          nameInput,
+          el('label', { for: 'subject-code' }, 'Code (optional)'),
+          codeInput,
+          el('p', { class: 'field-hint' }, 'A short code such as CS or MATH appears beside the subject in your course list.'),
+        ]),
+        error,
+        formFoot([cancel, submit]),
+      ],
+    ),
   ]);
 }
 
 export function renderEditSubject({ actions, close, subject }) {
-  const nameInput = el('input', { type: 'text', value: subject.name ?? '', 'aria-label': 'Subject name' });
-  const codeInput = el('input', { type: 'text', value: subject.code ?? '', 'aria-label': 'Subject code' });
+  const nameInput = el('input', { id: 'edit-subject-name', type: 'text', value: subject.name ?? '' });
+  const codeInput = el('input', { id: 'edit-subject-code', type: 'text', value: subject.code ?? '' });
   const error = errorLine();
+  const cancel = button('Cancel', { onClick: close });
+  const submit = button('Save changes', { variant: 'gold', type: 'submit' });
+
+  const run = () => {
+    if (!String(nameInput.value).trim()) {
+      error.textContent = 'Enter a subject name.';
+      nameInput.focus();
+      return;
+    }
+    const ok = actions.updateSubject({ subjectId: subject.id, name: nameInput.value, code: codeInput.value });
+    if (ok) close();
+  };
 
   return el('div', {}, [
     el('h2', {}, 'Edit subject'),
-    el('label', {}, 'Subject name'),
-    nameInput,
-    el('label', {}, 'Code (optional)'),
-    codeInput,
-    error,
-    el('div', { class: 'dlg-foot' }, [
-      button('Cancel', { onClick: close }),
-      button('Save changes', {
-        variant: 'gold',
-        onClick: () => {
-          if (!String(nameInput.value).trim()) {
-            error.textContent = 'Enter a subject name.';
-            return;
-          }
-          const ok = actions.updateSubject({ subjectId: subject.id, name: nameInput.value, code: codeInput.value });
-          if (ok) close();
+    el(
+      'form',
+      {
+        onSubmit: (event) => {
+          event.preventDefault();
+          run();
         },
-      }),
-    ]),
+      },
+      [
+        formSection('Subject', [
+          el('label', { for: 'edit-subject-name' }, 'Name'),
+          nameInput,
+          el('label', { for: 'edit-subject-code' }, 'Code (optional)'),
+          codeInput,
+        ]),
+        error,
+        formFoot([cancel, submit]),
+      ],
+    ),
   ]);
 }
 
@@ -121,75 +147,87 @@ export function renderCreateClassroom({ actions, close, subjects = [], teachers 
     return el('div', {}, [
       el('h2', {}, 'New classroom'),
       noteBox('Create a subject first — a classroom belongs to a subject.', 'warn'),
-      el('div', { class: 'dlg-foot' }, [button('Close', { onClick: close })]),
+      formFoot([button('Close', { onClick: close })], true),
     ]);
   }
 
-  const subjectSelect = el(
-    'select',
-    { 'aria-label': 'Subject' },
-    subjects.map((subject) => el('option', { value: subject.id }, `${subject.name}${subject.code ? ` (${subject.code})` : ''}`)),
-  );
-  const nameInput = el('input', { type: 'text', placeholder: 'Applied Cryptography', 'aria-label': 'Classroom name' });
-  const termInput = el('input', { type: 'text', placeholder: 'Term 1', 'aria-label': 'Term' });
+  const subjectSelect = el('select', { id: 'classroom-subject' }, subjects.map((subject) => el('option', { value: subject.id }, `${subject.name}${subject.code ? ` (${subject.code})` : ''}`)));
+  const nameInput = el('input', { id: 'classroom-name', type: 'text', placeholder: 'Applied Cryptography' });
+  const termInput = el('input', { id: 'classroom-term', type: 'text', placeholder: 'Term 1' });
   const teacherSelect = el(
     'select',
-    { 'aria-label': 'Teacher' },
+    { id: 'classroom-teacher' },
     [
       el('option', { value: '' }, '— Assign later —'),
       ...teachers.map((teacher) => el('option', { value: teacher.id }, `${teacher.displayName} · teacher`)),
       el('option', { value: '__invite__' }, '✉ Invite a teacher by handle…'),
     ],
   );
-  const inviteName = el('input', { type: 'text', placeholder: 'Teacher name', 'aria-label': 'Teacher name' });
-  const inviteHandle = el('input', { type: 'text', placeholder: '@bob or npub1…', 'aria-label': 'Teacher handle' });
-  const inviteWrap = el('div', {}, [
-    el('label', {}, 'Invite name'),
+  const inviteName = el('input', { id: 'classroom-invite-name', type: 'text', placeholder: 'Teacher name' });
+  const inviteHandle = el('input', { id: 'classroom-invite-handle', type: 'text', placeholder: '@bob or npub1…' });
+  const inviteWrap = formSection('Invite by handle', [
+    el('label', { for: 'classroom-invite-name' }, 'Name (optional)'),
     inviteName,
-    el('label', {}, 'Handle or npub'),
+    el('label', { for: 'classroom-invite-handle' }, 'Handle or npub'),
     inviteHandle,
   ]);
 
   teacherSelect.addEventListener('change', () => {
-    inviteWrap.style.display = teacherSelect.value === '__invite__' ? '' : 'none';
+    inviteWrap.hidden = teacherSelect.value !== '__invite__';
   });
-  inviteWrap.style.display = 'none';
+  inviteWrap.hidden = true;
+
+  const cancel = button('Cancel', { onClick: close });
+  const submit = button('Create classroom', { variant: 'gold', type: 'submit' });
+
+  const run = () => {
+    const inviting = teacherSelect.value === '__invite__';
+    if (inviting && !String(inviteHandle.value).trim()) {
+      error.textContent = 'Enter the teacher handle or npub.';
+      inviteHandle.focus();
+      return;
+    }
+    const classroom = actions.createClassroom({
+      subjectId: subjectSelect.value,
+      name: nameInput.value,
+      term: termInput.value,
+      teacherId: inviting ? null : teacherSelect.value || null,
+      inviteTarget: inviting ? inviteHandle.value : '',
+      inviteName: inviting ? inviteName.value : '',
+    });
+    if (classroom) close();
+  };
 
   return el('div', {}, [
     el('h2', {}, 'New classroom'),
     el('p', { class: 'muted small' }, 'A classroom runs one subject for a term. Assign a teacher to publish it.'),
-    el('label', {}, 'Subject'),
-    subjectSelect,
-    el('label', {}, 'Classroom name'),
-    nameInput,
-    el('label', {}, 'Term'),
-    termInput,
-    el('label', {}, 'Teacher'),
-    teacherSelect,
-    inviteWrap,
-    error,
-    el('div', { class: 'dlg-foot' }, [
-      button('Cancel', { onClick: close }),
-      button('Create classroom', {
-        variant: 'gold',
-        onClick: () => {
-          const inviting = teacherSelect.value === '__invite__';
-          if (inviting && !String(inviteHandle.value).trim()) {
-            error.textContent = 'Enter the teacher handle or npub.';
-            return;
-          }
-          const classroom = actions.createClassroom({
-            subjectId: subjectSelect.value,
-            name: nameInput.value,
-            term: termInput.value,
-            teacherId: inviting ? null : teacherSelect.value || null,
-            inviteTarget: inviting ? inviteHandle.value : '',
-            inviteName: inviting ? inviteName.value : '',
-          });
-          if (classroom) close();
+    el(
+      'form',
+      {
+        onSubmit: (event) => {
+          event.preventDefault();
+          run();
         },
-      }),
-    ]),
+      },
+      [
+        formSection('Classroom', [
+          el('label', { for: 'classroom-subject' }, 'Subject'),
+          subjectSelect,
+          el('label', { for: 'classroom-name' }, 'Classroom name'),
+          nameInput,
+          el('label', { for: 'classroom-term' }, 'Term'),
+          termInput,
+        ]),
+        formSection('Teacher', [
+          el('label', { for: 'classroom-teacher' }, 'Teacher'),
+          teacherSelect,
+          el('p', { class: 'field-hint' }, 'A classroom without a teacher stays a draft, hidden from learners.'),
+        ]),
+        inviteWrap,
+        error,
+        formFoot([cancel, submit]),
+      ],
+    ),
   ]);
 }
 
@@ -200,16 +238,16 @@ export function renderManageClassroom({ classroom, subjects = [], teachers = [],
 
   const subjectSelect = el(
     'select',
-    { 'aria-label': 'Subject' },
+    { id: 'manage-classroom-subject' },
     subjects.map((subject) => el('option', { value: subject.id }, `${subject.name}${subject.code ? ` (${subject.code})` : ''}`)),
   );
   subjectSelect.value = classroom.subjectId;
 
-  const nameInput = el('input', { type: 'text', value: classroom.name ?? '', 'aria-label': 'Classroom name' });
-  const termInput = el('input', { type: 'text', value: classroom.term ?? '', 'aria-label': 'Term' });
+  const nameInput = el('input', { id: 'manage-classroom-name', type: 'text', value: classroom.name ?? '' });
+  const termInput = el('input', { id: 'manage-classroom-term', type: 'text', value: classroom.term ?? '' });
   const teacherSelect = el(
     'select',
-    { 'aria-label': 'Teacher' },
+    { id: 'manage-classroom-teacher' },
     [
       el('option', { value: '' }, '— No teacher —'),
       ...teachers.map((teacher) => el('option', { value: teacher.id }, `${teacher.displayName} · teacher`)),
@@ -217,52 +255,78 @@ export function renderManageClassroom({ classroom, subjects = [], teachers = [],
   );
   teacherSelect.value = classroom.teacherId ?? '';
 
+  const cancel = button('Cancel', { onClick: close });
+  const submit = button('Save changes', { variant: 'gold', type: 'submit' });
+
+  const run = () => {
+    if (!String(nameInput.value).trim()) {
+      error.textContent = 'Enter a classroom name.';
+      nameInput.focus();
+      return;
+    }
+    const ok = actions.updateClassroom({
+      classroomId: classroom.id,
+      name: nameInput.value,
+      term: termInput.value,
+      subjectId: subjectSelect.value,
+      teacherId: teacherSelect.value || null,
+    });
+    if (ok) close();
+  };
+
   return el('div', {}, [
     el('h2', {}, `Manage · ${classroom.name}`),
     badge ? el('p', {}, statusBadge(badge.label, badge.tone)) : null,
-    subjects.length
-      ? el('div', {}, [el('label', {}, 'Subject'), subjectSelect])
-      : noteBox('Create a subject before editing this classroom.', 'warn'),
-    el('label', {}, 'Classroom name'),
-    nameInput,
-    el('label', {}, 'Term'),
-    termInput,
-    el('label', {}, 'Teacher'),
-    teacherSelect,
-    error,
-    el('div', { class: 'dlg-foot' }, [
-      button('Cancel', { onClick: close }),
-      button('Save changes', {
-        variant: 'gold',
-        onClick: () => {
-          if (!String(nameInput.value).trim()) {
-            error.textContent = 'Enter a classroom name.';
-            return;
-          }
-          const ok = actions.updateClassroom({
-            classroomId: classroom.id,
-            name: nameInput.value,
-            term: termInput.value,
-            subjectId: subjectSelect.value,
-            teacherId: teacherSelect.value || null,
-          });
-          if (ok) close();
+    el(
+      'form',
+      {
+        onSubmit: (event) => {
+          event.preventDefault();
+          run();
         },
-      }),
-    ]),
-    el('div', { class: 'arow' }, [
-      archived
-        ? button('Restore class', { small: true, onClick: () => { actions.restoreClassroom(classroom.id); close(); } })
-        : button('Archive class', { small: true, onClick: () => { actions.archiveClassroom(classroom.id); close(); } }),
-      button('Delete classroom', {
-        variant: 'ghost',
-        small: true,
-        onClick: async () => {
-          const ok = await actions.deleteClassroom(classroom.id);
-          if (ok) close();
-        },
-      }),
-    ]),
+      },
+      [
+        subjects.length
+          ? formSection('Classroom', [
+              el('label', { for: 'manage-classroom-subject' }, 'Subject'),
+              subjectSelect,
+              el('label', { for: 'manage-classroom-name' }, 'Classroom name'),
+              nameInput,
+              el('label', { for: 'manage-classroom-term' }, 'Term'),
+              termInput,
+            ])
+          : formSection('Classroom', [
+              noteBox('Create a subject before editing this classroom.', 'warn'),
+              el('label', { for: 'manage-classroom-name' }, 'Classroom name'),
+              nameInput,
+              el('label', { for: 'manage-classroom-term' }, 'Term'),
+              termInput,
+            ]),
+        formSection('Teacher', [
+          el('label', { for: 'manage-classroom-teacher' }, 'Teacher'),
+          teacherSelect,
+          el('p', { class: 'field-hint' }, 'A classroom without a teacher stays a draft, hidden from learners.'),
+        ]),
+        error,
+        formSection('Danger zone', [
+          el('p', { class: 'muted small' }, 'Archiving hides the classroom from learners but keeps its records. Deleting removes it permanently.'),
+          el('div', { class: 'arow' }, [
+            archived
+              ? button('Restore class', { small: true, onClick: () => { actions.restoreClassroom(classroom.id); close(); } })
+              : button('Archive class', { small: true, onClick: () => { actions.archiveClassroom(classroom.id); close(); } }),
+            button('Delete classroom', {
+              variant: 'danger',
+              small: true,
+              onClick: async () => {
+                const ok = await actions.deleteClassroom(classroom.id);
+                if (ok) close();
+              },
+            }),
+          ]),
+        ]),
+        formFoot([cancel, submit]),
+      ],
+    ),
   ]);
 }
 
@@ -288,7 +352,7 @@ function targetInviteDialog({ title, blurb, invite, actions, close }) {
             error.textContent = 'Check the handle or npub, then try again.';
             return;
           }
-          body.replaceChildren(...inviteLinkPanel({ invite: created, copyText: actions.copyText, close }));
+          body.replaceChildren(...inviteLinkPanel({ invite: created, copyText: actions.copyText, actions, close }));
         },
       }),
     ]),

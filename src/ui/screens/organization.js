@@ -142,15 +142,24 @@ function coursesBody(state, app, academy) {
   const cards = subjects.map((subject) => {
     const rooms = classrooms.filter((room) => room.subjectId === subject.id);
     return el('div', { class: 'card' }, [
-      el('div', { class: 'crow' }, [
-        el('span', { class: 'who' }, subject.name),
-        subject.code ? el('span', { class: 'ctx' }, subject.code) : null,
+      el('div', { class: 'secthead subject-head' }, [
+        el('span', { class: 'subject-id' }, [
+          el('span', { class: 'who' }, subject.name),
+          subject.code ? el('span', { class: 'ctx' }, subject.code) : null,
+        ]),
+        el(
+          'span',
+          { class: 'muted small' },
+          rooms.length ? `${rooms.length} classroom${rooms.length === 1 ? '' : 's'}` : 'no classrooms',
+        ),
         el('span', { class: 'spacer' }),
-        button('Edit', { small: true, onClick: () => app.openEditSubject(subject.id) }),
-        button('Delete', { small: true, onClick: () => app.deleteSubject(subject.id) }),
+        el('div', { class: 'inline-actions' }, [
+          button('Edit', { small: true, onClick: () => app.openEditSubject(subject.id) }),
+          button('Delete', { small: true, onClick: () => app.deleteSubject(subject.id) }),
+        ]),
       ]),
       rooms.length
-        ? el('div', { class: 'rows' }, rooms.map((room) => classroomRow(state, app, room)))
+        ? el('div', { class: 'rows classroom-rows' }, rooms.map((room) => classroomRow(state, app, room)))
         : emptyState('No classrooms yet.'),
     ]);
   });
@@ -174,18 +183,13 @@ function classroomRow(state, app, room) {
       invite.status === INVITE_STATUS.PENDING,
   );
   const learners = (room.studentIds ?? []).length;
+  const teacherLine = teacher
+    ? `teacher ${teacher.displayName} ✓`
+    : pendingTeacher
+      ? 'teacher invite pending'
+      : 'no teacher';
 
-  return row([
-    el('span', { class: 'who' }, room.name),
-    el('span', { class: 'muted small' }, room.term || 'no term'),
-    badge ? statusBadge(badge.label, badge.tone) : null,
-    el(
-      'span',
-      { class: 'muted small' },
-      teacher ? `teacher ${teacher.displayName} ✓` : pendingTeacher ? 'teacher invite pending' : 'no teacher',
-    ),
-    el('span', { class: 'spacer' }),
-    teacher ? el('span', { class: 'muted small' }, `${learners} learner${learners === 1 ? '' : 's'}`) : null,
+  const actions = [
     pendingTeacher
       ? button('Copy invite', { small: true, onClick: () => app.copyInviteLink(pendingTeacher.id) })
       : null,
@@ -194,6 +198,21 @@ function classroomRow(state, app, room) {
       ? button('Publish', { variant: 'gold', small: true, onClick: () => app.publishClassroom(room.id) })
       : null,
     button('Manage', { small: true, onClick: () => app.openManageClassroom(room.id) }),
+  ].filter(Boolean);
+
+  return el('div', { class: 'classroom-row' }, [
+    el('div', { class: 'classroom-row__body' }, [
+      el('div', { class: 'classroom-row__title' }, [
+        el('span', { class: 'who' }, room.name),
+        room.term ? el('span', { class: 'muted small' }, room.term) : null,
+        badge ? statusBadge(badge.label, badge.tone) : null,
+      ]),
+      el('div', { class: 'classroom-row__meta' }, [
+        el('span', { class: 'muted small' }, teacherLine),
+        teacher ? el('span', { class: 'muted small' }, `${learners} learner${learners === 1 ? '' : 's'}`) : null,
+      ]),
+    ]),
+    el('div', { class: 'inline-actions' }, actions),
   ]);
 }
 
@@ -241,7 +260,7 @@ function enrollmentBody(state, app, academy) {
       el('h3', {}, 'Invite learners'),
       el('p', { class: 'muted small' }, 'Share a join link. Learners accept it, then land in the membership queue for your approval.'),
       el('div', { class: 'arow' }, [
-        button('Copy join link', { variant: 'gold', small: true, onClick: () => app.openInviteLink(ROLE.STUDENT) }),
+        button('Share join link', { variant: 'gold', small: true, onClick: () => app.openInviteLink(ROLE.STUDENT) }),
       ]),
       links.length
         ? el(

@@ -222,6 +222,49 @@
   word-break: break-all;
 }
 
+.invite-share {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  margin: 4px 0 8px;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn);
+  border-radius: 14px;
+}
+
+.invite-share.is-live {
+  background: var(--ok-bg);
+  border-color: var(--ok);
+}
+
+.invite-share__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.invite-share__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--warn);
+  flex: none;
+}
+
+.invite-share.is-live .invite-share__dot {
+  background: var(--ok);
+}
+
+.invite-share__msg {
+  margin: 0;
+}
+
+.invite-share .btn {
+  width: 100%;
+}
+
 /* ---------- engagement bar (feed social actions) ---------- */
 .actions {
   display: flex;
@@ -2181,4 +2224,71 @@ textarea:focus {
   margin: 18px 0 0;
   padding: 14px 0 0;
   background: transparent;
+}
+
+/* ---------- Courses: subject header + classroom rows ---------- */
+/* Keep the subject code next to its name instead of letting it float to the
+   middle of the row (the global `.ctx` pushes itself right). */
+.subject-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.subject-id .ctx {
+  margin-left: 0;
+}
+
+.subject-head {
+  flex-wrap: wrap;
+}
+
+/* Rows are full-bleed inside the card so their content lines up with the
+   subject header and the dividers span the whole card. */
+.classroom-rows {
+  margin: 10px -16px -14px;
+}
+
+.classroom-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 14px;
+  flex-wrap: wrap;
+  padding: 13px 16px;
+}
+
+.classroom-row__body {
+  display: grid;
+  gap: 4px;
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.classroom-row__title,
+.classroom-row__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Group the row's actions so they wrap together and stay right-aligned
+   instead of orphaning a single button onto the next line. */
+.classroom-row > .inline-actions {
+  margin-left: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* Destructive action (classroom delete) reads as danger, not a neutral ghost. */
+.btn--danger {
+  background: var(--err-bg);
+  color: var(--err);
+  border: 1px solid transparent;
+}
+
+.btn--danger:hover {
+  border-color: var(--err);
 }

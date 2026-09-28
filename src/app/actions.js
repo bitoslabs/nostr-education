@@ -12,9 +12,9 @@ import {
   publicKeyFromSecret,
   encodeNsec,
 } from '../services/nostr.js';
-import { encodeRecord, recordTags } from '../services/records.js';
+import { APP_TAG, decodeRecord, encodeRecord, recordTags } from '../services/records.js';
 import { normalizeBlossomServer, uploadBlob } from '../services/blossom.js';
-import { toPublicRecord } from '../domain/records.js';
+import { RECORD_TYPES, toPublicRecord } from '../domain/records.js';
 import { buildScoreSheet, normalizeRubric, rubricMax, scoresComplete, scoresTotal } from '../domain/rubric.js';
 import { credentialPayload, credentialProofContent, revocationPayload } from '../domain/credential.js';
 import { ACTION, authorize } from '../domain/authorization.js';
@@ -1046,9 +1046,75 @@ export function createActions({ store, bus, signer, confirm, relay }) {
         title: 'Send invite',
         action: el('span', {}, `Send the teacher invite to ${label} (encrypted).`),
       });
+    } else {
+      publishJoinLink(invite, `Publish the teacher join link for ${academy.name}.`);
     }
     toast(`Invite ready for ${label}.`, 'ok');
     return { ...invite, url: inviteUrl(invite.code, appBase()) };
+  }
+
+  function publicLinkPayload(invite) {
+    const { target, name, ...rest } = invite;
+    return rest;
+  }
+
+  function publishJoinLink(invite, message) {
+    if (!invite?.id) return Promise.resolve(false);
+    return publishRecord({
+      type: RECORD_TYPES.JOIN_LINK,
+      id: invite.id,
+      payload: publicLinkPayload(invite),
+      title: 'Publish join link',
+      action: el('span', {}, message),
+    }).then((published) => {
+      if (!published || !published.count) {
+        toast('Join link saved on this device, but no relay accepted it yet.', 'warn');
+        return false;
+      }
+      return true;
+    });
+  }
+
+  function findInvite(inviteId) {
+    return (state().invites ?? []).find((entry) => entry.id === inviteId) ?? null;
+  }
+
+  function publishJoinLinkToRelays(inviteId) {
+    const invite = findInvite(inviteId);
+    if (!invite) return Promise.resolve(false);
+    return publishJoinLink(invite, 'Publish this join link to your relays.');
+  }
+
+  function checkJoinLink(inviteId, { timeoutMs = 6000 } = {}) {
+    const current = state();
+    const invite = findInvite(inviteId);
+    if (!invite) return Promise.resolve(false);
+    const author = invite.createdBy ?? current.personaId;
+    if (!author) return Promise.resolve(false);
+
+    return new Promise((resolve) => {
+      let settled = false;
+      let sub = null;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        try {
+          sub?.close?.();
+        } catch {
+          /* the subscription may already be closed */
+        }
+        resolve(value);
+      };
+      const timer = setTimeout(() => finish(false), timeoutMs);
+      sub = relay.subscribe([{ kinds: [KIND.APP_DATA], authors: [author], '#t': [APP_TAG] }], {
+        onEvent: (event) => {
+          const record = decodeRecord(event.content);
+          if (record?.type === RECORD_TYPES.JOIN_LINK && record.id === inviteId) finish(true);
+        },
+        onEose: () => finish(false),
+      });
+    });
   }
 
   function createInviteLink(role = ROLE.STUDENT) {
@@ -1065,7 +1131,10 @@ export function createActions({ store, bus, signer, confirm, relay }) {
         invite.status === INVITE_STATUS.PENDING &&
         !invite.target,
     );
-    if (existing) return { ...existing, url: inviteUrl(existing.code, appBase()) };
+    if (existing) {
+      publishJoinLink(existing, `Publish the join link for ${academy.name}.`);
+      return { ...existing, url: inviteUrl(existing.code, appBase()) };
+    }
 
     const invite = {
       ...createInvite({
@@ -1077,6 +1146,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       time: 'now',
     };
     update({ invites: [invite, ...current.invites] });
+    publishJoinLink(invite, `Publish the join link for ${academy.name}.`);
     toast('Join link ready — copy and share it.', 'ok');
     return { ...invite, url: inviteUrl(invite.code, appBase()) };
   }
@@ -1084,6 +1154,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
   async function copyInviteLink(inviteId) {
     const invite = state().invites.find((entry) => entry.id === inviteId);
     if (!invite) return false;
+    publishJoinLink(invite, 'Publish this join link so anyone can open it.');
     return copyText(inviteUrl(invite.code, appBase()), 'Invite link copied — share it.');
   }
 
@@ -1095,6 +1166,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
         entry.id === inviteId ? { ...entry, status: INVITE_STATUS.REVOKED } : entry,
       ),
     });
+    publishJoinLink({ ...invite, status: INVITE_STATUS.REVOKED }, 'Revoke this join link.');
     toast('Invite revoked — that link no longer works.', 'warn');
   }
 
@@ -1731,6 +1803,8 @@ export function createActions({ store, bus, signer, confirm, relay }) {
         title: 'Send invite',
         action: el('span', {}, `Send the ${inviteRoleLabel(role)} invite to ${label} (encrypted).`),
       });
+    } else {
+      publishJoinLink(invite, `Publish the join link for ${classroom.name}.`);
     }
     toast(`Invite ready for ${label} — share the link.`, 'ok');
     return { ...invite, url: inviteUrl(invite.code, appBase()) };
@@ -1758,7 +1832,10 @@ export function createActions({ store, bus, signer, confirm, relay }) {
         invite.status === INVITE_STATUS.PENDING &&
         !invite.target,
     );
-    if (existing) return { ...existing, url: inviteUrl(existing.code, appBase()) };
+    if (existing) {
+      publishJoinLink(existing, `Publish the join link for ${classroom.name}.`);
+      return { ...existing, url: inviteUrl(existing.code, appBase()) };
+    }
 
     const invite = {
       ...createInvite({
@@ -1771,6 +1848,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       time: 'now',
     };
     update({ invites: [invite, ...current.invites] });
+    publishJoinLink(invite, `Publish the join link for ${classroom.name}.`);
     toast('Class join link ready — copy and share it.', 'ok');
     return { ...invite, url: inviteUrl(invite.code, appBase()) };
   }
@@ -2889,6 +2967,8 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     inviteTeacher,
     createInviteLink,
     copyInviteLink,
+    publishJoinLinkToRelays,
+    checkJoinLink,
     revokeInvite,
     rememberInvite,
     acceptInvite,

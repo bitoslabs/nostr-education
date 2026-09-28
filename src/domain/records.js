@@ -10,6 +10,7 @@ export const RECORD_TYPES = Object.freeze({
   REVISION: 'revision',
   RECOMMENDATION: 'recommendation',
   INVITE: 'invite',
+  JOIN_LINK: 'joinlink',
   JOIN_REQUEST: 'joinreq',
   MEMBER: 'member',
 });
@@ -18,6 +19,7 @@ export const PUBLIC_RECORD_TYPES = Object.freeze([
   RECORD_TYPES.ACADEMY,
   RECORD_TYPES.SUBJECT,
   RECORD_TYPES.CLASSROOM,
+  RECORD_TYPES.JOIN_LINK,
 ]);
 
 export const PRIVATE_RECORD_FIELDS = Object.freeze(['studentIds']);
@@ -110,6 +112,10 @@ export function applyRecord(state, record) {
     }
     case RECORD_TYPES.INVITE:
       return { invites: upsert(state.invites ?? [], record) };
+    case RECORD_TYPES.JOIN_LINK: {
+      const { v, type, ...invite } = record;
+      return { invites: upsert(state.invites ?? [], invite) };
+    }
     case RECORD_TYPES.JOIN_REQUEST:
       return { joinRequests: upsert(state.joinRequests ?? [], record) };
     case RECORD_TYPES.MEMBER: {

@@ -85,7 +85,7 @@ function classCard(state, app, room) {
     el('div', { class: 'arow' }, [
       button('＋ Post homework', { variant: 'gold', small: true, onClick: () => app.openCreateHomework(room.id) }),
       button('Invite learner', { small: true, onClick: () => app.openInviteStudent(room.id) }),
-      button('Copy class link', { small: true, onClick: () => app.openClassLink(room.id) }),
+      button('Share class link', { small: true, onClick: () => app.openClassLink(room.id) }),
     ]),
     ...(homework.length
       ? homework.map((item) => homeworkBlock(state, app, item, students))

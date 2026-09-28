@@ -8,11 +8,20 @@ import {
 } from '../../domain/academy.js';
 import { MEMBERSHIP, ROLE } from '../../domain/school.js';
 import { icon } from '../components/icon.js';
-import { button, noteBox } from '../components/primitives.js';
+import { button, noteBox, spinner } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
+
+const LOOKUP_TIMEOUT_MS = 6000;
 
 export function renderJoin({ store, app, scope }) {
   const node = el('section', { class: 'screen screen--auth' });
+  const checks = new Map();
+  const gaveUp = new Set();
+
+  scope.add(() => {
+    for (const timer of checks.values()) clearTimeout(timer);
+    checks.clear();
+  });
 
   function render() {
     const state = store.getState();
@@ -22,6 +31,27 @@ export function renderJoin({ store, app, scope }) {
     const academy = invite
       ? Object.values(state.academies ?? {}).find((entry) => entry.id === invite.academyId) ?? null
       : null;
+
+    if (code && !invite) {
+      if (!gaveUp.has(code) && !checks.has(code)) {
+        checks.set(
+          code,
+          setTimeout(() => {
+            checks.delete(code);
+            gaveUp.add(code);
+            render();
+          }, LOOKUP_TIMEOUT_MS),
+        );
+      }
+    } else if (checks.has(code)) {
+      clearTimeout(checks.get(code));
+      checks.delete(code);
+    }
+
+    if (code && !invite && !gaveUp.has(code)) {
+      node.replaceChildren(...checkingView(app));
+      return;
+    }
     node.replaceChildren(...view({ state, app, invite, academy, code }));
   }
 
@@ -93,8 +123,8 @@ function pasteView(app) {
           className: 'auth-cta',
           onClick: () => {
             const code = parseInviteReference(input.value);
-            if (!code || !app.rememberInvite(input.value)) {
-              error.textContent = 'That link or code is not recognized.';
+            if (!code) {
+              error.textContent = 'That does not look like an invite link or code.';
               return;
             }
             app.navigate(`/join/${code}`);
@@ -105,13 +135,21 @@ function pasteView(app) {
   ];
 }
 
+function checkingView(app) {
+  return [
+    topBar(app, '/welcome'),
+    hero('Checking this invitation…', 'Looking it up on your relays.'),
+    el('div', { class: 'auth-foot' }, [spinner('Checking invite…')]),
+  ];
+}
+
 function invalidView(app, code) {
   return [
     topBar(app, '/welcome'),
     hero(code ? 'This invite is no longer valid' : 'Invite not found'),
     noteBox(
       code
-        ? 'The link was already used, revoked, or mistyped. Ask the owner for a fresh link.'
+        ? 'We could not find this invite on your device or relays. It may have been used, revoked, or mistyped — ask the owner for a fresh link.'
         : 'That link does not match any academy invitation.',
       'warn',
     ),
