@@ -48,8 +48,10 @@ records which parts are built and what is next.
 ### Slice 6 — Nostr identity pilot
 
 - [x] Public academy / staff profile (`kind:0`)
-- [ ] NIP-05 identifier lookup and signature checks for credentials
-- [ ] No coursework or roster data on a public relay (classroom records sanitised; keep verifying new events)
+- [x] NIP-05 identifier lookup (`resolveNip05`) and issuer identifier shown on Verify; signature checked first
+- [x] No coursework or roster data on a public relay: publish allowlist audited, `PUBLIC_RECORD_TYPES` /
+  `toPublicRecord` unit-tested, credential payload asserted to exclude rosters and per-homework grades,
+  and the allowlist is recorded in `nostr-events.md`
 
 ### Slice 7 — Credential pilot
 
@@ -59,22 +61,29 @@ records which parts are built and what is next.
 - [x] Revocation: `revokeCredential` publishes an academy-signed status event; verifiers see `revoked`
 - [x] Shareable public proof ("Copy proof") — signed event only, no roster or grade list
 - [x] Verify screen accepts a pasted proof (JSON) as well as a local id
-- [ ] Recipient receives the credential on another device (needs the private channel)
+- [x] Recipient receives credentials (`CREDENTIAL` `#p: [me]` subscription, deduped) and revocations
+- [x] Share link form: `…/verify#<base64 proof>` decodes into the pasted-proof path
 
 ## Next task
 
-Slice 6 — NIP-05 identifiers for issuers.
+Move the private academic data plane behind server-side authorization (the prototype's biggest gap).
 
-1. Add a `resolveNip05('name@domain')` helper that fetches `https://domain/.well-known/nostr.json?name=`
-   and returns the matching `npub`, with an offline / `null` fallback.
-2. Show the issuer's verified `name@domain` beside the `npub` on the Verify screen when the credential
-   carries a NIP-05 identifier; fall back to the `npub` when nothing resolves.
-3. Put the academy's NIP-05 handle into the credential payload so a shared proof carries the
-   human-readable issuer, and let the academy set that handle (already surfaced in Academy info).
-4. Keep lookup failures non-fatal: signature first, identifier second.
+1. The role policy now lives in one place (`domain/authorization.js`, `authorize(ACTION.…)`), called by
+   the client for classroom management, policies, homework, grading, recommendations, enrollment
+   decisions, and credential issue/revoke. There is still no backend, so it is a UX guard; stand up the
+   private store + API described in the data model and run the same module server-side so a request
+   cannot be forged by the UI.
+2. Authenticate requests with NIP-98 and map the signer pubkey to academy membership + class role on
+   the server; reject writes the client would have blocked.
+3. Separate the issuer signer from the owner key: keep issuer signing permission in the private system
+   with activation / rotation / revocation, and never store the academy `nsec` in app storage in production.
+4. Keep the relay publisher limited to the audited allowlist; academic state must never depend on a
+   relay write succeeding.
 
 ## Housekeeping
 
+- [x] Extracted a single authorization policy (`domain/authorization.js`, `authorize(ACTION.…)`) used by
+  every client action, so the future server can import the same rules instead of duplicating them.
 - [x] Removed the orphaned demo grading scaffolding: `state.queue` / `state.assignment`,
   `submitVersion` / `sendRevision` / `finalize` / `removeAssignmentFile`, `review-drawer.js`,
   `assignment-drawer.js`, `domain/review.js`, and the demo `alice` / `bob` branches in `event-card.js`.

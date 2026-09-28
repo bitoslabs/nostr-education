@@ -61,3 +61,24 @@ For an addressable event, remember that relays may discard older versions. Do no
 ## Publication gate
 
 Before enabling a relay publisher, review a sample signed event and confirm that `content`, tags, URLs, timestamps, and linked assets reveal no student record or private class relationship. Record the approved event kind and allowed fields in a publish allowlist. Test that a rejected or failed relay write never changes the private domain transaction's result. Log relay delivery separately from academic state.
+
+## Implemented publish allowlist (prototype)
+
+The prototype publishes only the events below. Everything else stays local or is encrypted to explicit recipients.
+
+| Published event | Kind | Payload |
+| --- | --- | --- |
+| Academy record | `30078` (`#t: bitos-education`) | name, type, time zone, about, picture, handle, `orgPubkey` |
+| Subject record | `30078` | name, code |
+| Classroom record | `30078` | name, term, status, `teacherId`, `subjectId`, completion policy — `studentIds` stripped by `toPublicRecord` |
+| Academy profile | `0` | approved public profile fields (name, about, picture, nip05) |
+| Credential | `30080` | title, course, holder name, completion `average`, policy version, issuer key + nip05, issued-at, signature |
+| Credential revocation | `30080` (`d` = credential id, `status` tag) | credential id, issuer, revoked-at, signature |
+
+Encrypted records (NIP-44, one `#p` tag per recipient): `invite`, `joinreq`, `homework`, `submission`,
+`grade`, `revision`, `recommendation`. They are never written in plaintext.
+
+The public record set is enforced by `PUBLIC_RECORD_TYPES` (`academy`, `subject`, `classroom`) and
+`toPublicRecord`, both covered by tests. The credential event deliberately omits rosters and
+per-homework grades; it carries only the completion average. Kind `30080` is **application-defined**
+for this prototype, not a NIP standard — treat it as such until a credential NIP exists.

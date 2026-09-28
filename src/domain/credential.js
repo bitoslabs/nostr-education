@@ -37,6 +37,7 @@ export function privacyLevelLabel(level) {
 export function credentialPayload({
   academyName,
   academyPubkey,
+  academyNip05 = null,
   holderName,
   course,
   average = null,
@@ -51,6 +52,7 @@ export function credentialPayload({
     average,
     policyVersion,
     issuer: academyPubkey ?? null,
+    issuerNip05: academyNip05,
     issuedAt,
   };
 }
@@ -111,6 +113,68 @@ export function credentialFromProof(text) {
 
 export function revocationPayload({ credentialId, issuer, revokedAt } = {}) {
   return { v: 1, credentialId, issuer: issuer ?? null, status: 'revoked', revokedAt: revokedAt ?? null };
+}
+
+export function encodeProofFragment(text) {
+  try {
+    const bytes = new TextEncoder().encode(String(text));
+    let binary = '';
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  } catch {
+    return null;
+  }
+}
+
+export function decodeProofFragment(fragment) {
+  try {
+    const normalized = String(fragment).replace(/-/g, '+').replace(/_/g, '/');
+    const binary = atob(normalized);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+export function credentialFromEvent(event) {
+  if (!event?.sig) return null;
+  let payload;
+  try {
+    payload = JSON.parse(event.content ?? '{}');
+  } catch {
+    return null;
+  }
+  const d = (event.tags ?? []).find((tag) => tag[0] === 'd')?.[1] ?? null;
+  if (payload.status === CREDENTIAL_STATUS.REVOKED) {
+    return {
+      kind: 'status',
+      id: payload.credentialId ?? d,
+      status: CREDENTIAL_STATUS.REVOKED,
+      proof: event,
+    };
+  }
+  if (!payload.title || !d) return null;
+  return {
+    kind: 'credential',
+    credential: {
+      id: d,
+      title: payload.title,
+      issuer: null,
+      issuerPubkey: event.pubkey,
+      issuerNpub: null,
+      status: CREDENTIAL_STATUS.ACTIVE,
+      privacyLevel: 'L1',
+      expiresAt: null,
+      meta: payload.course ? `${payload.course} completion` : 'Course completion',
+      recipient: { name: payload.holder ?? 'Learner', handle: null, pubkey: null },
+      course: payload.course || null,
+      payload,
+      proof: event,
+      issuedAt: payload.issuedAt ?? null,
+      delivery: 'delivered',
+    },
+  };
 }
 
 

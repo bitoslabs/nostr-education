@@ -1,11 +1,13 @@
 import { el } from '../../core/dom.js';
 import {
   credentialFromProof,
+  decodeProofFragment,
   statusLabel,
   statusTone,
   verifyCredential,
 } from '../../domain/credential.js';
 import { verify } from '../../services/nostr.js';
+import { resolveNip05 } from '../../services/nip05.js';
 import { identityChip } from '../components/identity-chip.js';
 import { button, noteBox, pageTitle, row } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
@@ -34,28 +36,43 @@ export function renderVerify({ store, app }) {
     }
 
     const check = verifyCredential(credential, verify);
-    result.append(
-      el('div', { class: 'card' }, [
-        el('h3', {}, credential.title),
-        row([
-          statusBadge(statusLabel(credential.status), statusTone(credential.status)),
-          statusBadge(check.valid ? '✓ signature valid' : '⚠ signature not verified', check.valid ? 'ok' : 'warn'),
-          el('span', { class: 'spacer' }),
-        ]),
-        el('p', { class: 'muted small' }, check.reason),
-        credential.course ? el('p', { class: 'muted small' }, credential.course) : null,
-        el('p', { class: 'muted small' }, 'Issuer'),
-        credential.issuer ? identityChip(credential.issuer) : null,
-        credential.issuerPubkey || credential.issuerNpub
-          ? el('p', { class: 'mono small' }, credential.issuerNpub ?? credential.issuerPubkey)
-          : null,
-        pasted ? el('p', { class: 'muted small' }, 'Checked from a shared proof — status is not included in the proof.') : null,
-        noteBox('A valid signature alone is not endorsement. Check status and freshness.'),
+    const card = el('div', { class: 'card' }, [
+      el('h3', {}, credential.title),
+      row([
+        statusBadge(statusLabel(credential.status), statusTone(credential.status)),
+        statusBadge(check.valid ? '✓ signature valid' : '⚠ signature not verified', check.valid ? 'ok' : 'warn'),
+        el('span', { class: 'spacer' }),
       ]),
-    );
+      el('p', { class: 'muted small' }, check.reason),
+      credential.course ? el('p', { class: 'muted small' }, credential.course) : null,
+      el('p', { class: 'muted small' }, 'Issuer'),
+      credential.issuer ? identityChip(credential.issuer) : null,
+      credential.issuerPubkey || credential.issuerNpub
+        ? el('p', { class: 'mono small' }, credential.issuerNpub ?? credential.issuerPubkey)
+        : null,
+      pasted ? el('p', { class: 'muted small' }, 'Checked from a shared proof — status is not included in the proof.') : null,
+      noteBox('A valid signature alone is not endorsement. Check status and freshness.'),
+    ]);
+    result.append(card);
+
+    const nip05 = credential.payload?.issuerNip05;
+    if (nip05) {
+      const line = el('p', { class: 'mono small muted' }, `Resolving ${nip05}…`);
+      card.append(line);
+      resolveNip05(nip05).then((resolved) => {
+        if (!resolved) {
+          line.textContent = `${nip05} · not resolved (signature still stands)`;
+          return;
+        }
+        line.textContent =
+          resolved.pubkey === credential.issuerPubkey
+            ? `✓ ${resolved.identifier} → ${resolved.npub}`
+            : `⚠ ${resolved.identifier} resolves to a different key`;
+      });
+    }
   }
 
-  return el('section', { class: 'screen' }, [
+  const node = el('section', { class: 'screen' }, [
     pageTitle('Verify'),
     el('p', { class: 'muted' }, 'Inspect a credential before making a trust decision.'),
     el('div', { class: 'verify__form' }, [
@@ -65,4 +82,12 @@ export function renderVerify({ store, app }) {
     result,
     button('Back to credentials', { variant: 'ghost', small: true, onClick: () => app.navigate('/credentials') }),
   ]);
+
+  const fragment = (typeof location !== 'undefined' ? location.hash : '').replace(/^#/, '');
+  const decoded = fragment ? decodeProofFragment(fragment) : null;
+  if (decoded) {
+    input.value = decoded;
+    run();
+  }
+  return node;
 }

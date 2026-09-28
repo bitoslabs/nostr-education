@@ -7,6 +7,7 @@ import {
   parseInviteReference,
 } from '../../domain/academy.js';
 import { MEMBERSHIP, ROLE } from '../../domain/school.js';
+import { icon } from '../components/icon.js';
 import { button, noteBox } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
 
@@ -37,6 +38,30 @@ function brand() {
   ]);
 }
 
+function backButton(app, route = '/welcome') {
+  return el(
+    'button',
+    {
+      class: 'auth-back',
+      type: 'button',
+      'aria-label': 'Back to welcome',
+      onClick: () => app.navigate(route),
+    },
+    [
+      icon('lucide:chevron-left', { size: 18, fallback: '←' }),
+      el('span', {}, 'Back'),
+    ],
+  );
+}
+
+function topBar(app, backTo = '/welcome') {
+  return el('div', { class: 'auth-top' }, [
+    backButton(app, backTo),
+    el('span', { class: 'spacer' }),
+    brand(),
+  ]);
+}
+
 function hero(title, subtitle) {
   return el('header', { class: 'auth-hero' }, [
     el('span', { class: 'auth-eyebrow' }, 'Invitation'),
@@ -56,6 +81,7 @@ function pasteView(app) {
   const error = el('p', { class: 'small danger', 'aria-live': 'polite' });
 
   return [
+    topBar(app, '/welcome'),
     hero('You have an invite link?', 'Paste it here to see what you were invited to.'),
     el('div', { class: 'auth-form' }, [
       el('label', {}, 'Invite link or code'),
@@ -76,14 +102,12 @@ function pasteView(app) {
         }),
       ]),
     ]),
-    el('div', { class: 'auth-alt' }, [
-      button('Back to welcome', { variant: 'ghost', small: true, onClick: () => app.navigate('/welcome') }),
-    ]),
   ];
 }
 
 function invalidView(app, code) {
   return [
+    topBar(app, '/welcome'),
     hero(code ? 'This invite is no longer valid' : 'Invite not found'),
     noteBox(
       code
@@ -93,7 +117,6 @@ function invalidView(app, code) {
     ),
     el('div', { class: 'auth-alt' }, [
       button('Enter a link', { small: true, onClick: () => app.navigate('/join') }),
-      button('Back to welcome', { variant: 'ghost', small: true, onClick: () => app.navigate('/welcome') }),
     ]),
   ];
 }
@@ -109,7 +132,7 @@ function inviteView({ state, app, invite, academy, code }) {
   const isTeacher = invite.role === ROLE.TEACHER;
 
   const children = [
-    brand(),
+    topBar(app, '/welcome'),
     hero(
       `Join ${classroom?.name ?? academyName}`,
       isTeacher

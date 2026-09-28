@@ -17,6 +17,7 @@ import { normalizeBlossomServer, uploadBlob } from '../services/blossom.js';
 import { toPublicRecord } from '../domain/records.js';
 import { buildScoreSheet, normalizeRubric, rubricMax, scoresComplete, scoresTotal } from '../domain/rubric.js';
 import { credentialPayload, credentialProofContent, revocationPayload } from '../domain/credential.js';
+import { ACTION, authorize } from '../domain/authorization.js';
 import { clearState, loadOrgSecret, saveOrgSecret, saveSecretKey } from '../services/storage.js';
 import {
   ACADEMY_TYPES,
@@ -138,10 +139,16 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     return current.academies?.[personaId] ?? null;
   }
 
+  function classroomContext(current, classroom) {
+    return {
+      actor: current.personaId,
+      classroom,
+      academy: findAcademyById(current.academies ?? {}, classroom?.academyId),
+    };
+  }
+
   function canManageClassroom(current, classroom) {
-    if (!classroom) return false;
-    if (classroom.teacherId === current.personaId) return true;
-    return findAcademyById(current.academies ?? {}, classroom.academyId)?.ownerId === current.personaId;
+    return authorize(ACTION.MANAGE_CLASSROOM, classroomContext(current, classroom));
   }
 
   function homeworkRecipients(classroom) {
@@ -925,7 +932,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     return true;
   }
 
-  async function updateAcademyInfo({ name, about = '', picture = '', type, timeZone } = {}) {
+  async function updateAcademyInfo({ name, about = '', picture = '', type, timeZone, handle } = {}) {
     const current = state();
     const academy = ownedAcademy(current, current.personaId);
     if (!academy) {
@@ -938,6 +945,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     const nextPicture = String(picture ?? '').trim() || null;
     const nextType = ACADEMY_TYPES.some((entry) => entry.id === type) ? type : academy.type;
     const nextTimeZone = String(timeZone ?? '').trim() || academy.timeZone || 'UTC';
+    const nextHandle = String(handle ?? academy.handle ?? '').trim();
     const identity = ensureOrgIdentity(academy);
     const updated = {
       ...academy,
@@ -946,6 +954,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       picture: nextPicture,
       type: nextType,
       timeZone: nextTimeZone,
+      handle: nextHandle,
       orgPubkey: identity?.pubkey ?? academy.orgPubkey ?? null,
       orgNpub: identity?.npub ?? academy.orgNpub ?? null,
       updatedAt: new Date().toISOString(),
@@ -1549,9 +1558,8 @@ export function createActions({ store, bus, signer, confirm, relay }) {
 
   function setCompletionPolicy({ classroomId, minAverage = 0, requireAllHomework = true } = {}) {
     const current = state();
-    const academy = ownedAcademy(current, current.personaId);
     const classroom = classroomById(current.classrooms ?? [], classroomId);
-    if (!academy || !classroom || classroom.academyId !== academy.id) {
+    if (!classroom || !authorize(ACTION.SET_POLICY, classroomContext(current, classroom))) {
       toast('Only the academy owner can set completion rules.', 'warn');
       return false;
     }
@@ -1591,7 +1599,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
   function recommendCompletion({ classroomId, studentId } = {}) {
     const current = state();
     const classroom = classroomById(current.classrooms ?? [], classroomId);
-    if (!canManageClassroom(current, classroom)) {
+    if (!authorize(ACTION.RECOMMEND_COMPLETION, classroomContext(current, classroom))) {
       toast('Only the class teacher or academy owner can recommend completion.', 'warn');
       return false;
     }
@@ -2397,6 +2405,10 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     const request = (current.enrollRequests ?? []).find((entry) => entry.id === requestId);
     if (!request || request.status !== REQUEST_STATUS.PENDING) return false;
     const classroom = classroomById(current.classrooms ?? [], request.courseId);
+    if (!authorize(ACTION.DECIDE_ENROLLMENT, classroomContext(current, classroom))) {
+      toast('Only the class teacher or academy owner can approve enrollment.', 'warn');
+      return false;
+    }
     const already = (classroom?.studentIds ?? []).includes(request.learnerId);
     const classrooms = classroom && !already
       ? (current.classrooms ?? []).map((room) =>
@@ -2432,6 +2444,11 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     const current = state();
     const request = (current.enrollRequests ?? []).find((entry) => entry.id === requestId);
     if (!request) return false;
+    const classroom = classroomById(current.classrooms ?? [], request.courseId);
+    if (!authorize(ACTION.DECIDE_ENROLLMENT, classroomContext(current, classroom))) {
+      toast('Only the class teacher or academy owner can decline enrollment.', 'warn');
+      return false;
+    }
     update({
       enrollRequests: (current.enrollRequests ?? []).map((entry) =>
         entry.id === requestId ? { ...entry, status: REQUEST_STATUS.DECLINED } : entry,
@@ -2570,6 +2587,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     const payload = credentialPayload({
       academyName: academy.name,
       academyPubkey: identity.pubkey,
+      academyNip05: academy.handle ?? null,
       holderName: item.learnerName,
       course: item.course,
       average: item.grade ?? null,
@@ -2663,7 +2681,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     const academy = credential.academyId
       ? findAcademyById(current.academies ?? {}, credential.academyId)
       : Object.values(current.academies ?? {}).find((entry) => entry.orgPubkey === credential.issuerPubkey);
-    if (!academy || academy.ownerId !== current.personaId) {
+    if (!academy || !authorize(ACTION.REVOKE_CREDENTIAL, { actor: current.personaId, academy })) {
       toast('Only the academy owner can revoke this credential.', 'warn');
       return false;
     }
@@ -2691,7 +2709,8 @@ export function createActions({ store, bus, signer, confirm, relay }) {
         tags: [
           ['d', credentialId],
           ['status', 'revoked'],
-        ],
+          credential.recipient?.pubkey ? ['p', credential.recipient.pubkey] : null,
+        ].filter(Boolean),
         content: JSON.stringify(statusPayload),
       });
       statusProof = await localSigner(identity.secretKey).signEvent(event);

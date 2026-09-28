@@ -8,6 +8,7 @@ import { createStore } from './core/store.js';
 import { getPersona, getPersonaIds, hydrateProfiles, registerPersona } from './data/personas.js';
 import { DEFAULT_SIGNER } from './domain/account.js';
 import { findAcademyById } from './domain/academy.js';
+import { credentialFromEvent } from './domain/credential.js';
 import { RECORD_TYPES, applyRecord, isPublicRecord } from './domain/records.js';
 import { parseProfileMeta } from './domain/profile.js';
 import { normalizeRelayList } from './domain/relay.js';
@@ -25,6 +26,7 @@ import {
   extensionSigner,
   generateSecretKey,
   localSigner,
+  verify,
 } from './services/nostr.js';
 import { createRelayService } from './services/relay.js';
 import { createSignerService } from './services/signer.js';
@@ -99,7 +101,7 @@ const store = createStore({
   signQueue: persisted.signQueue ?? [],
   recommendations: persisted.recommendations ?? [],
   grants: [],
-  credentials: [],
+  credentials: persisted.credentials ?? [],
   deliveries: [],
   lastCreated: null,
   route: '/home',
@@ -137,6 +139,7 @@ store.subscribe((state) => {
   if (state.accountId !== syncedAccount) {
     syncedAccount = state.accountId;
     syncRecords();
+    syncCredentials();
   }
 });
 
@@ -196,6 +199,37 @@ function syncRecords() {
       if (!record) return;
       const patch = applyRecord(store.getState(), record);
       if (patch) store.setState(patch);
+    },
+  });
+}
+
+let credentialSub = null;
+function syncCredentials() {
+  const me = store.getState().accountId;
+  credentialSub?.close?.();
+  credentialSub = null;
+  if (!me) return;
+  credentialSub = relayService.subscribe([{ kinds: [KIND.CREDENTIAL], '#p': [me] }], {
+    onEvent: (event) => {
+      if (!verify(event)) return;
+      const parsed = credentialFromEvent(event);
+      if (!parsed) return;
+      const credentials = store.getState().credentials ?? [];
+      if (parsed.kind === 'status') {
+        if (!credentials.some((entry) => entry.id === parsed.id)) return;
+        store.setState({
+          credentials: credentials.map((entry) =>
+            entry.id === parsed.id
+              ? { ...entry, status: parsed.status, statusProof: parsed.proof }
+              : entry,
+          ),
+        });
+        return;
+      }
+      if (credentials.some((entry) => entry.id === parsed.credential.id)) return;
+      parsed.credential.issuer = getPersona(event.pubkey);
+      parsed.credential.issuerNpub = encodeNpub(event.pubkey);
+      store.setState({ credentials: [parsed.credential, ...credentials] });
     },
   });
 }
@@ -333,6 +367,7 @@ restoreSigner().finally(() => {
   router.start();
   syncProfiles();
   syncCatalog();
+  syncCredentials();
   if (store.getState().authed) {
     relayService.check().then(() => store.setState({ relays: relayService.statuses() }));
   }

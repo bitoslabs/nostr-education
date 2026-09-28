@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  PRIVATE_RECORD_FIELDS,
   PRIVATE_RECORD_TYPES,
   PUBLIC_RECORD_TYPES,
   RECORD_TYPES,
@@ -114,6 +115,38 @@ test('toPublicRecord strips roster fields without mutating the source', () => {
   assert.equal('studentIds' in published, false);
   assert.equal(published.name, 'Algebra');
   assert.deepEqual(classroom.studentIds, ['alice']);
+});
+
+test('the public record set is exactly academy, subject, classroom', () => {
+  assert.deepEqual([...PUBLIC_RECORD_TYPES].sort(), ['academy', 'classroom', 'subject']);
+});
+
+test('private record types never overlap the public set', () => {
+  const overlap = PUBLIC_RECORD_TYPES.filter((type) => PRIVATE_RECORD_TYPES.includes(type));
+  assert.deepEqual(overlap, []);
+  for (const type of [
+    RECORD_TYPES.HOMEWORK,
+    RECORD_TYPES.SUBMISSION,
+    RECORD_TYPES.GRADE,
+    RECORD_TYPES.REVISION,
+    RECORD_TYPES.RECOMMENDATION,
+    RECORD_TYPES.INVITE,
+    RECORD_TYPES.JOIN_REQUEST,
+    RECORD_TYPES.MEMBER,
+  ]) {
+    assert.equal(PRIVATE_RECORD_TYPES.includes(type), true);
+    assert.equal(PUBLIC_RECORD_TYPES.includes(type), false);
+  }
+});
+
+test('toPublicRecord strips every declared private field', () => {
+  const record = { type: 'classroom', id: 'cls1', name: 'Algebra', studentIds: ['alice'], extra: 1 };
+  const published = toPublicRecord(record);
+  for (const field of PRIVATE_RECORD_FIELDS) {
+    assert.equal(field in published, false);
+  }
+  assert.equal(published.extra, 1);
+  assert.deepEqual(record.studentIds, ['alice']);
 });
 
 test('isPublicRecord only accepts catalog record types', () => {

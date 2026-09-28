@@ -108,6 +108,14 @@ export function renderEditAcademy({ academy, actions, close, cropImage }) {
     placeholder: 'What this academy offers…',
     maxlength: '240',
   });
+  const handleInput = el('input', {
+    id: 'edit-academy-nip05',
+    type: 'text',
+    value: academy.handle ?? '',
+    placeholder: 'academy@domain',
+    autocomplete: 'off',
+    spellcheck: 'false',
+  });
   const logoFile = el('input', { type: 'file', accept: 'image/*', hidden: true });
   const logoPreview = el('span', { class: 'image-field__avatar' });
 
@@ -162,6 +170,7 @@ export function renderEditAcademy({ academy, actions, close, cropImage }) {
       picture: state.picture,
       type: typeSelect.value,
       timeZone: timeZone.value,
+      handle: handleInput.value,
     });
     setWorking(submit, false, 'Save & publish');
     if (ok) close();
@@ -204,6 +213,11 @@ export function renderEditAcademy({ academy, actions, close, cropImage }) {
           el('label', { for: 'edit-academy-timezone' }, 'Time zone'),
           timeZone,
           el('p', { class: 'field-hint' }, 'Used for deadlines and dates across the academy.'),
+        ]),
+        formSection('Discovery', [
+          el('label', { for: 'edit-academy-nip05' }, 'NIP-05 handle (optional)'),
+          handleInput,
+          el('p', { class: 'field-hint' }, 'A verified name@domain for the academy key, shown on certificates you issue.'),
         ]),
         el('span', { class: 'field-label', style: { marginTop: '12px' } }, 'Organization key (npub)'),
         el('p', { class: 'mono small' }, academy.orgNpub ?? 'Generated on first publish'),
