@@ -881,16 +881,143 @@ label {
 }
 
 /* ---------- verify ---------- */
-.verify__form {
+.verify__panel {
+  margin-bottom: 12px;
+}
+
+.verify__field {
+  display: block;
+  margin: 0;
+}
+
+.verify__field-label {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.verify__field textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+}
+
+.verify__field-hint {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.verify__actions {
   display: flex;
+  align-items: center;
   gap: var(--sp-2);
-  margin: 12px 0;
+  margin-top: 12px;
+  flex-wrap: wrap;
 }
 
 .verify__result {
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
+}
+
+.verify__card {
+  border-left: 3px solid var(--border);
+}
+
+.verify__card--ok {
+  border-left-color: var(--ok);
+}
+
+.verify__card--warn {
+  border-left-color: var(--warn);
+}
+
+.verify__card--err {
+  border-left-color: var(--err);
+}
+
+.verify__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.verify__seal {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+
+.verify__seal--ok {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+.verify__seal--warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.verify__seal--err {
+  background: var(--err-bg);
+  color: var(--err);
+}
+
+.verify__headtext {
+  flex: 1;
+  min-width: 0;
+}
+
+.verify__headtext h3 {
+  margin: 0 0 2px;
+}
+
+.verify__headtext p {
+  margin: 0;
+}
+
+.verify__title {
+  margin: 0 0 10px;
+}
+
+.verify__facts {
+  display: grid;
+  grid-template-columns: minmax(88px, auto) 1fr;
+  gap: 8px 14px;
+  margin: 0 0 10px;
+}
+
+.verify__fact {
+  display: contents;
+}
+
+.verify__fact-label {
+  color: var(--muted);
+  font-size: 0.78rem;
+  padding-top: 2px;
+}
+
+.verify__fact-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.verify__key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.verify__nip05 {
+  margin: 0 0 8px;
 }
 
 /* ---------- responsive ---------- */

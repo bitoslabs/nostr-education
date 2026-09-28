@@ -9,6 +9,7 @@ Start with [School system design](school-system.md). It defines the product, rol
 3. [Data model](architecture/data-model.md) — records, relationships, constraints, and privacy rules.
 4. [Nostr event strategy](architecture/nostr-events.md) — current NIP mappings, kind choices, and publication limits.
 5. [Private API](architecture/private-api.md) — NIP-98 auth and server-side authorization core.
+6. [Membership and invitation flow](membership-flow.md) — user-visible states from a public link through owner approval.
 
 The following files are earlier design explorations, not the implementation contract:
 

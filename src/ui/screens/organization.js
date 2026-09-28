@@ -215,7 +215,14 @@ function classroomRow(state, app, room) {
 }
 
 function enrollmentBody(state, app, academy) {
-  const joinRows = state.joinRequests.map((entry) =>
+  const requestsByMember = new Map();
+  for (const entry of state.joinRequests ?? []) {
+    const belongsHere = entry.academyId ? entry.academyId === academy.id : entry.academy === academy.name;
+    if (!belongsHere) continue;
+    const key = entry.accountId ?? entry.id;
+    if (!requestsByMember.has(key)) requestsByMember.set(key, entry);
+  }
+  const joinRows = [...requestsByMember.values()].map((entry) =>
     row([
       el('span', { class: 'who' }, entry.displayName),
       el('span', { class: 'muted small mono' }, entry.handle || 'no handle'),

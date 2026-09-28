@@ -153,4 +153,6 @@ test('proof fragments round-trip for share links', () => {
   assert.equal(typeof fragment, 'string');
   assert.equal(decodeProofFragment(fragment), text);
   assert.equal(decodeProofFragment('!!!not-base64'), null);
+  assert.equal(decodeProofFragment('/verify'), null);
+  assert.equal(decodeProofFragment('_w'), null);
 });

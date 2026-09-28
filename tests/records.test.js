@@ -93,8 +93,18 @@ test('applyRecord merges a grade into the existing submission', () => {
 });
 
 test('applyRecord records membership and rejects malformed records', () => {
-  const patch = applyRecord(EMPTY, { type: 'member', id: 'm1', memberId: 'pk1', status: 'active' });
+  const patch = applyRecord(EMPTY, {
+    type: 'member',
+    id: 'm1',
+    academyId: 'org1',
+    memberId: 'pk1',
+    role: 'student',
+    status: 'active',
+  });
   assert.equal(patch.memberships.pk1, 'active');
+  assert.deepEqual(patch.academyMemberships, [
+    { academyId: 'org1', accountId: 'pk1', role: 'student', status: 'active' },
+  ]);
   assert.equal(applyRecord(EMPTY, { type: 'unknown', id: 'x' }), null);
   assert.equal(applyRecord(EMPTY, { type: 'grade', id: 'g' }), null);
   assert.equal(applyRecord(EMPTY, null), null);

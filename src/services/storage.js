@@ -14,6 +14,7 @@ const PERSISTED_FIELDS = [
   'homework',
   'submissions',
   'memberships',
+  'academyMemberships',
   'joinRequests',
   'enrollRequests',
   'recommendations',

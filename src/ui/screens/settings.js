@@ -2,10 +2,11 @@ import { el } from '../../core/dom.js';
 import { getPersona, getPersonaIds } from '../../data/personas.js';
 import { SIGNER_TYPES, signerType } from '../../domain/account.js';
 import { academyTypeLabel } from '../../domain/academy.js';
+import { classroomsForStudent, classroomsForTeacher, subjectById } from '../../domain/classroom.js';
 import { normalizeHandle, validateHandle } from '../../domain/handle.js';
 import { identitySecondary, isVerified, truncateNpub } from '../../domain/identity.js';
 import { relayModeLabel } from '../../domain/relay.js';
-import { MEMBERSHIP, ROLE, membershipBadge } from '../../domain/school.js';
+import { MEMBERSHIP, REQUEST_STATUS, ROLE, membershipBadge } from '../../domain/school.js';
 import { backupNsecForPubkey, decodeKey } from '../../services/nostr.js';
 import { loadOrgSecret, loadSecretKey } from '../../services/storage.js';
 import { ACCENTS, THEME_CHOICES } from '../../services/theme.js';
@@ -137,7 +138,7 @@ function sectionView(section, state, app, theme, registerBackupHide) {
       handleCard(persona, app),
       signerCard(state, app),
     ],
-    membership: () => [membershipCard(state, app, persona, membership)],
+    membership: () => membershipCard(state, app, persona, membership),
     relays: () => [relayCard(state, app)],
     session: () => [sessionCard(app)],
   };
@@ -322,40 +323,143 @@ function backupCard({ title, description, pubkey, npub, readSecret, external = f
   return card;
 }
 
+function joinedAcademies(state, personaId) {
+  const academies = Object.values(state.academies ?? {});
+  const classrooms = state.classrooms ?? [];
+  const invites = state.invites ?? [];
+  const entries = [];
+
+  for (const academy of academies) {
+    if (!academy?.id) continue;
+    const teacherRooms = classroomsForTeacher(classrooms, personaId).filter(
+      (room) => room.academyId === academy.id,
+    );
+    const learnerRooms = classroomsForStudent(classrooms, personaId).filter(
+      (room) => room.academyId === academy.id,
+    );
+    const accepted = invites.filter(
+      (invite) => invite.academyId === academy.id && invite.acceptedBy === personaId,
+    );
+    if (!teacherRooms.length && !learnerRooms.length && !accepted.length) continue;
+
+    const role =
+      teacherRooms.length || accepted.some((invite) => invite.role === ROLE.TEACHER)
+        ? ROLE.TEACHER
+        : ROLE.STUDENT;
+    entries.push({ academy, role, rooms: [...teacherRooms, ...learnerRooms] });
+  }
+
+  return entries;
+}
+
+function classPreviewRow(state, room) {
+  const subject = subjectById(state.subjects ?? [], room.subjectId);
+  const teacher = room.teacherId ? getPersona(room.teacherId) : null;
+  return el('div', { class: 'row' }, [
+    el('span', { class: 'who' }, room.name),
+    subject ? el('span', { class: 'ctx' }, subject.name) : null,
+    el('span', { class: 'spacer' }),
+    teacher ? el('span', { class: 'muted small' }, `teacher ${teacher.displayName}`) : null,
+  ]);
+}
+
+function academyMembershipRow(state, { academy, role, rooms }, membership) {
+  const isTeacher = role === ROLE.TEACHER;
+  const pending = membership === MEMBERSHIP.PENDING && !rooms.length;
+  return el('div', { class: 'card' }, [
+    el('div', { class: 'crow' }, [
+      el('span', {}, [
+        el('strong', {}, academy.name),
+        el('span', { class: 'muted small' }, ` · ${academyTypeLabel(academy.type)}`),
+      ]),
+      el('span', { class: 'spacer' }),
+      statusBadge(isTeacher ? 'teacher' : 'learner', isTeacher ? 'key' : 'info'),
+      pending ? statusBadge('pending approval', 'info') : null,
+    ]),
+    rooms.length
+      ? el('div', { class: 'rows' }, rooms.map((room) => classPreviewRow(state, room)))
+      : emptyState(pending ? 'Waiting for the academy owner to approve.' : 'No classes yet.'),
+  ]);
+}
+
 function membershipCard(state, app, persona, membership) {
   const owned = state.academies?.[persona.id];
+  const cards = [];
 
   if (owned) {
-    return el('div', { class: 'card card--accent' }, [
-      el('h3', {}, `You own ${owned.name}`),
-      el('p', { class: 'muted small' }, `${academyTypeLabel(owned.type)} · owner`),
-      el('div', { class: 'arow' }, [
-        button('Open organization', { variant: 'gold', small: true, onClick: () => app.navigate('/role') }),
-        button('Edit academy info', { small: true, onClick: () => app.setSettingsSection('academy') }),
-        button('Invite a teacher', { small: true, onClick: () => app.openInviteTeacher() }),
-        button('Copy learner link', { small: true, onClick: () => app.openInviteLink(ROLE.STUDENT) }),
+    cards.push(
+      el('div', { class: 'card card--accent' }, [
+        el('h3', {}, `You own ${owned.name}`),
+        el('p', { class: 'muted small' }, `${academyTypeLabel(owned.type)} · owner`),
+        el('div', { class: 'arow' }, [
+          button('Open organization', { variant: 'gold', small: true, onClick: () => app.navigate('/role') }),
+          button('Edit academy info', { small: true, onClick: () => app.setSettingsSection('academy') }),
+          button('Invite a teacher', { small: true, onClick: () => app.openInviteTeacher() }),
+          button('Share learner link', { small: true, onClick: () => app.openInviteLink(ROLE.STUDENT) }),
+        ]),
       ]),
-    ]);
+    );
   }
 
-  const badge = membershipBadge(membership);
-  const children = [el('h3', {}, 'Academy membership')];
-  if (badge) children.push(el('p', {}, statusBadge(badge.label, badge.tone)));
-  if (membership !== MEMBERSHIP.ACTIVE) {
-    children.push(
-      el('p', { class: 'muted small' }, 'Enroll in classes once the academy owner approves your membership.'),
-      button('Request to join BitOS Academy', { variant: 'gold', small: true, onClick: () => app.requestMembership() }),
-    );
-  } else {
-    children.push(el('p', { class: 'muted small' }, 'You can request class enrollment from Discover.'));
+  const joined = joinedAcademies(state, persona.id);
+  const pendingByAcademy = new Map();
+  for (const request of state.joinRequests ?? []) {
+    if (request.accountId !== persona.id || request.status !== REQUEST_STATUS.PENDING) continue;
+    const key = request.academyId ?? String(request.academy ?? '').trim().toLowerCase();
+    if (!key || pendingByAcademy.has(key)) continue;
+    pendingByAcademy.set(key, request);
   }
-  children.push(
-    el('div', { class: 'arow' }, [
-      button('Create an academy', { small: true, onClick: () => app.openCreateAcademy() }),
-      button('Join with a link', { small: true, onClick: () => app.navigate('/join') }),
+  const pending = [...pendingByAcademy.values()].filter(
+    (request) => !joined.some(
+      ({ academy }) => request.academyId === academy.id || (!request.academyId && request.academy === academy.name),
+    ),
+  );
+
+  cards.push(
+    el('div', { class: 'card' }, [
+      el('h3', {}, 'Joined academies'),
+      joined.length
+        ? el(
+            'div',
+            { class: 'stack' },
+            joined.map((entry) => academyMembershipRow(state, entry, membership)),
+          )
+        : pending.length
+          ? el('p', { class: 'muted small' }, 'Waiting for approval from the academies below.')
+          : emptyState(
+            owned ? 'You have not joined another academy yet.' : 'You have not joined an academy yet.',
+          ),
+      pending.length
+        ? el(
+            'section',
+            {},
+            [
+              el('h4', {}, 'Pending membership requests'),
+              el('div', { class: 'rows' }, pending.map((request) => {
+              const academyName = request.academyId
+                ? Object.values(state.academies ?? {}).find((entry) => entry.id === request.academyId)
+                    ?.name ?? request.academy
+                : request.academy;
+              return el('div', { class: 'row' }, [
+                el('span', { class: 'who' }, academyName),
+                el('span', { class: 'muted small' }, 'membership request'),
+                el('span', { class: 'spacer' }),
+                statusBadge('pending', 'info'),
+              ]);
+              })),
+            ],
+          )
+        : null,
+      el('div', { class: 'arow' }, [
+        owned
+          ? null
+          : button('Create an academy', { small: true, onClick: () => app.openCreateAcademy() }),
+        button('Join with a link', { variant: owned ? 'ghost' : 'gold', small: true, onClick: () => app.navigate('/join') }),
+      ]),
     ]),
   );
-  return el('div', { class: 'card' }, children);
+
+  return cards;
 }
 
 function signerCard(state, app) {

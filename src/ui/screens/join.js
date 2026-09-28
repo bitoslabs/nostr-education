@@ -215,7 +215,7 @@ function inviteView({ state, app, invite, academy, code }) {
         ? noteBox('You are already an active member here.')
         : null,
       el('div', { class: 'auth-actions' }, [
-        button('Accept invitation', {
+        button(classroom || isTeacher ? 'Accept invitation' : 'Request membership', {
           variant: 'gold',
           className: 'auth-action',
           onClick: async () => {

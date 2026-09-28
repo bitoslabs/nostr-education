@@ -179,6 +179,19 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     );
     const list = current.classrooms ?? [];
     const classroom = invite.classroomId ? classroomById(list, invite.classroomId) : null;
+    const academyMembership = (status) => [
+      ...(current.academyMemberships ?? []).filter(
+        (entry) => !(entry.accountId === persona.id && entry.academyId === invite.academyId),
+      ),
+      {
+        academyId: invite.academyId,
+        accountId: persona.id,
+        role: invite.role,
+        status,
+        sourceInviteId: invite.id,
+        joinedAt: new Date().toISOString(),
+      },
+    ];
     const classrooms = classroom
       ? list.map((room) => {
           if (room.id !== classroom.id) return room;
@@ -198,6 +211,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
         pendingInviteCode: null,
         membership: MEMBERSHIP.ACTIVE,
         memberships: { ...current.memberships, [persona.id]: MEMBERSHIP.ACTIVE },
+        academyMemberships: academyMembership(MEMBERSHIP.ACTIVE),
         events: [
           {
             id: nextId('e'),
@@ -229,6 +243,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
         pendingInviteCode: null,
         membership: MEMBERSHIP.ACTIVE,
         memberships: { ...current.memberships, [persona.id]: MEMBERSHIP.ACTIVE },
+        academyMemberships: academyMembership(MEMBERSHIP.ACTIVE),
         events: [
           {
             id: nextId('e'),
@@ -246,41 +261,71 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       return true;
     }
 
-    const joinId = nextId('jr');
+    const existingRequest = (current.joinRequests ?? []).find(
+      (request) =>
+        request.accountId === persona.id &&
+        request.status === REQUEST_STATUS.PENDING &&
+        (request.academyId === invite.academyId ||
+          (!request.academyId && academy?.name && request.academy === academy.name)),
+    );
+    const joinId = existingRequest?.id ?? nextId('jr');
+    const joinRequests = existingRequest
+      ? current.joinRequests
+      : [
+          {
+            id: joinId,
+            academyId: invite.academyId,
+            accountId: persona.id,
+            displayName: persona.displayName,
+            handle: persona.handle,
+            academy: academy?.name ?? 'Academy',
+            role: persona.role,
+            time: 'now',
+            status: REQUEST_STATUS.PENDING,
+          },
+          ...current.joinRequests,
+        ];
+    const joinRequest = existingRequest ?? joinRequests[0];
     update({
       invites,
       pendingInviteCode: null,
       membership: MEMBERSHIP.PENDING,
       memberships: { ...current.memberships, [persona.id]: MEMBERSHIP.PENDING },
-      joinRequests: [
-        {
-          id: joinId,
-          academyId: invite.academyId,
-          accountId: persona.id,
-          displayName: persona.displayName,
-          handle: persona.handle,
-          academy: academy?.name ?? 'Academy',
-          role: persona.role,
-          time: 'now',
-          status: REQUEST_STATUS.PENDING,
-        },
-        ...current.joinRequests,
-      ],
-      events: [
-        {
-          id: nextId('e'),
-          type: 'joinreq',
-          author: persona.id,
-          time: 'now',
-          context: academy?.name ?? 'Academy',
-          audience: [academy?.ownerId ?? 'nadia'],
-          requestId: joinId,
-          text: `accepted the invite link and requested to join ${academy?.name ?? 'the academy'} as a learner.`,
-        },
-        ...current.events,
-      ],
+      academyMemberships: academyMembership(MEMBERSHIP.PENDING),
+      joinRequests,
+      events: existingRequest
+        ? current.events
+        : [
+            {
+              id: nextId('e'),
+              type: 'joinreq',
+              author: persona.id,
+              time: 'now',
+              context: academy?.name ?? 'Academy',
+              audience: [academy?.ownerId ?? 'nadia'],
+              requestId: joinId,
+              text: `accepted the invite link and requested to join ${academy?.name ?? 'the academy'} as a learner.`,
+            },
+            ...current.events,
+          ],
     });
-    toast('Invite accepted — the owner approves memberships next.', 'info');
+    if (academy?.ownerId) {
+      publishRecord({
+        type: RECORD_TYPES.JOIN_REQUEST,
+        id: joinRequest.id,
+        payload: joinRequest,
+        recipients: [academy.ownerId],
+        encrypted: true,
+        title: 'Request academy membership',
+        action: el('span', {}, `Request to join ${academy.name} as a learner.`),
+      });
+    }
+    toast(
+      existingRequest
+        ? 'Your membership request is already awaiting approval.'
+        : 'Invite accepted — the owner approves memberships next.',
+      'info',
+    );
     return true;
   }
 
@@ -859,6 +904,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       signerType: DEFAULT_SIGNER,
       membership: MEMBERSHIP.NONE,
       memberships: {},
+      academyMemberships: [],
       academies: {},
       invites: [],
       subjects: [],
@@ -2413,9 +2459,14 @@ export function createActions({ store, bus, signer, confirm, relay }) {
   function acceptJoin(requestId) {
     const request = state().joinRequests.find((entry) => entry.id === requestId);
     if (!request) return;
+    const sameRequest = (entry) =>
+      entry.accountId === request.accountId &&
+      (request.academyId
+        ? entry.academyId === request.academyId || (!entry.academyId && entry.academy === request.academy)
+        : entry.academy === request.academy);
     update({
       joinRequests: state().joinRequests.map((entry) =>
-        entry.id === requestId ? { ...entry, status: REQUEST_STATUS.APPROVED } : entry,
+        sameRequest(entry) ? { ...entry, status: REQUEST_STATUS.APPROVED } : entry,
       ),
       memberships: { ...state().memberships, [request.accountId]: MEMBERSHIP.ACTIVE },
       membership:
@@ -2433,20 +2484,57 @@ export function createActions({ store, bus, signer, confirm, relay }) {
         ...state().events,
       ],
     });
+    if (request.academyId && request.accountId) {
+      publishRecord({
+        type: RECORD_TYPES.MEMBER,
+        id: `member:${request.academyId}:${request.accountId}`,
+        payload: {
+          academyId: request.academyId,
+          memberId: request.accountId,
+          role: request.role ?? ROLE.STUDENT,
+          status: MEMBERSHIP.ACTIVE,
+        },
+        recipients: [request.accountId],
+        encrypted: true,
+        title: 'Approve academy membership',
+        action: el('span', {}, `Approve ${request.displayName} for ${request.academy}.`),
+      });
+    }
     toast(`Approved — ${request.displayName} is now a member.`, 'ok');
   }
 
   function declineJoin(requestId) {
     const request = state().joinRequests.find((entry) => entry.id === requestId);
     if (!request) return;
+    const sameRequest = (entry) =>
+      entry.accountId === request.accountId &&
+      (request.academyId
+        ? entry.academyId === request.academyId || (!entry.academyId && entry.academy === request.academy)
+        : entry.academy === request.academy);
     update({
       joinRequests: state().joinRequests.map((entry) =>
-        entry.id === requestId ? { ...entry, status: REQUEST_STATUS.DECLINED } : entry,
+        sameRequest(entry) ? { ...entry, status: REQUEST_STATUS.DECLINED } : entry,
       ),
       memberships: { ...state().memberships, [request.accountId]: MEMBERSHIP.NONE },
       membership:
         request.accountId === state().personaId ? MEMBERSHIP.NONE : state().membership,
     });
+    if (request.academyId && request.accountId) {
+      publishRecord({
+        type: RECORD_TYPES.MEMBER,
+        id: `member:${request.academyId}:${request.accountId}`,
+        payload: {
+          academyId: request.academyId,
+          memberId: request.accountId,
+          role: request.role ?? ROLE.STUDENT,
+          status: MEMBERSHIP.NONE,
+        },
+        recipients: [request.accountId],
+        encrypted: true,
+        title: 'Decline academy membership',
+        action: el('span', {}, `Decline ${request.displayName}'s request for ${request.academy}.`),
+      });
+    }
     toast(`Declined — ${request.displayName} was notified.`, 'warn');
   }
 

@@ -1,6 +1,7 @@
 import { el } from '../../core/dom.js';
 import { getPersona } from '../../data/personas.js';
 import { credentialProofText, encodeProofFragment } from '../../domain/credential.js';
+import { findAcademyById } from '../../domain/academy.js';
 import { ROLE } from '../../domain/school.js';
 import { credentialCard } from '../components/credential-card.js';
 import { createIssuedPanel } from '../components/issued-credentials.js';
@@ -36,16 +37,30 @@ export function renderCredentials({ store, app, scope }) {
     });
 
     if (persona.role === ROLE.TEACHER) {
+      const memberships = teacherMemberships(state, persona.id);
       node.replaceChildren(
         pageTitle('Credentials'),
         profile,
-        el('div', { class: 'card' }, [
-          el('div', { class: 'dhead' }, [
-            el('h3', {}, 'Teacher · BitOS Academy'),
-            statusBadge('✓ active', 'ok'),
-          ]),
-          el('p', { class: 'muted small' }, 'Staff credential · proves role, not issuing authority.'),
-        ]),
+        memberships.length
+          ? el('div', { class: 'grid' }, memberships.map(({ academy, status }) =>
+              el('div', { class: 'card' }, [
+                el('div', { class: 'dhead' }, [
+                  el('h3', {}, `Teacher · ${academy.name}`),
+                  statusBadge(status === 'active' ? '✓ active' : 'pending approval', status === 'active' ? 'ok' : 'info'),
+                ]),
+                el(
+                  'p',
+                  { class: 'muted small' },
+                  'Teaching membership from an accepted invitation. This is role evidence, not a signed teaching credential.',
+                ),
+              ]),
+            ))
+          : el('div', { class: 'card' }, [
+              el('h3', {}, 'No academy teaching role yet'),
+              el('p', { class: 'muted small' }, 'Accept a teacher invitation to connect your role to an academy.'),
+              button('Open an invitation', { variant: 'gold', small: true, onClick: () => app.navigate('/join') }),
+            ]),
+        button('Verify a credential', { variant: 'ghost', small: true, onClick: () => app.navigate('/verify') }),
       );
       return;
     }
@@ -71,8 +86,8 @@ export function renderCredentials({ store, app, scope }) {
                 onCopyLink: (entry) => {
                   const fragment = encodeProofFragment(credentialProofText(entry));
                   if (!fragment) return;
-                  const base = `${location.origin}${location.pathname.replace(/(index\.html)?$/, '').replace(/\/$/, '')}`;
-                  app.copyText(`${base}/verify#${fragment}`, 'Verification link copied.');
+                  const base = `${location.origin}${location.pathname}`.replace(/#.*$/, '');
+                  app.copyText(`${base}#/verify/${fragment}`, 'Verification link copied.');
                 },
               }),
             ),
@@ -93,4 +108,28 @@ export function renderCredentials({ store, app, scope }) {
   scope.add(store.subscribe(render));
   render();
   return node;
+}
+
+function teacherMemberships(state, personaId) {
+  const byAcademy = new Map();
+
+  for (const membership of state.academyMemberships ?? []) {
+    if (membership.accountId !== personaId || membership.role !== ROLE.TEACHER) continue;
+    const academy = findAcademyById(state.academies ?? {}, membership.academyId);
+    if (academy) byAcademy.set(academy.id, { academy, status: membership.status ?? 'active' });
+  }
+
+  for (const invite of state.invites ?? []) {
+    if (invite.acceptedBy !== personaId || invite.role !== ROLE.TEACHER) continue;
+    const academy = findAcademyById(state.academies ?? {}, invite.academyId);
+    if (academy && !byAcademy.has(academy.id)) byAcademy.set(academy.id, { academy, status: 'active' });
+  }
+
+  for (const classroom of state.classrooms ?? []) {
+    if (classroom.teacherId !== personaId) continue;
+    const academy = findAcademyById(state.academies ?? {}, classroom.academyId);
+    if (academy) byAcademy.set(academy.id, { academy, status: 'active' });
+  }
+
+  return [...byAcademy.values()];
 }

@@ -83,6 +83,7 @@ const store = createStore({
   personaId: session?.pubkey ?? null,
   signerType: session?.method ?? DEFAULT_SIGNER,
   memberships: persisted.memberships ?? {},
+  academyMemberships: persisted.academyMemberships ?? [],
   academies: persisted.academies ?? {},
   invites: persisted.invites ?? [],
   subjects: persisted.subjects ?? [],
@@ -338,6 +339,7 @@ const screens = Object.freeze({
   '/notifications': renderNotifications,
   '/settings': renderSettings,
   '/verify': renderVerify,
+  '/verify/*': renderVerify,
   '/join': renderJoin,
   '/join/*': renderJoin,
 });

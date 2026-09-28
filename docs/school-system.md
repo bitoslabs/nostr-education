@@ -71,10 +71,11 @@ For an initial release, allow one academy per organization, manual invitations, 
 
 ### Student enrollment
 
-1. Owner adds a student to the academy and sends an invitation. The student accepts it and gains an academy membership.
-2. Owner enrolls that student in a specific published class. Enrollment can be `pending`, `active`, `withdrawn`, or `completed`. Only `active` students can submit work.
-3. Student sees the class in **My classes**, including teacher, schedule, assignments, and grading policy. The teacher sees the student on that class roster.
-4. If the student withdraws, keep prior submissions and grades for authorized recordkeeping, but stop future class access according to academy policy. Record who changed enrollment and when.
+1. Owner sends a student invitation. The student opens it and requests membership; accepting the link alone grants no access.
+2. The owner reviews and approves the request. Approval creates the active academy membership.
+3. Owner enrolls that student in a specific published class. Enrollment can be `pending`, `active`, `withdrawn`, or `completed`. Only `active` students can submit work.
+4. Student sees the class in **My classes**, including teacher, schedule, assignments, and grading policy. The teacher sees the student on that class roster.
+5. If the student withdraws, keep prior submissions and grades for authorized recordkeeping, but stop future class access according to academy policy. Record who changed enrollment and when.
 
 A student joining the academy is **not** automatically enrolled in every class. Later, the academy can allow a student to request a class seat; the owner must approve before the enrollment becomes active.
 

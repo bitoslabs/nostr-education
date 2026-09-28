@@ -128,8 +128,22 @@ export function applyRecord(state, record) {
       return { joinRequests: upsert(state.joinRequests ?? [], record) };
     case RECORD_TYPES.MEMBER: {
       if (!record.memberId) return null;
+      const academyMemberships = record.academyId
+        ? [
+            ...(state.academyMemberships ?? []).filter(
+              (entry) => !(entry.accountId === record.memberId && entry.academyId === record.academyId),
+            ),
+            {
+              academyId: record.academyId,
+              accountId: record.memberId,
+              role: record.role ?? 'student',
+              status: record.status ?? MEMBERSHIP.ACTIVE,
+            },
+          ]
+        : state.academyMemberships ?? [];
       return {
         memberships: { ...state.memberships, [record.memberId]: record.status ?? MEMBERSHIP.ACTIVE },
+        academyMemberships,
       };
     }
     case RECORD_TYPES.RECOMMENDATION: {

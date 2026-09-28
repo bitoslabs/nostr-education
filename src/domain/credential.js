@@ -128,10 +128,12 @@ export function encodeProofFragment(text) {
 
 export function decodeProofFragment(fragment) {
   try {
-    const normalized = String(fragment).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = String(fragment ?? '').trim();
+    if (!raw || !/^[A-Za-z0-9_-]+$/.test(raw)) return null;
+    const normalized = raw.replace(/-/g, '+').replace(/_/g, '/');
     const binary = atob(normalized);
     const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-    return new TextDecoder().decode(bytes);
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
   } catch {
     return null;
   }
