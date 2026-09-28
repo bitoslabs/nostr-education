@@ -11,7 +11,7 @@ Never publish a roster, student identifier, assignment targeted to a student, su
 | Need | NIP / kind | Decision for this product |
 | --- | --- | --- |
 | Event structure and signatures | [NIP-01](https://github.com/nostr-protocol/nips/blob/master/01.md) | Use for any published event; validate ID, Schnorr signature, author, timestamp, and kind. |
-| Public academy or opt-in adult profile | [NIP-01](https://github.com/nostr-protocol/nips/blob/master/01.md) `kind:0` | Optional; publish only approved public profile fields. |
+| Public academy or opt-in adult profile | [NIP-01](https://github.com/nostr-protocol/nips/blob/master/01.md) `kind:0` | Optional; `name`/`display_name` are public aliases only. Never put a student's official/legal name here by default. |
 | Public announcement | [NIP-01](https://github.com/nostr-protocol/nips/blob/master/01.md) `kind:1` | Optional general news only; no class roster or individual progress. |
 | Human-readable Nostr identifier | [NIP-05](https://github.com/nostr-protocol/nips/blob/master/05.md) with `kind:0` metadata | Optional academy/staff identifier. It maps a domain name to a key; it is not a school credential. |
 | Display/copy public keys and event links | [NIP-19](https://github.com/nostr-protocol/nips/blob/master/19.md) | Show `npub`/`nevent` to people; store and transmit hex keys/IDs in events and APIs. |
@@ -61,6 +61,8 @@ For an addressable event, remember that relays may discard older versions. Do no
 ## Publication gate
 
 Before enabling a relay publisher, review a sample signed event and confirm that `content`, tags, URLs, timestamps, and linked assets reveal no student record or private class relationship. Record the approved event kind and allowed fields in a publish allowlist. Test that a rejected or failed relay write never changes the private domain transaction's result. Log relay delivery separately from academic state.
+
+Private academy names are excluded from the relay publication allowlist. Do not publish them in kind `0`, application-defined kind `30078`, tags, or encrypted events on a public relay. NIP-44 protects content in transit and at rest from casual reading, but relay metadata, persistence, recipient relationships, and deletion cannot meet the private directory's access and retention requirements. Store these fields in the authorized private data plane.
 
 ## Implemented publish allowlist (prototype)
 

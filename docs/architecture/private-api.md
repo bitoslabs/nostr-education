@@ -42,6 +42,15 @@ means the rule denied the write regardless of what the UI would have shown.
 | POST | `/api/enrollments/:id/decision` | `DECIDE_ENROLLMENT` | teacher or owner |
 | POST | `/api/credentials/:id/revoke` | `REVOKE_CREDENTIAL` | academy owner |
 
+### Planned private-name endpoints
+
+| Method | Path | Purpose | Rule |
+| --- | --- | --- | --- |
+| GET | `/api/academies/:academyId/people/:personId/profile` | Read the academy-scoped private name | Self; directory-authorized admin; assigned teacher for an enrolled student; enrolled student for an assigned teacher |
+| PATCH | `/api/academies/:academyId/people/:personId/profile` | Set or correct structured private-name fields | Self, or directory-authorized admin with audit reason |
+
+These endpoints return structured name fields only after server-side authorization. Other viewers receive public kind `0` alias data through the public profile path, not a redacted private-profile object. See [Data model: Public alias and private academy name](data-model.md#public-alias-and-private-academy-name).
+
 The responses are the stored record (`201`/`200`), `400` bad JSON / missing fields, `404` unknown id,
 `422` a domain rule (invalid score, not eligible).
 
@@ -51,6 +60,7 @@ The responses are the stored record (`201`/`200`), `400` bad JSON / missing fiel
   real database before use.
 - **Client wiring.** The client still writes to local state. Point the actions at this API (behind a
   config flag) and treat the server as the source of truth.
+- **Private academy profiles.** The schema and authorization contract are documented, but the encrypted-at-rest table and name endpoints are not implemented yet. Do not collect official names in the current local-storage prototype.
 - **Issuer signer separation.** Credential issuance still signs with the academy key held in app
   storage; move that to a server-side signer with activation/rotation.
 - **TLS and rate limiting.** Required before exposing this anywhere but localhost.

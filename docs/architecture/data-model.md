@@ -9,6 +9,8 @@ erDiagram
     ORGANIZATION ||--|| ACADEMY : owns
     ACADEMY ||--o{ MEMBERSHIP : has
     PERSON ||--o{ MEMBERSHIP : joins
+    PERSON ||--o{ ACADEMY_PERSON_PROFILE : has
+    ACADEMY ||--o{ ACADEMY_PERSON_PROFILE : scopes
     ACADEMY ||--o{ TERM : defines
     ACADEMY ||--o{ SUBJECT : defines
     SUBJECT ||--o{ CLASS : offered_as
@@ -35,7 +37,8 @@ Use opaque UUID/ULID IDs internally. All academy-owned tables carry `academy_id`
 | --- | --- | --- |
 | `organization` | `id`, `legal_name`, `verification_status`, `created_at` | One pilot academy per organization; real-world verification before issuing |
 | `academy` | `id`, `organization_id`, `name`, `timezone`, `status` | Unique `organization_id` in pilot |
-| `person` | `id`, display name, contact channel, `nostr_pubkey_hex` nullable | Unique linked pubkey when present; do not make public key the sole recovery path |
+| `person` | `id`, `public_alias` nullable, contact channel, `nostr_pubkey_hex` nullable | `public_alias` may mirror the opt-in kind 0 nickname; never store an official/legal name in public Nostr metadata by default |
+| `academy_person_profile` | `id`, `academy_id`, `person_id`, `honorific`, `given_name`, `middle_name` nullable, `family_name`, `preferred_name` nullable, `name_visibility`, created/updated dates | Private academy-scoped identity; unique `academy_id + person_id`; encrypted at rest; never published to a public relay |
 | `membership` | `id`, `academy_id`, `person_id`, role, state, `granted_by`, dates | Unique active person/role/academy; role is academy scoped |
 | `invitation` | `id`, `academy_id`, invited contact, role, token hash, expiry, accepted person | Single-use token; no access while pending |
 | `term` | `id`, `academy_id`, code, start/end | Unique code per academy; start before end |
@@ -61,12 +64,53 @@ Use opaque UUID/ULID IDs internally. All academy-owned tables carry `academy_id`
 
 `assessment_revision` is distinct from `submission_version`: the student changes work; the teacher changes assessment. `gradebook_item` gives homework and tests a common grading target. For a class-wide assignment, the recipient set is derived from active enrollments according to the published catch-up policy. For selected work, explicit `assignment_recipient` rows determine access.
 
+## Public alias and private academy name
+
+Keep the Nostr identity and school identity separate:
+
+- **Public alias:** an optional nickname or chosen display name, such as `Alex`, published by the person in kind `0`. Treat it as internet-public and cacheable by anyone.
+- **Private academy name:** the academy's school-record or professional name, such as honorific `Mr`, given name `Alex`, and family name `SUNDER`. Store it only in `academy_person_profile`.
+- **Rendered academy name:** format the structured fields for the academy locale, for example `Mr Alex SUNDER`. Do not store one preformatted string as the only source of truth.
+- **Credential name:** copy the explicitly approved name into an issued credential payload only after a separate disclosure confirmation. A credential intended for sharing is not private merely because its source profile was private.
+
+`name_visibility` is an academy policy value, not a client-controlled access grant. Initial values:
+
+| Value | Meaning |
+| --- | --- |
+| `self_and_authorized_staff` | Subject, academy administrators with directory permission, and assigned teachers for the subject's classes |
+| `class_participants` | Above, plus enrolled students may see the professional name of their assigned teachers; students still cannot see other students' private names |
+
+Recommended default: students use `self_and_authorized_staff`; teachers use `class_participants` so learners can identify their assigned teacher. Do not offer “all academy members” for student names.
+
+### Name read rules
+
+| Viewer | Private name fields they may read |
+| --- | --- |
+| Subject person | Own academy profile |
+| Owner/admin | Academy directory only with an explicit directory-management permission; access is audited |
+| Assigned teacher | Students actively enrolled in the teacher's assigned classes |
+| Enrolled student | Assigned teachers' professional academy names; own name; never the student roster by default |
+| Public/other academy | None; show the public kind `0` alias if one exists |
+
+Every list and detail endpoint must apply these rules before serialization. Hiding a field in CSS or JavaScript is not access control.
+
+### Implementation requirements
+
+1. Add an `academy_person_profile` migration with a unique `(academy_id, person_id)` constraint and field-level encryption for name columns.
+2. Add `GET /api/academies/:academyId/people/:personId/profile` and `PATCH` for self or authorized directory administrators. Resolve the actor from NIP-98 authentication; never accept viewer role from the request body.
+3. Return a derived `display_name` only after authorization. Unauthorized responses return the public alias, or a truncated `npub` when no alias exists; they do not return redacted structured fields.
+4. When rendering a class roster, authorize the class assignment first, then select private names. Avoid loading the full academy directory and filtering it in the browser.
+5. Record actor, subject, academy, purpose, and time for administrative reads and all writes. Do not copy plaintext names into general application logs or audit payloads.
+6. Support correction, export, retention, and deletion workflows appropriate to the academy's jurisdiction, especially for minors.
+7. Migrate existing `displayName` values as public aliases only. Do not guess that an existing nickname is a legal name; require the person or authorized administrator to enter the private academy name explicitly.
+
 ## Access rules
 
 | Record | Owner/admin | Assigned teacher | Enrolled student |
 | --- | --- | --- | --- |
 | Academy catalog and class policy | Manage | Read own classes | Read enrolled classes |
 | Class roster | Manage | Read own classes | No roster by default |
+| Private academy name | Directory permission, audited | Assigned-class students only | Own name and assigned teachers only |
 | Assignment instructions | Manage for support | Create/read own classes | Read only if targeted |
 | Submission and file | Explicit support/audit grant | Read targeted class | Own only |
 | Draft assessment | Explicit academic grant | Own class | No |
