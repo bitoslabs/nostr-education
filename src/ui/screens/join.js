@@ -1,4 +1,5 @@
 import { el } from '../../core/dom.js';
+import { bindScreen } from '../../core/reactive.js';
 import { getPersona } from '../../data/personas.js';
 import {
   INVITE_STATUS,
@@ -14,7 +15,7 @@ import { statusBadge } from '../components/status-badge.js';
 
 const LOOKUP_TIMEOUT_MS = 6000;
 
-export function renderJoin({ store, app, scope }) {
+export function renderJoin({ app, scope, state }) {
   const node = el('section', { class: 'screen screen--auth' });
   const checks = new Map();
   const gaveUp = new Set();
@@ -24,13 +25,12 @@ export function renderJoin({ store, app, scope }) {
     checks.clear();
   });
 
-  function render() {
-    const state = store.getState();
-    node.className = state.authed ? 'screen' : 'screen screen--auth';
-    const code = parseInviteReference(state.route ?? '');
-    const invite = code ? findInviteByCode(state.invites, code) : null;
+  function render(snapshot = state.val) {
+    node.className = snapshot.authed ? 'screen' : 'screen screen--auth';
+    const code = parseInviteReference(snapshot.route ?? '');
+    const invite = code ? findInviteByCode(snapshot.invites, code) : null;
     const academy = invite
-      ? Object.values(state.academies ?? {}).find((entry) => entry.id === invite.academyId) ?? null
+      ? Object.values(snapshot.academies ?? {}).find((entry) => entry.id === invite.academyId) ?? null
       : null;
 
     if (code && !invite) {
@@ -53,12 +53,10 @@ export function renderJoin({ store, app, scope }) {
       node.replaceChildren(...checkingView(app));
       return;
     }
-    node.replaceChildren(...view({ state, app, invite, academy, code }).filter((child) => child != null && child !== false));
+    node.replaceChildren(...view({ state: snapshot, app, invite, academy, code }).filter((child) => child != null && child !== false));
   }
 
-  scope.add(store.subscribe(render));
-  render();
-  return node;
+  return bindScreen(state, node, render);
 }
 
 function brand() {

@@ -1,4 +1,5 @@
 import { el } from '../../core/dom.js';
+import { bindScreen } from '../../core/reactive.js';
 import { getPersona } from '../../data/personas.js';
 import {
   HOMEWORK_STATUS,
@@ -17,24 +18,23 @@ import { MEMBERSHIP, REQUEST_STATUS, membershipBadge } from '../../domain/school
 import { button, emptyState, pageTitle } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
 
-export function renderEducation({ store, app, scope }) {
+export function renderEducation({ app, state }) {
   const node = el('section', { class: 'screen' });
 
-  function render() {
-    const state = store.getState();
-    const persona = getPersona(state.personaId);
-    const membership = state.memberships?.[persona.id] ?? MEMBERSHIP.NONE;
+  function render(snapshot) {
+    const persona = getPersona(snapshot.personaId);
+    const membership = snapshot.memberships?.[persona.id] ?? MEMBERSHIP.NONE;
     const token = membershipBadge(membership);
 
     const children = [pageTitle('Education')];
     if (token) children.push(el('p', {}, statusBadge(token.label, token.tone)));
 
-    children.push(myAcademies(state, persona));
+    children.push(myAcademies(snapshot, persona));
 
     if (membership !== MEMBERSHIP.ACTIVE) {
       children.push(joinCard(membership, app));
     } else {
-      children.push(...classCards(state, app, persona));
+      children.push(...classCards(snapshot, app, persona));
     }
 
     children.push(
@@ -48,9 +48,7 @@ export function renderEducation({ store, app, scope }) {
     node.replaceChildren(...children);
   }
 
-  scope.add(store.subscribe(render));
-  render();
-  return node;
+  return bindScreen(state, node, render);
 }
 
 function academyMemberships(state, persona) {

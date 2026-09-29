@@ -1,4 +1,5 @@
 import { el } from '../../core/dom.js';
+import { bindScreen } from '../../core/reactive.js';
 import { getPersona } from '../../data/personas.js';
 import { credentialProofText, encodeProofFragment } from '../../domain/credential.js';
 import { findAcademyById } from '../../domain/academy.js';
@@ -9,20 +10,19 @@ import { profileCard } from '../components/profile-card.js';
 import { button, pageTitle } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
 
-export function renderCredentials({ store, app, scope }) {
+export function renderCredentials({ app, state }) {
   const node = el('section', { class: 'screen' });
   let issuedPanel = null;
 
-  function render() {
-    const state = store.getState();
-    const persona = getPersona(state.personaId);
+  function render(snapshot) {
+    const persona = getPersona(snapshot.personaId);
 
     if (persona.role === ROLE.OWNER) {
       if (!issuedPanel) {
         issuedPanel = createIssuedPanel({ app });
         node.replaceChildren(pageTitle('Issued by your organization'), issuedPanel.root);
       }
-      issuedPanel.update(state);
+      issuedPanel.update(snapshot);
       return;
     }
 
@@ -37,7 +37,7 @@ export function renderCredentials({ store, app, scope }) {
     });
 
     if (persona.role === ROLE.TEACHER) {
-      const memberships = teacherMemberships(state, persona.id);
+      const memberships = teacherMemberships(snapshot, persona.id);
       node.replaceChildren(
         pageTitle('Credentials'),
         profile,
@@ -65,7 +65,7 @@ export function renderCredentials({ store, app, scope }) {
       return;
     }
 
-    const credentials = state.credentials ?? [];
+    const credentials = snapshot.credentials ?? [];
     node.replaceChildren(
       pageTitle('Credentials'),
       profile,
@@ -75,7 +75,7 @@ export function renderCredentials({ store, app, scope }) {
             { class: 'grid' },
             credentials.map((credential) =>
               credentialCard(credential, {
-                grants: state.grants,
+                grants: snapshot.grants,
                 onShare: () => app.openShare(credential.id),
                 onRevoke: (index) => app.revokeGrant(index),
                 onCopyProof: (entry) =>
@@ -105,9 +105,7 @@ export function renderCredentials({ store, app, scope }) {
     );
   }
 
-  scope.add(store.subscribe(render));
-  render();
-  return node;
+  return bindScreen(state, node, render);
 }
 
 function teacherMemberships(state, personaId) {

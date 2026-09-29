@@ -1,4 +1,5 @@
 import { el } from '../../core/dom.js';
+import { bindScreen } from '../../core/reactive.js';
 import { getPersona, getPersonaIds } from '../../data/personas.js';
 import { SIGNER_TYPES, signerType } from '../../domain/account.js';
 import { academyTypeLabel } from '../../domain/academy.js';
@@ -28,35 +29,32 @@ const SECTIONS = Object.freeze({
   session: { title: 'Session', icon: 'lucide:log-out', fallback: '⏻', sub: 'sign out' },
 });
 
-export function renderSettings({ store, app, theme, scope }) {
+export function renderSettings({ app, theme, scope, state }) {
   const node = el('section', { class: 'screen' });
   let hideBackups = [];
   let syncAppearance = null;
 
-  function render() {
+  function render(snapshot) {
     hideBackups.forEach((hide) => hide());
     hideBackups = [];
     syncAppearance = null;
-    const state = store.getState();
-    const section = state.settingsSection;
+    const section = snapshot.settingsSection;
     node.replaceChildren(
       ...(section && SECTIONS[section]
-        ? sectionView(section, state, app, theme, (hide) => hideBackups.push(hide), (sync) => {
+        ? sectionView(section, snapshot, app, theme, (hide) => hideBackups.push(hide), (sync) => {
             syncAppearance = sync;
           })
-        : hubView(state, app)),
+        : hubView(snapshot, app)),
     );
   }
 
   scope.add(() => hideBackups.forEach((hide) => hide()));
-  scope.add(store.subscribe(render));
   // Reflect theme/accent changes in place instead of rebuilding the screen.
   // A rebuild replaces freshly-styled nodes that the CSS cross-fade is
   // animating, so hairline dividers snapped while persistent chrome
   // (e.g. the sidebar/frame border) eased smoothly.
   scope.add(theme.subscribe(() => syncAppearance?.()));
-  render();
-  return node;
+  return bindScreen(state, node, render);
 }
 
 function hubView(state, app) {

@@ -1,4 +1,5 @@
 import { el } from '../../core/dom.js';
+import { bindScreen } from '../../core/reactive.js';
 import { getPersona } from '../../data/personas.js';
 import {
   HOMEWORK_STATUS,
@@ -21,13 +22,12 @@ import { ROLE } from '../../domain/school.js';
 import { button, emptyState, pageTitle, row, tabs } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
 
-export function renderTeaching({ store, app, scope }) {
+export function renderTeaching({ app, state }) {
   const node = el('section', { class: 'screen' });
 
-  function render() {
-    const state = store.getState();
-    const persona = getPersona(state.personaId);
-    const queue = reviewQueue(state.submissions ?? [], state.homework ?? [], scopedClassrooms(state, persona));
+  function render(snapshot) {
+    const persona = getPersona(snapshot.personaId);
+    const queue = reviewQueue(snapshot.submissions ?? [], snapshot.homework ?? [], scopedClassrooms(snapshot, persona));
     const counts = reviewCounts(queue);
 
     const tabBar = tabs(
@@ -37,22 +37,20 @@ export function renderTeaching({ store, app, scope }) {
         { id: 'graded', label: `Graded (${counts.graded})` },
         { id: 'gradebook', label: 'Gradebook' },
       ],
-      state.roleTab,
+      snapshot.roleTab,
       (id) => app.setRoleTab(id),
       { label: 'Teaching' },
     );
 
     let body;
-    if (state.roleTab === 'classes') body = classesBody(state, app, persona);
-    else if (state.roleTab === 'gradebook') body = gradebookBody(state, app, persona);
-    else body = assessmentBody(state, app, queue);
+    if (snapshot.roleTab === 'classes') body = classesBody(snapshot, app, persona);
+    else if (snapshot.roleTab === 'gradebook') body = gradebookBody(snapshot, app, persona);
+    else body = assessmentBody(snapshot, app, queue);
 
     node.replaceChildren(pageTitle('Teaching'), tabBar, ...body);
   }
 
-  scope.add(store.subscribe(render));
-  render();
-  return node;
+  return bindScreen(state, node, render);
 }
 
 function scopedClassrooms(state, persona) {

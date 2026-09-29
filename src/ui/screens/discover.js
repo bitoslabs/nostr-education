@@ -1,4 +1,5 @@
 import { el } from '../../core/dom.js';
+import { bindScreen } from '../../core/reactive.js';
 import { getPersona } from '../../data/personas.js';
 import { findAcademyById } from '../../domain/academy.js';
 import { isEnrollable, publishedClassrooms, subjectById } from '../../domain/classroom.js';
@@ -13,15 +14,14 @@ import {
 import { button, emptyState, pageTitle } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
 
-export function renderDiscover({ store, app, scope }) {
+export function renderDiscover({ app, state }) {
   const node = el('section', { class: 'screen' });
 
-  function render() {
-    const state = store.getState();
-    const persona = getPersona(state.personaId);
+  function render(snapshot) {
+    const persona = getPersona(snapshot.personaId);
     const learner = persona.role === ROLE.STUDENT;
-    const membership = state.memberships?.[persona.id] ?? MEMBERSHIP.NONE;
-    const classrooms = publishedClassrooms(state.classrooms ?? []).filter(isEnrollable);
+    const membership = snapshot.memberships?.[persona.id] ?? MEMBERSHIP.NONE;
+    const classrooms = publishedClassrooms(snapshot.classrooms ?? []).filter(isEnrollable);
 
     const children = [pageTitle('Discover')];
     if (learner && membership !== MEMBERSHIP.ACTIVE) children.push(membershipNotice(membership, app));
@@ -29,12 +29,12 @@ export function renderDiscover({ store, app, scope }) {
       ...(classrooms.length
         ? classrooms.map((room) =>
             courseCard(room, {
-              state,
+              state: snapshot,
               app,
               learner,
               persona,
               membership,
-              requests: state.enrollRequests ?? [],
+              requests: snapshot.enrollRequests ?? [],
             }),
           )
         : [emptyState('No open classes yet. Academies publish their classrooms here.')]),
@@ -43,9 +43,7 @@ export function renderDiscover({ store, app, scope }) {
     node.replaceChildren(...children);
   }
 
-  scope.add(store.subscribe(render));
-  render();
-  return node;
+  return bindScreen(state, node, render);
 }
 
 function membershipNotice(membership, app) {

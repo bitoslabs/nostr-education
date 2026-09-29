@@ -2,6 +2,7 @@ import { createActions } from './app/actions.js';
 import { createDialogs } from './app/dialogs.js';
 import { qs } from './core/dom.js';
 import { createEmitter } from './core/emitter.js';
+import { createReactiveStore } from './core/reactive.js';
 import { createRouter, navigate } from './core/router.js';
 import { createScope } from './core/scope.js';
 import { createStore } from './core/store.js';
@@ -125,6 +126,8 @@ const store = createStore({
   gradebookClassId: null,
   membership: MEMBERSHIP.NONE,
 });
+
+const reactiveState = createReactiveStore(store);
 
 const bus = createEmitter();
 setIconLoader(createIconifyLoader());
@@ -347,7 +350,7 @@ function syncCatalog() {
   });
 }
 
-const shell = createShell({ root: appRoot, store, app, theme });
+const shell = createShell({ root: appRoot, app, theme, state: reactiveState });
 shell.frame.append(overlayRoot);
 
 const screens = Object.freeze({
@@ -388,7 +391,9 @@ function mount(render, path) {
   store.setState({ route: path });
   activeScope?.dispose();
   activeScope = createScope();
-  shell.content.replaceChildren(render({ store, bus, app, theme, scope: activeScope }));
+  shell.content.replaceChildren(
+    render({ store, bus, app, theme, scope: activeScope, state: reactiveState }),
+  );
   shell.content.scrollTop = 0;
 }
 

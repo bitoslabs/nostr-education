@@ -1,4 +1,5 @@
 import { el } from '../../core/dom.js';
+import { bindScreen } from '../../core/reactive.js';
 import { findPersonaByKey, getPersona } from '../../data/personas.js';
 import { INVITE_STATUS, academyTypeLabel, inviteBadge } from '../../domain/academy.js';
 import {
@@ -22,14 +23,13 @@ const ORG_TABS = Object.freeze([
   { id: 'network', label: 'Network' },
 ]);
 
-export function renderOrganization({ store, app, scope }) {
+export function renderOrganization({ app, state }) {
   const node = el('section', { class: 'screen' });
 
-  function render() {
-    const state = store.getState();
-    const persona = getPersona(state.personaId);
-    const academy = state.academies?.[persona.id] ?? null;
-    const pending = state.signQueue.filter((entry) => entry.status === 'pending').length;
+  function render(snapshot) {
+    const persona = getPersona(snapshot.personaId);
+    const academy = snapshot.academies?.[persona.id] ?? null;
+    const pending = snapshot.signQueue.filter((entry) => entry.status === 'pending').length;
 
     if (!academy) {
       node.replaceChildren(
@@ -44,8 +44,8 @@ export function renderOrganization({ store, app, scope }) {
     }
 
     const pendingRequests = pendingRequestCount(
-      academyJoinRequests(state, academy),
-      academyEnrollRequests(state, academy),
+      academyJoinRequests(snapshot, academy),
+      academyEnrollRequests(snapshot, academy),
     );
 
     const tabsView = tabs(
@@ -54,7 +54,7 @@ export function renderOrganization({ store, app, scope }) {
         if (tab.id === 'enrollment') return { id: tab.id, label: `Enrollment (${pendingRequests})` };
         return tab;
       }),
-      state.orgTab,
+      snapshot.orgTab,
       (id) => app.setOrgTab(id),
       { label: 'Organization' },
     );
@@ -63,13 +63,11 @@ export function renderOrganization({ store, app, scope }) {
       pageTitle('Organization'),
       el('p', { class: 'muted small' }, `${academy.name} · ${academyTypeLabel(academy.type)}`),
       tabsView,
-      bodyFor(state, app, pending, academy),
+      bodyFor(snapshot, app, pending, academy),
     );
   }
 
-  scope.add(store.subscribe(render));
-  render();
-  return node;
+  return bindScreen(state, node, render);
 }
 
 function bodyFor(state, app, pending, academy) {

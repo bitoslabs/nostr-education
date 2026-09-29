@@ -1,9 +1,10 @@
 import { el } from '../../core/dom.js';
+import { bindScreen } from '../../core/reactive.js';
 import { icon } from '../components/icon.js';
 import { renderBottomTabs } from './mobile-chrome.js';
 import { renderNav } from './nav.js';
 
-export function createShell({ root, store, app, theme }) {
+export function createShell({ root, app, theme, state }) {
   const content = el('div', { id: 'main', class: 'pv-scroll' });
   const screen = el('section', { class: 'pv-screen' }, [content]);
   const stage = el('div', { class: 'stage' }, screen);
@@ -19,16 +20,14 @@ export function createShell({ root, store, app, theme }) {
 
   root.append(sidebar, frame);
 
-  function render() {
-    const state = store.getState();
-    root.classList.toggle('is-auth', !state.authed);
-    root.classList.toggle('is-settings', state.route === '/settings');
-    sidebar.replaceChildren(renderNav({ state, app }));
-    tabbar.replaceChildren(...renderBottomTabs({ state, app }));
+  function render(snapshot) {
+    root.classList.toggle('is-auth', !snapshot.authed);
+    root.classList.toggle('is-settings', snapshot.route === '/settings');
+    sidebar.replaceChildren(renderNav({ state: snapshot, app }));
+    tabbar.replaceChildren(...renderBottomTabs({ state: snapshot, app }));
   }
 
-  store.subscribe(render);
-  render();
+  bindScreen(state, root, render);
 
   return { frame, content };
 }
