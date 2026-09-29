@@ -19,8 +19,16 @@
     <script type="importmap">
       {
         "imports": {
-          "nostr-tools": "https://esm.sh/nostr-tools@2.25.2",
-          "nostr-tools/": "https://esm.sh/nostr-tools@2.25.2/"
+          "vanjs-core": "./vendor/vanjs-core/van.js",
+          "nostr-tools/pure": "./vendor/nostr-tools/pure.js",
+          "nostr-tools/nip19": "./vendor/nostr-tools/nip19.js",
+          "nostr-tools/nip44": "./vendor/nostr-tools/nip44.js",
+          "nostr-tools/nip46": "./vendor/nostr-tools/nip46.js",
+          "nostr-tools/pool": "./vendor/nostr-tools/pool.js",
+          "@noble/curves/": "./vendor/@noble/curves/",
+          "@noble/hashes/": "./vendor/@noble/hashes/",
+          "@noble/ciphers/": "./vendor/@noble/ciphers/",
+          "@scure/base": "./vendor/@scure/base/index.js"
         }
       }
     </script>
@@ -49,5 +57,15 @@
     <div id="app" data-app-root></div>
     <div id="overlays" data-overlay-root></div>
     <script type="module" src="./src/main.js"></script>
+    <script>
+      // Offline shell: cache the app after the first online visit (see sw.js).
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('./sw.js').catch(function () {
+            /* offline mode unavailable; the app still runs online */
+          });
+        });
+      }
+    </script>
   </body>
 </html>

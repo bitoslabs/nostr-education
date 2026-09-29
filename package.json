@@ -7,9 +7,12 @@
   "scripts": {
     "dev": "python3 -m http.server 5173",
     "server": "node server/index.js",
-    "test": "node --test"
+    "test": "node --test",
+    "vendor": "node scripts/vendor.mjs",
+    "postinstall": "node scripts/vendor.mjs"
   },
   "dependencies": {
-    "nostr-tools": "^2.25.2"
+    "nostr-tools": "^2.25.2",
+    "vanjs-core": "^1.6.1"
   }
 }
