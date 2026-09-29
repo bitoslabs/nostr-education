@@ -95,7 +95,9 @@ function membershipOf(state, personaId) {
   return state.memberships?.[personaId] ?? MEMBERSHIP.NONE;
 }
 
-export function createActions({ store, bus, signer, confirm, relay }) {
+export function createActions({ store, bus, signer, confirm: confirmService, relay }) {
+  const confirm =
+    typeof confirmService === 'function' ? confirmService : (confirmService?.confirm ?? confirmService?.ask);
   const state = () => store.getState();
   const update = (patch) => store.setState(patch);
   const toast = (message, tone = 'info') => bus.emit('toast', { message, tone });
@@ -966,7 +968,14 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     return true;
   }
 
-  function signOut() {
+  async function signOut() {
+    const ok = await confirm({
+      title: 'Sign out?',
+      body: 'This clears the session on this device and returns you to the sign-in screen. Keys stored by a signer stay with that signer.',
+      confirmLabel: 'Sign out',
+    });
+    if (!ok) return false;
+
     signer.setSigner(null);
     clearState();
     clearRegistry();
@@ -999,6 +1008,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     });
     navigate('/welcome');
     toast('Signed out.', 'info');
+    return true;
   }
 
   async function createAcademy({ name, type = 'school', timeZone = 'UTC' } = {}) {
