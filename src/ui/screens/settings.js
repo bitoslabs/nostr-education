@@ -31,22 +31,30 @@ const SECTIONS = Object.freeze({
 export function renderSettings({ store, app, theme, scope }) {
   const node = el('section', { class: 'screen' });
   let hideBackups = [];
+  let syncAppearance = null;
 
   function render() {
     hideBackups.forEach((hide) => hide());
     hideBackups = [];
+    syncAppearance = null;
     const state = store.getState();
     const section = state.settingsSection;
     node.replaceChildren(
       ...(section && SECTIONS[section]
-        ? sectionView(section, state, app, theme, (hide) => hideBackups.push(hide))
+        ? sectionView(section, state, app, theme, (hide) => hideBackups.push(hide), (sync) => {
+            syncAppearance = sync;
+          })
         : hubView(state, app)),
     );
   }
 
   scope.add(() => hideBackups.forEach((hide) => hide()));
   scope.add(store.subscribe(render));
-  scope.add(theme.subscribe(render));
+  // Reflect theme/accent changes in place instead of rebuilding the screen.
+  // A rebuild replaces freshly-styled nodes that the CSS cross-fade is
+  // animating, so hairline dividers snapped while persistent chrome
+  // (e.g. the sidebar/frame border) eased smoothly.
+  scope.add(theme.subscribe(() => syncAppearance?.()));
   render();
   return node;
 }
@@ -85,13 +93,13 @@ function hubView(state, app) {
   ];
 }
 
-function sectionView(section, state, app, theme, registerBackupHide) {
+function sectionView(section, state, app, theme, registerBackupHide, registerSync) {
   const meta = SECTIONS[section];
   const persona = getPersona(state.personaId);
   const membership = state.memberships?.[persona.id] ?? state.membership ?? MEMBERSHIP.NONE;
 
   const bodies = {
-    appearance: () => [appearanceBody(theme)],
+    appearance: () => [appearanceBody(theme, registerSync)],
     profile: () => [
       renderEditProfile({
         persona,
@@ -184,43 +192,49 @@ function plainRow(iconName, fallback, title, onClick) {
   ]);
 }
 
-function switchLine(label, checked, onChange) {
+function switchLine(key, label, theme) {
+  const on = theme.flags()[key];
   return el('div', { class: 'list-row' }, [
     el('span', { class: 'switch__label' }, label),
     el('span', { class: 'spacer' }),
     el(
       'button',
       {
-        class: `switch${checked ? ' is-on' : ''}`,
+        class: `switch${on ? ' is-on' : ''}`,
         type: 'button',
         role: 'switch',
-        'aria-checked': String(checked),
+        'aria-checked': String(Boolean(on)),
         'aria-label': label,
-        onClick: () => onChange(!checked),
+        'data-flag': key,
+        // Read the live flag so repeated taps always toggle from the current
+        // value (the node is updated in place, not rebuilt).
+        onClick: () => theme.setFlag(key, !theme.flags()[key]),
       },
       el('span', { class: 'switch__dot', 'aria-hidden': 'true' }),
     ),
   ]);
 }
 
-function appearanceBody(theme) {
-  const flags = theme.flags();
-  return el('div', {}, [
+function appearanceBody(theme, registerSync) {
+  const themeSeg = segmented(THEME_CHOICES, theme.current(), (id) => theme.setTheme(id), { label: 'Theme' });
+  const resolvedNote = el('p', { class: 'small dim' });
+  const accentSwatches = swatchGroup(
+    Object.entries(ACCENTS).map(([id, token]) => ({ id, color: token.value, label: id })),
+    theme.accent(),
+    (id) => theme.setAccent(id),
+  );
+  const root = el('div', {}, [
     el('span', { class: 'field-label' }, 'Theme'),
-    segmented(THEME_CHOICES, theme.current(), (id) => theme.setTheme(id), { label: 'Theme' }),
-    el('p', { class: 'small dim' }, `System follows your device — currently resolving to ${theme.resolved()}.`),
+    themeSeg,
+    resolvedNote,
 
     el('span', { class: 'field-label', style: { marginTop: '18px' } }, 'Accent'),
-    swatchGroup(
-      Object.entries(ACCENTS).map(([id, token]) => ({ id, color: token.value, label: id })),
-      theme.accent(),
-      (id) => theme.setAccent(id),
-    ),
+    accentSwatches,
 
     el('div', { class: 'list-divide', style: { marginTop: '18px' } }, [
-      switchLine('Pure black (OLED)', flags.oled, (on) => theme.setFlag('oled', on)),
-      switchLine('Compact density', flags.compact, (on) => theme.setFlag('compact', on)),
-      switchLine('Reduce motion', flags.reduceMotion, (on) => theme.setFlag('reduceMotion', on)),
+      switchLine('oled', 'Pure black (OLED)', theme),
+      switchLine('compact', 'Compact density', theme),
+      switchLine('reduceMotion', 'Reduce motion', theme),
     ]),
 
     el(
@@ -229,6 +243,34 @@ function appearanceBody(theme) {
       'Theme follows the system by default; overrides persist locally on this device.',
     ),
   ]);
+
+  // Update the controls in place so the theme cross-fade keeps running on the
+  // existing nodes (no rebuild → no flash on the section dividers).
+  registerSync(() => {
+    const active = theme.current();
+    themeSeg.querySelectorAll('.seg__btn').forEach((btn, i) => {
+      const on = THEME_CHOICES[i]?.id === active;
+      btn.classList.toggle('is-on', on);
+      btn.setAttribute('aria-pressed', String(on));
+    });
+    resolvedNote.textContent = `System follows your device — currently resolving to ${theme.resolved()}.`;
+
+    const accentId = theme.accent();
+    accentSwatches.querySelectorAll('.swatch').forEach((btn, i) => {
+      const on = Object.keys(ACCENTS)[i] === accentId;
+      btn.classList.toggle('is-on', on);
+      btn.setAttribute('aria-pressed', String(on));
+    });
+
+    const flags = theme.flags();
+    root.querySelectorAll('.switch[data-flag]').forEach((sw) => {
+      const on = Boolean(flags[sw.dataset.flag]);
+      sw.classList.toggle('is-on', on);
+      sw.setAttribute('aria-checked', String(on));
+    });
+  });
+
+  return root;
 }
 
 function identityCard(persona, app) {
