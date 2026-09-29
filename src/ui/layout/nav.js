@@ -16,7 +16,9 @@ const ROLE_ICON = Object.freeze({
 export function badgeCount(state) {
   const persona = getPersona(state.personaId);
   if (persona.role === ROLE.TEACHER) {
-    const scope = new Set(classroomsForTeacher(state.classrooms ?? [], persona.id).map((room) => room.id));
+    const scope = new Set(
+      classroomsForTeacher(state.classrooms ?? [], persona.id, state.capabilities ?? []).map((room) => room.id),
+    );
     return (state.submissions ?? []).filter(
       (submission) => submission.status === SUBMISSION_STATUS.SUBMITTED && scope.has(submission.classroomId),
     ).length;

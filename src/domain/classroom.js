@@ -1,3 +1,5 @@
+import { CAPABILITY, isCapabilityActive } from './capability.js';
+
 export const CLASS_STATUS = Object.freeze({
   DRAFT: 'draft',
   PUBLISHED: 'published',
@@ -15,6 +17,44 @@ export const SUBMISSION_STATUS = Object.freeze({
   GRADED: 'graded',
   REVISION: 'revision',
 });
+
+export const LATE_POLICY = Object.freeze({
+  ACCEPT: 'accept',
+  FLAG: 'flag',
+  BLOCK: 'block',
+});
+
+export function normalizeLatePolicy(value) {
+  const raw = String(value ?? '').toLowerCase();
+  if (raw === LATE_POLICY.BLOCK) return LATE_POLICY.BLOCK;
+  if (raw === LATE_POLICY.ACCEPT) return LATE_POLICY.ACCEPT;
+  return LATE_POLICY.FLAG;
+}
+
+export function latePolicyLabel(policy) {
+  const normalized = normalizeLatePolicy(policy);
+  if (normalized === LATE_POLICY.BLOCK) return 'late work is refused';
+  if (normalized === LATE_POLICY.ACCEPT) return 'late work accepted with no mark';
+  return 'late work accepted and flagged';
+}
+
+// A homework is late when it has a real due time in the past. The server clock is
+// authoritative in server mode; the caller passes `at` so tests are deterministic.
+export function isLate(homework, at = Date.now()) {
+  if (!homework?.dueAt) return false;
+  const due = Date.parse(homework.dueAt);
+  if (!Number.isFinite(due)) return false;
+  return at > due;
+}
+
+export function canSubmitLate(classroom, homework, at = Date.now()) {
+  return !isLate(homework, at) || normalizeLatePolicy(classroom?.latePolicy) !== LATE_POLICY.BLOCK;
+}
+
+export function lateBadge(submission) {
+  if (!submission?.late && !submission?.lateFlag) return null;
+  return { label: 'late', tone: 'warn' };
+}
 
 export function subjectsForAcademy(subjects = [], academyId) {
   return subjects.filter((subject) => subject.academyId === academyId);
@@ -44,14 +84,37 @@ export function classroomsForSubject(classrooms = [], subjectId) {
   return classrooms.filter((classroom) => classroom.subjectId === subjectId);
 }
 
-export function classroomsForTeacher(classrooms = [], teacherId) {
-  return classrooms.filter((classroom) => classroom.teacherId === teacherId);
+// Signed capabilities are a roster source: a learner's classes come from the
+// class roster and/or active enrollment grants, so a device that never synced
+// `studentIds` still sees the right classes (see docs/architecture/nostr-native.md).
+export function classroomIdsForCapability(capabilities = [], accountId, kind) {
+  return new Set(
+    (capabilities ?? [])
+      .filter(
+        (capability) =>
+          capability &&
+          capability.kind === kind &&
+          capability.accountId === accountId &&
+          capability.classroomId &&
+          isCapabilityActive(capability),
+      )
+      .map((capability) => capability.classroomId),
+  );
 }
 
-export function classroomsForStudent(classrooms = [], studentId) {
+export function classroomsForTeacher(classrooms = [], teacherId, capabilities = []) {
+  const assigned = classroomIdsForCapability(capabilities, teacherId, CAPABILITY.TEACHER_ASSIGNMENT);
+  return classrooms.filter(
+    (classroom) => classroom.teacherId === teacherId || assigned.has(classroom.id),
+  );
+}
+
+export function classroomsForStudent(classrooms = [], studentId, capabilities = []) {
+  const enrolled = classroomIdsForCapability(capabilities, studentId, CAPABILITY.ENROLLMENT);
   return classrooms.filter(
     (classroom) =>
-      classroom.status === CLASS_STATUS.PUBLISHED && (classroom.studentIds ?? []).includes(studentId),
+      classroom.status === CLASS_STATUS.PUBLISHED &&
+      ((classroom.studentIds ?? []).includes(studentId) || enrolled.has(classroom.id)),
   );
 }
 
@@ -70,8 +133,10 @@ export function homeworkForClassroom(homework = [], classroomId) {
   return homework.filter((item) => item.classroomId === classroomId);
 }
 
-export function homeworkForStudent(homework = [], classrooms = [], studentId) {
-  const enrolled = new Set(classroomsForStudent(classrooms, studentId).map((room) => room.id));
+export function homeworkForStudent(homework = [], classrooms = [], studentId, capabilities = []) {
+  const enrolled = new Set(
+    classroomsForStudent(classrooms, studentId, capabilities).map((room) => room.id),
+  );
   return homework
     .filter((item) => enrolled.has(item.classroomId))
     .filter((item) => item.status !== HOMEWORK_STATUS.DRAFT);
@@ -91,6 +156,28 @@ export function submissionFor(submissions = [], homeworkId, studentId) {
       .reverse()
       .find((submission) => submission.homeworkId === homeworkId && submission.studentId === studentId) ?? null
   );
+}
+
+export function versionsFor(submissionVersions = [], submissionId) {
+  return submissionVersions
+    .filter((entry) => entry.submissionId === submissionId)
+    .sort((a, b) => (Number(a.version) || 0) - (Number(b.version) || 0));
+}
+
+export function latestVersion(submissionVersions = [], submissionId) {
+  const versions = versionsFor(submissionVersions, submissionId);
+  return versions.length ? versions[versions.length - 1] : null;
+}
+
+export function assessmentRevisionsFor(assessmentRevisions = [], submissionId) {
+  return assessmentRevisions
+    .filter((entry) => entry.submissionId === submissionId)
+    .sort((a, b) => (Number(a.version) || 0) - (Number(b.version) || 0));
+}
+
+export function latestAssessmentRevision(assessmentRevisions = [], submissionId) {
+  const revisions = assessmentRevisionsFor(assessmentRevisions, submissionId);
+  return revisions.length ? revisions[revisions.length - 1] : null;
 }
 
 export function isValidScore(value, maxScore = 100) {

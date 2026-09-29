@@ -12,9 +12,18 @@ import {
   publicKeyFromSecret,
   encodeNsec,
 } from '../services/nostr.js';
-import { APP_TAG, decodeRecord, encodeRecord, recordTags } from '../services/records.js';
+import {
+  APP_TAG,
+  decodeRecord,
+  encodeRecord,
+  headAddress,
+  recordKind,
+  recordTags,
+} from '../services/records.js';
 import { normalizeBlossomServer, uploadBlob } from '../services/blossom.js';
+import { wrapForRecipient } from '../services/giftwrap.js';
 import { RECORD_TYPES, toPublicRecord } from '../domain/records.js';
+import { CAPABILITY, createCapability } from '../domain/capability.js';
 import { buildScoreSheet, normalizeRubric, rubricMax, scoresComplete, scoresTotal } from '../domain/rubric.js';
 import { credentialPayload, credentialProofContent, revocationPayload } from '../domain/credential.js';
 import { ACTION, authorize } from '../domain/authorization.js';
@@ -34,12 +43,15 @@ import {
   CLASS_STATUS,
   HOMEWORK_STATUS,
   SUBMISSION_STATUS,
+  canSubmitLate,
   classroomActivity,
   classroomById,
   homeworkForClassroom,
   isEnrollable,
   isHomeworkOpen,
+  isLate,
   isValidScore,
+  normalizeLatePolicy,
   subjectById,
   subjectInUse,
   submissionFor,
@@ -48,6 +60,7 @@ import { evaluateCompletion, normalizePolicy } from '../domain/completion.js';
 import { DELIVERY_STATE } from '../domain/delivery.js';
 import { normalizeHandle, validateHandle } from '../domain/handle.js';
 import { truncateNpub } from '../domain/identity.js';
+import { normalizeMode } from '../domain/mode.js';
 import { normalizeUrl, parseProfileMeta, profileContent } from '../domain/profile.js';
 import {
   addRelay as addRelayToList,
@@ -139,16 +152,38 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     return current.academies?.[personaId] ?? null;
   }
 
+  function upsertCapability(list = [], capability) {
+    if (!capability) return list;
+    return [capability, ...list.filter((entry) => entry.id !== capability.id)];
+  }
+
+  function canPublish() {
+    return typeof signer.canSign === 'function' && signer.canSign();
+  }
+
   function classroomContext(current, classroom) {
     return {
       actor: current.personaId,
       classroom,
       academy: findAcademyById(current.academies ?? {}, classroom?.academyId),
+      capabilities: current.capabilities ?? [],
     };
   }
 
   function canManageClassroom(current, classroom) {
     return authorize(ACTION.MANAGE_CLASSROOM, classroomContext(current, classroom));
+  }
+
+  function canSubmitWork(current, classroom) {
+    return authorize(ACTION.SUBMIT, classroomContext(current, classroom));
+  }
+
+  function canFinalizeAssessment(current, classroom) {
+    return authorize(ACTION.FINALIZE_ASSESSMENT, classroomContext(current, classroom));
+  }
+
+  function canCorrectAssessment(current, classroom) {
+    return authorize(ACTION.CORRECT_ASSESSMENT, classroomContext(current, classroom));
   }
 
   function homeworkRecipients(classroom) {
@@ -534,6 +569,13 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     update({ blossomServer: normalizeBlossomServer(server) });
   }
 
+  function setMode(mode) {
+    const next = normalizeMode(mode);
+    update({ mode: next });
+    toast(`Mode set to ${next}.`, 'ok');
+    return next;
+  }
+
   function fetchProfile(targetId) {
     const me = targetId ?? state().accountId;
     if (!me) return Promise.resolve(null);
@@ -614,11 +656,40 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     return result.approved ? result.event : null;
   }
 
-  function publishRecord({ type, id, payload, recipients = [], encrypted = false, title, action, detail } = {}) {
+  function publishRecord({
+    type,
+    id,
+    payload,
+    recipients = [],
+    encrypted = false,
+    // Encrypted records are gift-wrapped by default so relays cannot see the
+    // real author or recipient. Pass giftWrap: false to force plain NIP-44.
+    giftWrap = encrypted,
+    head = null,
+    title,
+    action,
+    detail,
+  } = {}) {
     if (!signer.canSign()) return Promise.resolve(null);
     const plaintext = encodeRecord(type, id, payload);
 
     const run = async () => {
+      if (encrypted && giftWrap) {
+        const active = signer.getSigner();
+        if (!active?.nip44Encrypt || !active?.signEvent) {
+          toast('This signer cannot gift-wrap, so the record stays on this device.', 'warn');
+          return null;
+        }
+        let last = null;
+        for (const recipient of recipients.filter(Boolean)) {
+          const wrap = await wrapForRecipient({ content: plaintext, recipient, signer: active });
+          if (!wrap) return last;
+          last = await relay.publish(wrap);
+        }
+        if (last) update({ deliveries: [...relaySnapshot(last), ...state().deliveries] });
+        return last;
+      }
+
       if (encrypted) {
         if (!signer.canEncrypt()) {
           toast('This signer cannot encrypt, so the record stays on this device.', 'warn');
@@ -628,8 +699,8 @@ export function createActions({ store, bus, signer, confirm, relay }) {
         for (const recipient of recipients.filter(Boolean)) {
           const ciphertext = await signer.encrypt(recipient, plaintext);
           const event = buildEvent({
-            kind: KIND.APP_DATA,
-            tags: recordTags(type, id, { recipients: [recipient] }),
+            kind: recordKind(type),
+            tags: recordTags(type, id, { recipients: [recipient], head }),
             content: ciphertext,
           });
           const signed = await signRecord(event, { title, action, detail });
@@ -641,8 +712,11 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       }
 
       const event = buildEvent({
-        kind: KIND.APP_DATA,
-        tags: recordTags(type, id, { code: type === RECORD_TYPES.JOIN_LINK ? payload?.code : null }),
+        kind: recordKind(type),
+        tags: recordTags(type, id, {
+          code: type === RECORD_TYPES.JOIN_LINK ? payload?.code : null,
+          head,
+        }),
         content: plaintext,
       });
       const signed = await signRecord(event, { title, action, detail });
@@ -911,11 +985,14 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       classrooms: [],
       homework: [],
       submissions: [],
+      submissionVersions: [],
+      assessmentRevisions: [],
       joinRequests: [],
       enrollRequests: [],
       events: [],
       signQueue: [],
       recommendations: [],
+      capabilities: [],
       credentials: [],
       deliveries: [],
       lastCreated: null,
@@ -1523,8 +1600,17 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     const classroom = classroomById(current.classrooms ?? [], classroomId);
     if (!classroom) return false;
     const updated = { ...classroom, teacherId, status: CLASS_STATUS.PUBLISHED };
+    const capability = createCapability({
+      kind: CAPABILITY.TEACHER_ASSIGNMENT,
+      academyId: classroom.academyId,
+      accountId: teacherId,
+      classroomId: classroom.id,
+      role: ROLE.TEACHER,
+      issuedBy: current.personaId,
+    });
     update({
       classrooms: current.classrooms.map((room) => (room.id === classroomId ? updated : room)),
+      capabilities: upsertCapability(current.capabilities, capability),
     });
     publishRecord({
       type: 'classroom',
@@ -1533,6 +1619,17 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       title: 'Assign teacher',
       action: el('span', {}, `Assign a teacher to ${classroom.name}.`),
     });
+    if (capability && canPublish()) {
+      publishRecord({
+        type: RECORD_TYPES.CAPABILITY,
+        id: capability.id,
+        payload: capability,
+        recipients: [teacherId],
+        encrypted: true,
+        title: 'Grant teacher assignment',
+        action: el('span', {}, `Sign the teacher assignment for ${classroom.name} (encrypted).`),
+      });
+    }
     toast(`${classroom.name} assigned and published.`, 'ok');
     return true;
   }
@@ -1703,7 +1800,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     return true;
   }
 
-  function setCompletionPolicy({ classroomId, minAverage = 0, requireAllHomework = true } = {}) {
+  function setCompletionPolicy({ classroomId, minAverage = 0, requireAllHomework = true, latePolicy } = {}) {
     const current = state();
     const classroom = classroomById(current.classrooms ?? [], classroomId);
     if (!classroom || !authorize(ACTION.SET_POLICY, classroomContext(current, classroom))) {
@@ -1714,6 +1811,8 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     const updated = {
       ...classroom,
       completion: policy,
+      latePolicy:
+        latePolicy === undefined ? classroom.latePolicy ?? 'flag' : normalizeLatePolicy(latePolicy),
       completionVersion: (classroom.completionVersion ?? 0) + 1,
       completionUpdatedAt: 'now',
     };
@@ -1928,7 +2027,16 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     return { ...invite, url: inviteUrl(invite.code, appBase()) };
   }
 
-  function createHomework({ classroomId, title, instructions = '', due = '', maxScore = 100, rubric = [] } = {}) {
+  function createHomework({
+    classroomId,
+    title,
+    instructions = '',
+    due = '',
+    dueAt = '',
+    maxScore = 100,
+    rubric = [],
+    publish = true,
+  } = {}) {
     const current = state();
     const classroom = classroomById(current.classrooms ?? [], classroomId);
     if (!classroom) {
@@ -1952,6 +2060,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     }
     const persona = getPersona(current.personaId);
     const subject = subjectById(current.subjects ?? [], classroom.subjectId);
+    const status = publish ? HOMEWORK_STATUS.PUBLISHED : HOMEWORK_STATUS.DRAFT;
     const item = {
       id: nextId('hw'),
       academyId: classroom.academyId,
@@ -1960,9 +2069,10 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       title: homeworkTitle,
       instructions: String(instructions ?? '').trim(),
       due: String(due ?? '').trim() || 'no due date',
+      dueAt: String(dueAt ?? '').trim() || null,
       maxScore: max,
       rubric: criteria,
-      status: HOMEWORK_STATUS.PUBLISHED,
+      status,
       createdBy: persona.id,
     };
     update({
@@ -1975,22 +2085,46 @@ export function createActions({ store, bus, signer, confirm, relay }) {
           time: 'now',
           context: `${subject?.name ?? classroom.name} ▸ ${classroom.name}`,
           audience: 'all',
-          text: `published “${homeworkTitle}” · due ${item.due} · out of ${max}.`,
+          text: publish
+            ? `published “${homeworkTitle}” · due ${item.due} · out of ${max}.`
+            : `saved “${homeworkTitle}” as a draft.`,
         },
         ...current.events,
       ],
     });
-    publishRecord({
-      type: 'homework',
-      id: item.id,
-      payload: item,
-      recipients: [classroom.teacherId, ...(classroom.studentIds ?? [])],
-      encrypted: true,
-      title: 'Publish homework',
-      action: el('span', {}, `Send “${homeworkTitle}” to the class (encrypted).`),
-    });
-    toast(`Homework “${homeworkTitle}” posted.`, 'ok');
+    if (publish) {
+      publishRecord({
+        type: 'homework',
+        id: item.id,
+        payload: item,
+        recipients: [classroom.teacherId, ...(classroom.studentIds ?? [])],
+        encrypted: true,
+        title: 'Publish homework',
+        action: el('span', {}, `Send “${homeworkTitle}” to the class (encrypted).`),
+      });
+      toast(`Homework “${homeworkTitle}” posted.`, 'ok');
+    } else {
+      toast(`Homework “${homeworkTitle}” saved as a draft — not sent to learners.`, 'info');
+    }
     return item;
+  }
+
+  function publishHomework(homeworkId) {
+    const current = state();
+    const item = (current.homework ?? []).find((entry) => entry.id === homeworkId);
+    if (!item) return false;
+    const classroom = classroomById(current.classrooms ?? [], item.classroomId);
+    if (!canManageClassroom(current, classroom)) {
+      toast('Only the class teacher or academy owner can publish this homework.', 'warn');
+      return false;
+    }
+    if (item.status === HOMEWORK_STATUS.PUBLISHED) return true;
+    return setHomeworkStatus(
+      homeworkId,
+      HOMEWORK_STATUS.PUBLISHED,
+      `published “${item.title}” to the class.`,
+      'ok',
+    );
   }
 
   function submitHomework({ homeworkId, text } = {}) {
@@ -1999,6 +2133,16 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     if (!item) return false;
     if (!isHomeworkOpen(item)) {
       toast('This homework is closed to new submissions.', 'warn');
+      return false;
+    }
+    const classroom = classroomById(current.classrooms ?? [], item.classroomId);
+    if (!canSubmitWork(current, classroom)) {
+      toast('Only learners enrolled in this class can submit.', 'warn');
+      return false;
+    }
+    const late = isLate(item);
+    if (late && !canSubmitLate(classroom, item)) {
+      toast('This homework is past its due date and late work is not accepted.', 'warn');
       return false;
     }
     const persona = getPersona(current.personaId);
@@ -2021,14 +2165,32 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       scores: null,
       maxScore: item.maxScore,
       feedback: '',
+      late,
       submittedAt: 'now',
       gradedAt: null,
       gradedBy: null,
+    };
+    // Append an immutable version. The head above stays the mutable pointer and
+    // is derived from versions on other devices, so earlier text is never lost.
+    const versionRecord = {
+      id: nextId('subver'),
+      submissionId: submission.id,
+      homeworkId,
+      classroomId: item.classroomId,
+      studentId: persona.id,
+      version,
+      text: body,
+      late,
+      submittedAt: 'now',
     };
     update({
       submissions: existing
         ? (current.submissions ?? []).map((entry) => (entry.id === existing.id ? submission : entry))
         : [submission, ...(current.submissions ?? [])],
+      submissionVersions: [
+        versionRecord,
+        ...(current.submissionVersions ?? []).filter((entry) => entry.id !== versionRecord.id),
+      ],
       events: [
         {
           id: nextId('e'),
@@ -2038,21 +2200,30 @@ export function createActions({ store, bus, signer, confirm, relay }) {
           context: item.title,
           audience: [item.createdBy],
           homeworkId,
-          text: `submitted version ${version} of “${item.title}”.`,
+          late,
+          text: late
+            ? `submitted version ${version} of “${item.title}” after the due date.`
+            : `submitted version ${version} of “${item.title}”.`,
         },
         ...current.events,
       ],
     });
     publishRecord({
-      type: 'submission',
-      id: submission.id,
-      payload: submission,
+      type: RECORD_TYPES.SUBMISSION_VERSION,
+      id: versionRecord.id,
+      payload: versionRecord,
       recipients: [item.createdBy],
       encrypted: true,
+      head: headAddress('submission', submission.id, persona.id),
       title: 'Submit homework',
       action: el('span', {}, `Submit version ${version} of “${item.title}” (encrypted).`),
     });
-    toast(`Submitted version ${version} — your teacher will score it.`, 'ok');
+    toast(
+      late
+        ? `Submitted version ${version} (late) — your teacher will score it.`
+        : `Submitted version ${version} — your teacher will score it.`,
+      late ? 'warn' : 'ok',
+    );
     return true;
   }
 
@@ -2061,7 +2232,11 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     const submission = (current.submissions ?? []).find((entry) => entry.id === submissionId);
     if (!submission) return false;
     const classroom = classroomById(current.classrooms ?? [], submission.classroomId);
-    if (!canManageClassroom(current, classroom)) {
+    const alreadyGraded = submission.status === SUBMISSION_STATUS.GRADED;
+    const canScore = alreadyGraded
+      ? canCorrectAssessment(current, classroom)
+      : canFinalizeAssessment(current, classroom);
+    if (!canScore) {
       toast('Only the class teacher or academy owner can score this.', 'warn');
       return false;
     }
@@ -2083,6 +2258,25 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       return false;
     }
     const persona = getPersona(current.personaId);
+    const priorFinalized = (current.assessmentRevisions ?? []).filter(
+      (entry) => entry.submissionId === submission.id && entry.status === 'finalized',
+    ).length;
+    // Append an immutable assessment revision; corrections and re-grades keep the
+    // earlier results instead of overwriting them.
+    const revisionRecord = {
+      id: nextId('asmt'),
+      submissionId: submission.id,
+      studentId: submission.studentId,
+      homeworkId: submission.homeworkId,
+      version: priorFinalized + 1,
+      status: 'finalized',
+      score: numeric,
+      scores: sheet,
+      maxScore,
+      feedback: String(feedback ?? '').trim(),
+      gradedAt: 'now',
+      gradedBy: persona.id,
+    };
     update({
       submissions: current.submissions.map((entry) =>
         entry.id === submissionId
@@ -2098,6 +2292,10 @@ export function createActions({ store, bus, signer, confirm, relay }) {
             }
           : entry,
       ),
+      assessmentRevisions: [
+        revisionRecord,
+        ...(current.assessmentRevisions ?? []).filter((entry) => entry.id !== revisionRecord.id),
+      ],
       events: [
         {
           id: nextId('e'),
@@ -2113,20 +2311,12 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       ],
     });
     publishRecord({
-      type: 'grade',
-      id: nextId('grade'),
-      payload: {
-        submissionId: submission.id,
-        studentId: submission.studentId,
-        homeworkId: submission.homeworkId,
-        score: numeric,
-        scores: sheet,
-        feedback: String(feedback ?? '').trim(),
-        gradedAt: 'now',
-        gradedBy: persona.id,
-      },
+      type: RECORD_TYPES.ASSESSMENT_REVISION,
+      id: revisionRecord.id,
+      payload: revisionRecord,
       recipients: [submission.studentId],
       encrypted: true,
+      head: headAddress('assessment', submission.id, persona.id),
       title: 'Send score',
       action: el('span', {}, `Send ${numeric}/${maxScore} to the learner (encrypted).`),
     });
@@ -2139,7 +2329,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     const submission = (current.submissions ?? []).find((entry) => entry.id === submissionId);
     if (!submission) return false;
     const classroom = classroomById(current.classrooms ?? [], submission.classroomId);
-    if (!canManageClassroom(current, classroom)) {
+    if (!canFinalizeAssessment(current, classroom)) {
       toast('Only the class teacher or academy owner can request a revision.', 'warn');
       return false;
     }
@@ -2150,6 +2340,22 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     }
     const persona = getPersona(current.personaId);
     const homeworkItem = (current.homework ?? []).find((entry) => entry.id === submission.homeworkId);
+    const priorRevisions = (current.assessmentRevisions ?? []).filter(
+      (entry) => entry.submissionId === submission.id,
+    ).length;
+    const revisionRecord = {
+      id: nextId('asmt'),
+      submissionId: submission.id,
+      studentId: submission.studentId,
+      homeworkId: submission.homeworkId,
+      version: priorRevisions + 1,
+      status: 'revision',
+      score: null,
+      scores: null,
+      feedback: note,
+      requestedAt: 'now',
+      requestedBy: persona.id,
+    };
     update({
       submissions: current.submissions.map((entry) =>
         entry.id === submissionId
@@ -2164,6 +2370,10 @@ export function createActions({ store, bus, signer, confirm, relay }) {
             }
           : entry,
       ),
+      assessmentRevisions: [
+        revisionRecord,
+        ...(current.assessmentRevisions ?? []).filter((entry) => entry.id !== revisionRecord.id),
+      ],
       events: [
         {
           id: nextId('e'),
@@ -2181,18 +2391,12 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       ],
     });
     publishRecord({
-      type: 'revision',
-      id: nextId('rev'),
-      payload: {
-        submissionId: submission.id,
-        studentId: submission.studentId,
-        homeworkId: submission.homeworkId,
-        feedback: note,
-        requestedAt: 'now',
-        requestedBy: persona.id,
-      },
+      type: RECORD_TYPES.ASSESSMENT_REVISION,
+      id: revisionRecord.id,
+      payload: revisionRecord,
       recipients: [submission.studentId],
       encrypted: true,
+      head: headAddress('assessment', submission.id, persona.id),
       title: 'Request revision',
       action: el('span', {}, 'Send revision feedback to the learner (encrypted).'),
     });
@@ -2200,7 +2404,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     return true;
   }
 
-  function updateHomework({ homeworkId, title, instructions = '', due = '', maxScore, rubric } = {}) {
+  function updateHomework({ homeworkId, title, instructions = '', due = '', dueAt, maxScore, rubric } = {}) {
     const current = state();
     const item = (current.homework ?? []).find((entry) => entry.id === homeworkId);
     if (!item) return false;
@@ -2225,6 +2429,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       title: nextTitle,
       instructions: String(instructions ?? '').trim(),
       due: String(due ?? '').trim() || 'no due date',
+      dueAt: dueAt === undefined ? item.dueAt ?? null : String(dueAt ?? '').trim() || null,
       maxScore: max,
       rubric: criteria,
     };
@@ -2287,7 +2492,12 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       payload: updated,
       recipients: homeworkRecipients(classroom),
       encrypted: true,
-      title: status === HOMEWORK_STATUS.CLOSED ? 'Close homework' : 'Reopen homework',
+      title:
+        status === HOMEWORK_STATUS.CLOSED
+          ? 'Close homework'
+          : status === HOMEWORK_STATUS.DRAFT
+            ? 'Save homework draft'
+            : 'Publish homework',
       action: el('span', {}, message),
     });
     toast(message, tone);
@@ -2468,6 +2678,14 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       (request.academyId
         ? entry.academyId === request.academyId || (!entry.academyId && entry.academy === request.academy)
         : entry.academy === request.academy);
+    const role = request.role ?? ROLE.STUDENT;
+    const capability = createCapability({
+      kind: CAPABILITY.MEMBERSHIP,
+      academyId: request.academyId,
+      accountId: request.accountId,
+      role,
+      issuedBy: state().personaId,
+    });
     update({
       joinRequests: state().joinRequests.map((entry) =>
         sameRequest(entry) ? { ...entry, status: REQUEST_STATUS.APPROVED } : entry,
@@ -2475,6 +2693,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       memberships: { ...state().memberships, [request.accountId]: MEMBERSHIP.ACTIVE },
       membership:
         request.accountId === state().personaId ? MEMBERSHIP.ACTIVE : state().membership,
+      capabilities: upsertCapability(state().capabilities, capability),
       events: [
         {
           id: nextId('e'),
@@ -2495,7 +2714,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
         payload: {
           academyId: request.academyId,
           memberId: request.accountId,
-          role: request.role ?? ROLE.STUDENT,
+          role,
           status: MEMBERSHIP.ACTIVE,
         },
         recipients: [request.accountId],
@@ -2503,6 +2722,17 @@ export function createActions({ store, bus, signer, confirm, relay }) {
         title: 'Approve academy membership',
         action: el('span', {}, `Approve ${request.displayName} for ${request.academy}.`),
       });
+      if (capability && canPublish()) {
+        publishRecord({
+          type: RECORD_TYPES.CAPABILITY,
+          id: capability.id,
+          payload: capability,
+          recipients: [request.accountId],
+          encrypted: true,
+          title: 'Grant academy membership',
+          action: el('span', {}, `Sign the membership grant for ${request.displayName} (encrypted).`),
+        });
+      }
     }
     toast(`Approved — ${request.displayName} is now a member.`, 'ok');
     return true;
@@ -2615,6 +2845,16 @@ export function createActions({ store, bus, signer, confirm, relay }) {
           room.id === classroom.id ? { ...room, studentIds: [...(room.studentIds ?? []), request.learnerId] } : room,
         )
       : current.classrooms;
+    const capability = classroom
+      ? createCapability({
+          kind: CAPABILITY.ENROLLMENT,
+          academyId: classroom.academyId,
+          accountId: request.learnerId,
+          classroomId: classroom.id,
+          role: ROLE.STUDENT,
+          issuedBy: current.personaId,
+        })
+      : null;
 
     update({
       enrollRequests: (current.enrollRequests ?? []).map((entry) =>
@@ -2622,6 +2862,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
       ),
       classrooms,
       memberships: { ...current.memberships, [request.learnerId]: MEMBERSHIP.ACTIVE },
+      capabilities: upsertCapability(current.capabilities, capability),
       events: [
         {
           id: nextId('e'),
@@ -2636,6 +2877,17 @@ export function createActions({ store, bus, signer, confirm, relay }) {
         ...current.events,
       ],
     });
+    if (capability && canPublish()) {
+      publishRecord({
+        type: RECORD_TYPES.CAPABILITY,
+        id: capability.id,
+        payload: capability,
+        recipients: [request.learnerId],
+        encrypted: true,
+        title: 'Grant class enrollment',
+        action: el('span', {}, `Sign the enrollment grant for ${request.learnerName} (encrypted).`),
+      });
+    }
     toast(`Enrollment approved — ${request.learnerName} can now see ${request.courseTitle}.`, 'ok');
     return true;
   }
@@ -3129,6 +3381,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     createClassLink,
     createHomework,
     updateHomework,
+    publishHomework,
     closeHomework,
     reopenHomework,
     deleteHomework,
@@ -3139,6 +3392,7 @@ export function createActions({ store, bus, signer, confirm, relay }) {
     updateProfile,
     uploadImage,
     setBlossomServer,
+    setMode,
     refreshMyProfile,
     requestMembership,
     acceptJoin,

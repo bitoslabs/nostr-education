@@ -20,7 +20,7 @@ export function renderRail({ state, app }) {
   const relays = el('p', {}, healthyRelays(state.relays));
 
   if (persona.role === ROLE.TEACHER) {
-    const classes = classroomsForTeacher(state.classrooms ?? [], persona.id);
+    const classes = classroomsForTeacher(state.classrooms ?? [], persona.id, state.capabilities ?? []);
     const ids = new Set(classes.map((room) => room.id));
     const toGrade = (state.submissions ?? []).filter(
       (submission) => ids.has(submission.classroomId) && submission.status === SUBMISSION_STATUS.SUBMITTED,
@@ -53,8 +53,13 @@ export function renderRail({ state, app }) {
     ]);
   }
 
-  const classes = classroomsForStudent(state.classrooms ?? [], persona.id);
-  const homework = homeworkForStudent(state.homework ?? [], state.classrooms ?? [], persona.id);
+  const classes = classroomsForStudent(state.classrooms ?? [], persona.id, state.capabilities ?? []);
+  const homework = homeworkForStudent(
+    state.homework ?? [],
+    state.classrooms ?? [],
+    persona.id,
+    state.capabilities ?? [],
+  );
   return el('div', { class: 'rail__stack' }, [
     widget('🏫 My classes', el('p', {}, `${classes.length} enrolled`)),
     widget('📝 Homework', [

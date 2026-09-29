@@ -1,7 +1,14 @@
 import { el } from '../core/dom.js';
 import { getPersona, getPersonaIds } from '../data/personas.js';
 import { SEED_CONTACTS } from '../data/seed.js';
-import { classroomById, subjectById, submissionFor, subjectsForAcademy } from '../domain/classroom.js';
+import {
+  assessmentRevisionsFor,
+  classroomById,
+  subjectById,
+  submissionFor,
+  subjectsForAcademy,
+  versionsFor,
+} from '../domain/classroom.js';
 import { ROLE } from '../domain/school.js';
 import { renderCreateAcademy } from '../ui/components/academy-dialog.js';
 import {
@@ -208,11 +215,13 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     const homeworkItem = (state.homework ?? []).find((entry) => entry.id === homeworkId);
     if (!homeworkItem) return null;
     const submission = submissionFor(state.submissions ?? [], homeworkId, state.personaId);
+    const versions = versionsFor(state.submissionVersions ?? [], submission?.id);
     return openNamed('submit-homework', {
       label: `Submit · ${homeworkItem.title}`,
       content: renderSubmitHomework({
         homeworkItem,
         submission,
+        versions,
         actions,
         close: closeNamed('submit-homework'),
       }),
@@ -244,6 +253,8 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
         submission,
         homeworkItem: homeworkItem ?? { title: 'Homework' },
         learnerName: getPersona(submission.studentId).displayName,
+        versions: versionsFor(state.submissionVersions ?? [], submission.id),
+        revisions: assessmentRevisionsFor(state.assessmentRevisions ?? [], submission.id),
         actions,
         close: closeNamed('grade'),
       }),

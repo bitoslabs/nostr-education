@@ -60,11 +60,11 @@ function scopedClassrooms(state, persona) {
   if (persona.role === ROLE.OWNER && owned) {
     return classroomsForAcademy(state.classrooms ?? [], owned.id);
   }
-  return classroomsForTeacher(state.classrooms ?? [], persona.id);
+  return classroomsForTeacher(state.classrooms ?? [], persona.id, state.capabilities ?? []);
 }
 
 function classesBody(state, app, persona) {
-  const classrooms = classroomsForTeacher(state.classrooms ?? [], persona.id);
+  const classrooms = classroomsForTeacher(state.classrooms ?? [], persona.id, state.capabilities ?? []);
   if (!classrooms.length) {
     return [emptyState('No classes yet. An academy owner assigns you to a classroom.')];
   }
@@ -142,6 +142,7 @@ function homeworkBlock(state, app, item, students) {
     return row([
       el('span', { class: 'who' }, learner.displayName),
       statusBadge(token.label, token.tone),
+      submission?.late ? statusBadge('late', 'warn') : null,
       el('span', { class: 'spacer' }),
       submission
         ? button(graded ? 'Edit score' : 'Set score', {

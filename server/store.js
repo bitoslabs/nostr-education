@@ -6,6 +6,8 @@ export function createStore(initial = {}) {
     classrooms: [],
     homework: [],
     submissions: [],
+    submissionVersions: [],
+    assessmentRevisions: [],
     enrollments: [],
     recommendations: [],
     credentials: [],
@@ -30,9 +32,17 @@ export function createStore(initial = {}) {
     upsert,
     academyById: (id) => academies().find((academy) => academy?.id === id) ?? null,
     classroomById: (id) => find('classrooms', id),
+    homeworkById: (id) => find('homework', id),
     submissionById: (id) => find('submissions', id),
+    assessmentRevisionById: (id) => find('assessmentRevisions', id),
     enrollmentById: (id) => find('enrollments', id),
     credentialById: (id) => find('credentials', id),
     membershipOf: (pubkey) => state.memberships?.[pubkey] ?? 'none',
+    // The class roster is derived from approved enrollments, never trusted from
+    // the request. Used by SUBMIT authorization.
+    activeStudentIds: (classroomId) =>
+      list('enrollments')
+        .filter((entry) => entry.classroomId === classroomId && entry.status === 'approved')
+        .map((entry) => entry.learnerId),
   };
 }

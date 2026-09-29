@@ -2,14 +2,20 @@
 
 Start with [School system design](school-system.md). It defines the product, roles, and main workflows.
 
+Then use [User flows](user-flows.md) for step-by-step owner, teacher, student, grading, completion, and
+alternate/error journeys.
+
 ## Build documents
 
 1. [Implementation plan](architecture/implementation-plan.md) — release order, decisions, and acceptance checks.
-2. [Build progress](architecture/progress.md) — what is built in the prototype, and the next task.
-3. [Data model](architecture/data-model.md) — records, relationships, constraints, and privacy rules.
-4. [Nostr event strategy](architecture/nostr-events.md) — current NIP mappings, kind choices, and publication limits.
-5. [Private API](architecture/private-api.md) — NIP-98 auth and server-side authorization core.
-6. [Membership and invitation flow](membership-flow.md) — user-visible states from a public link through owner approval.
+2. [User flows](user-flows.md) — end-to-end role journeys, alternate paths, and dashboard actions.
+3. [Build progress](architecture/progress.md) — what is built in the prototype, and the next task.
+4. [Data model](architecture/data-model.md) — records, relationships, constraints, and privacy rules.
+5. [Nostr event strategy](architecture/nostr-events.md) — current NIP mappings, kind choices, and publication limits.
+6. [Private API](architecture/private-api.md) — NIP-98 auth and server-side authorization core.
+7. [Membership and invitation flow](membership-flow.md) — user-visible states from a public link through owner approval.
+8. [Homework submission flow and event plan](architecture/submission-events-plan.md) — append-only submission and assessment events that back the [User flows](user-flows.md) submission loop.
+9. [Nostr-native mode (server optional)](architecture/nostr-native.md) — when the API can be dropped, and the signed-capability, gift-wrap, and relay requirements.
 
 The following files are earlier design explorations, not the implementation contract:
 

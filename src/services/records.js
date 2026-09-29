@@ -2,6 +2,22 @@ import { KIND } from './nostr.js';
 
 export const APP_TAG = 'bitos-education';
 
+// Regular kind:78 events are append-only and must carry an immutable fact.
+// Every other record is a mutable head published as addressable kind:30078.
+export const HISTORY_RECORD_TYPES = Object.freeze([
+  'submission-ver',
+  'assessment-rev',
+  'homework-rev',
+]);
+
+export function isHistoryRecord(type) {
+  return HISTORY_RECORD_TYPES.includes(type);
+}
+
+export function recordKind(type) {
+  return isHistoryRecord(type) ? KIND.APP_DATA_HISTORY : KIND.APP_DATA;
+}
+
 export function encodeRecord(type, id, payload = {}) {
   // Protocol fields are authoritative. Domain payloads (for example an
   // academy's `type: "school"`) must not overwrite the record envelope.
@@ -36,21 +52,31 @@ export function decodeRecord(content, tags = []) {
   }
 }
 
-export function recordTags(type, id, { recipients = [], code = null } = {}) {
+export function recordTags(type, id, { recipients = [], code = null, head = null } = {}) {
   const tags = [
     ['d', `${type}:${id}`],
     ['t', APP_TAG],
     ['type', type],
   ];
+  // History events point at their mutable head so a reader can resolve current
+  // state from one event and walk to the history.
+  if (isHistoryRecord(type) && head) tags.push(['a', head]);
   if (code) tags.push(['code', String(code).toLowerCase()]);
   for (const recipient of recipients) tags.push(['p', recipient]);
   return tags;
 }
 
-export function recordEvent({ type, id, payload, recipients = [] } = {}) {
+export function recordEvent({ type, id, payload, recipients = [], head = null } = {}) {
   return {
-    kind: KIND.APP_DATA,
-    tags: recordTags(type, id, { recipients }),
+    kind: recordKind(type),
+    tags: recordTags(type, id, { recipients, head }),
     content: encodeRecord(type, id, payload),
   };
+}
+
+// Addressable head address for a history record, e.g.
+// `30078:<author>:submission:<submissionId>`.
+export function headAddress(headType, id, author) {
+  if (!headType || !id || !author) return null;
+  return `${KIND.APP_DATA}:${author}:${headType}:${id}`;
 }

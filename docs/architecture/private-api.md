@@ -3,7 +3,9 @@
 Status: prototype core, September 2026. This is the beginning of the private data plane described in
 the [data model](data-model.md): a small HTTP API where the **server** enforces the same role rules the
 client already uses. It has no durable storage yet and is not wired into the app; it exists so
-authorization no longer lives only in the browser.
+authorization no longer lives only in the browser. The API is the authoritative path for a real
+academy; it is optional if authorization is carried as academy-signed capabilities and storage is an
+AUTH relay — see [Nostr-native mode (server optional)](nostr-native.md).
 
 ## Running
 
@@ -38,9 +40,18 @@ means the rule denied the write regardless of what the UI would have shown.
 | POST | `/api/classrooms/:id/policy` | `SET_POLICY` | academy owner |
 | POST | `/api/classrooms/:id/homework` | `POST_HOMEWORK` | teacher or owner |
 | POST | `/api/classrooms/:id/recommendations` | `RECOMMEND_COMPLETION` | teacher or owner; requires eligibility |
-| POST | `/api/submissions/:id/grade` | `GRADE` | teacher or owner; validates score |
+| POST | `/api/homework/:id/submissions` | `SUBMIT` | enrolled learner only; homework published |
+| POST | `/api/submissions/:id/versions` | `SUBMIT` | owning learner only |
+| POST | `/api/submissions/:id/assessments` | `FINALIZE_ASSESSMENT` | teacher or owner; validates score or full rubric |
+| POST | `/api/assessments/:id/corrections` | `CORRECT_ASSESSMENT` | teacher or owner; reason required; links the replaced revision |
+| POST | `/api/submissions/:id/grade` | `GRADE` | legacy single-score path; teacher or owner |
 | POST | `/api/enrollments/:id/decision` | `DECIDE_ENROLLMENT` | teacher or owner |
 | POST | `/api/credentials/:id/revoke` | `REVOKE_CREDENTIAL` | academy owner |
+
+`SUBMIT` resolves the class roster from **approved enrollments** (`store.activeStudentIds`), not from
+the classroom row or the request, so a forged roster cannot grant submission rights. The server keeps
+the same append-only model as the client: `submissions` is the mutable head and `submissionVersions` /
+`assessmentRevisions` are immutable.
 
 ### Planned private-name endpoints
 

@@ -4,6 +4,7 @@ const ORG_SECRET_KEY = 'bitos.education.orgsecrets.v1';
 
 const PERSISTED_FIELDS = [
   'session',
+  'mode',
   'relayConfig',
   'profiles',
   'blossomServer',
@@ -13,6 +14,8 @@ const PERSISTED_FIELDS = [
   'classrooms',
   'homework',
   'submissions',
+  'submissionVersions',
+  'assessmentRevisions',
   'memberships',
   'academyMemberships',
   'joinRequests',
@@ -21,6 +24,7 @@ const PERSISTED_FIELDS = [
   'signQueue',
   'credentials',
   'following',
+  'capabilities',
 ];
 
 function storage() {

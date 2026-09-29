@@ -6,6 +6,9 @@ A school or college owner creates an academy workspace, organizes teaching, and 
 
 This document is the proposed product contract for a first build. The existing UI and Nostr notes in this folder are design references, not proof that those features exist.
 
+For screen-by-screen happy paths, alternate paths, and failure states, see
+[User flows](user-flows.md).
+
 ## Terms
 
 | Term | Meaning |
@@ -153,7 +156,7 @@ Every state change stores actor, time, reason when relevant, and record version.
 | `Assessment`, `AssessmentRevision` | Gradebook item, optional submission version, teacher, score, feedback, finalization and correction reason |
 | `GradebookItem`, `GradePolicy` | Homework or test type, class, weight, scale, exemptions, calculation version |
 | `CompletionRecommendation`, `Credential` | Student, class, evidence references, issuer decision, signed artifact/status |
-| `AuditEvent`, `Notification` | Actor, action, affected record, time; recipient and delivery status |
+| `AuditEvent`, `ActionTask`, `Notification` | Actor, action, affected record, time; assignee and task state; recipient and delivery status |
 
 Enforce academy and class boundaries on every server operation. Record IDs alone must never authorize access. Calculate grade totals on the server from a versioned grade policy, and display the calculation so students and staff can understand it.
 

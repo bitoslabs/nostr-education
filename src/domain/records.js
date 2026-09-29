@@ -6,9 +6,12 @@ export const RECORD_TYPES = Object.freeze({
   CLASSROOM: 'classroom',
   HOMEWORK: 'homework',
   SUBMISSION: 'submission',
+  SUBMISSION_VERSION: 'submission-ver',
   GRADE: 'grade',
   REVISION: 'revision',
+  ASSESSMENT_REVISION: 'assessment-rev',
   RECOMMENDATION: 'recommendation',
+  CAPABILITY: 'capability',
   INVITE: 'invite',
   JOIN_LINK: 'joinlink',
   JOIN_REQUEST: 'joinreq',
@@ -38,9 +41,12 @@ export function toPublicRecord(record) {
 export const PRIVATE_RECORD_TYPES = Object.freeze([
   RECORD_TYPES.HOMEWORK,
   RECORD_TYPES.SUBMISSION,
+  RECORD_TYPES.SUBMISSION_VERSION,
   RECORD_TYPES.GRADE,
   RECORD_TYPES.REVISION,
+  RECORD_TYPES.ASSESSMENT_REVISION,
   RECORD_TYPES.RECOMMENDATION,
+  RECORD_TYPES.CAPABILITY,
   RECORD_TYPES.INVITE,
   RECORD_TYPES.JOIN_REQUEST,
   RECORD_TYPES.MEMBER,
@@ -84,6 +90,76 @@ export function applyRecord(state, record) {
       return { homework: upsert(state.homework ?? [], record) };
     case RECORD_TYPES.SUBMISSION:
       return { submissions: upsert(state.submissions ?? [], record) };
+    case RECORD_TYPES.SUBMISSION_VERSION: {
+      if (!record.submissionId) return null;
+      const submissionVersions = upsert(state.submissionVersions ?? [], record);
+      const list = state.submissions ?? [];
+      const exists = list.some((submission) => submission.id === record.submissionId);
+      const submissions = exists
+        ? list.map((submission) => {
+            if (submission.id !== record.submissionId) return submission;
+            const incoming = Number(record.version) || 0;
+            if (incoming < (Number(submission.version) || 0)) return submission;
+            return {
+              ...submission,
+              version: incoming,
+              text: record.text ?? submission.text,
+              submittedAt: record.submittedAt ?? submission.submittedAt,
+            };
+          })
+        : [
+            {
+              id: record.submissionId,
+              homeworkId: record.homeworkId ?? null,
+              classroomId: record.classroomId ?? null,
+              studentId: record.studentId ?? null,
+              text: record.text ?? '',
+              version: Number(record.version) || 1,
+              status: 'submitted',
+              score: null,
+              scores: null,
+              maxScore: record.maxScore ?? null,
+              feedback: '',
+              submittedAt: record.submittedAt ?? null,
+              gradedAt: null,
+              gradedBy: null,
+            },
+            ...list,
+          ];
+      return { submissionVersions, submissions };
+    }
+    case RECORD_TYPES.ASSESSMENT_REVISION: {
+      if (!record.submissionId) return null;
+      const assessmentRevisions = upsert(state.assessmentRevisions ?? [], record);
+      const submissions = (state.submissions ?? []).map((submission) => {
+        if (submission.id !== record.submissionId) return submission;
+        if (record.status === 'revision') {
+          return {
+            ...submission,
+            status: 'revision',
+            score: null,
+            scores: null,
+            feedback: record.feedback ?? submission.feedback,
+            gradedAt: null,
+            gradedBy: null,
+          };
+        }
+        if (record.status === 'finalized') {
+          return {
+            ...submission,
+            score: record.score,
+            scores: record.scores ?? submission.scores,
+            maxScore: record.maxScore ?? submission.maxScore,
+            feedback: record.feedback ?? submission.feedback,
+            status: 'graded',
+            gradedAt: record.gradedAt ?? submission.gradedAt,
+            gradedBy: record.gradedBy ?? submission.gradedBy,
+          };
+        }
+        return submission;
+      });
+      return { assessmentRevisions, submissions };
+    }
     case RECORD_TYPES.GRADE: {
       if (!record.submissionId) return null;
       const submissions = (state.submissions ?? []).map((submission) =>
@@ -174,7 +250,63 @@ export function applyRecord(state, record) {
             }),
       };
     }
+    case RECORD_TYPES.CAPABILITY: {
+      if (!record.accountId || !record.academyId) return null;
+      return { capabilities: upsert(state.capabilities ?? [], record) };
+    }
     default:
       return null;
   }
+}
+
+// Older builds stored one mutable submission row per (homework, student) and one
+// mutable grade on it. Backfill the append-only history so v1 state keeps its
+// first version and first assessment without losing anything.
+export function migrateSubmissionHistory(state = {}) {
+  const submissions = state.submissions ?? [];
+  let submissionVersions = state.submissionVersions ?? [];
+  let assessmentRevisions = state.assessmentRevisions ?? [];
+  let changed = false;
+
+  const versioned = new Set(submissionVersions.map((entry) => entry.submissionId));
+  const revised = new Set(assessmentRevisions.map((entry) => entry.submissionId));
+
+  for (const submission of submissions) {
+    if (!submission?.id) continue;
+    if (!versioned.has(submission.id)) {
+      submissionVersions = upsert(submissionVersions, {
+        id: `ver-${submission.id}-1`,
+        type: RECORD_TYPES.SUBMISSION_VERSION,
+        submissionId: submission.id,
+        homeworkId: submission.homeworkId,
+        classroomId: submission.classroomId,
+        studentId: submission.studentId,
+        version: Number(submission.version) || 1,
+        text: submission.text ?? '',
+        submittedAt: submission.submittedAt ?? null,
+      });
+      changed = true;
+    }
+    if (!revised.has(submission.id) && submission.status === 'graded' && submission.score != null) {
+      assessmentRevisions = upsert(assessmentRevisions, {
+        id: `asmt-${submission.id}-1`,
+        type: RECORD_TYPES.ASSESSMENT_REVISION,
+        submissionId: submission.id,
+        homeworkId: submission.homeworkId,
+        studentId: submission.studentId,
+        version: 1,
+        status: 'finalized',
+        score: submission.score,
+        scores: submission.scores ?? null,
+        maxScore: submission.maxScore ?? null,
+        feedback: submission.feedback ?? '',
+        gradedAt: submission.gradedAt ?? null,
+        gradedBy: submission.gradedBy ?? null,
+      });
+      changed = true;
+    }
+  }
+
+  if (!changed) return null;
+  return { submissionVersions, assessmentRevisions };
 }

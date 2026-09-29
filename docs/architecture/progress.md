@@ -26,8 +26,11 @@ records which parts are built and what is next.
 ### Slice 3 — Homework
 
 - [x] Publish homework encrypted to the class roster
-- [x] Student submit / resubmit with version history
+- [x] Student submit / resubmit with retained version history — append-only `submission-ver` records;
+  the head derives from versions, and v1 state is backfilled on load
 - [x] Homework management: edit, close submissions, reopen, delete (guarded while submissions exist)
+- [x] Homework draft state: **Save draft** keeps it hidden from learners; **Publish to learners**
+  transitions `draft → published`, and close/reopen remain
 - [ ] Private file upload (text submissions only)
 
 ### Slice 4 — Grading
@@ -36,6 +39,11 @@ records which parts are built and what is next.
 - [x] Class gradebook (per-student × homework cells, class average)
 - [x] Rubric scoring: optional per-homework criteria, scored item by item, stored on the submission
 - [x] Revision request on real submissions (`REVISION` status + feedback, student resubmits)
+- [x] Immutable `assessment-rev` history: each score/correction/revision is appended and earlier results
+  are retained (student and teacher dialogs show history)
+- [ ] Draft → finalized assessment chain; scoring still finalizes in one step with no private draft
+- [x] Late policy: optional `dueAt` date/time, a per-class late policy (`accept` / `flag` / `block`),
+  late submissions flagged on the version, head, and student/teacher rows
 - [ ] Private file attachments on submissions
 
 ### Slice 5 — Completion
@@ -66,6 +74,37 @@ records which parts are built and what is next.
 
 ## Next task
 
+The coursework remediation (A) is complete. What remains: the [Nostr-native track](nostr-native.md)
+(B — signed capability transport and gift wrap) and durable private-API storage (C).
+
+### A. Coursework remediation (recommended next)
+
+1. [x] Domain + state: append-only submission versions and assessment revisions, `applyRecord` cases,
+   history UI, and v1 backfill; history publishes as regular `kind:78` (step 4).
+2. [x] Authorization: enrollment-aware `SUBMIT` / `FINALIZE_ASSESSMENT` / `CORRECT_ASSESSMENT`
+   (`authorize` + `isActiveStudent`; client guards in `submitHomework` / `gradeSubmission` /
+   `requestRevision`).
+3. [x] Server: `/submissions`, `/versions`, `/assessments`, `/corrections` endpoints with rubric
+   support and `CORRECT_ASSESSMENT` reasons; roster resolved from approved enrollments.
+4. [x] Events: regular `kind:78` history (`submission-ver`, `assessment-rev`, `homework-rev`) with an
+   `a` head-address link; heads stay `kind:30078`. Subscriptions accept both kinds.
+5. [x] Late policy (`dueAt` + per-class `accept`/`flag`/`block`) and homework draft lifecycle.
+
+### B. Nostr-native mode (server optional)
+
+1. [x] Signed capabilities for authorization (domain, `capability` record, minted on approval).
+2. [x] Capabilities sync as `kind:30078` records (`syncRecords` `#p:[me]` + `applyRecord`) and drive
+   the roster: `classroomsForStudent` / `classroomsForTeacher` / `homeworkForStudent` accept
+   `capabilities`, wired through Education, Teaching, rail, nav, and Settings.
+3. [x] `mode: nostr | server | hybrid` config flag (`domain/mode.js`, persisted, switchable in
+   **Settings → Relays & network**). It records intent and exposes `usesServer` / `usesRelays` /
+   `authoritySource`; routing actions through the API is part of section C.
+4. [x] NIP-59 gift-wrap transport: encrypted records wrap to `kind:1059` (ephemeral author, sealed
+   author, `p` = recipient only); `syncRecords` subscribes `kind:1059` `#p:[me]` and unwraps. Plain
+   `#p` NIP-44 remains available with `giftWrap: false`.
+
+### C. Private API durable storage
+
 Make the private API the source of truth and give it durable storage.
 
 1. Replace `server/store.js` with durable storage (a database behind the same accessor shape) so a
@@ -79,6 +118,11 @@ Make the private API the source of truth and give it durable storage.
    app storage in production.
 
 ## Housekeeping
+
+- [x] Signed capabilities for authorization (`domain/capability.js`, `capability` record type):
+  membership, teacher assignment, and enrollment grants minted on approval and verified by
+  `authorize()`. Domain and wiring done; the sync/transport path is next. See
+  [Nostr-native mode](nostr-native.md).
 
 - [x] Private API core: NIP-98-authenticated HTTP endpoints (`server/`) that enforce
   `domain/authorization.js` server-side over an in-memory store, with tests (`tests/server.test.js`).

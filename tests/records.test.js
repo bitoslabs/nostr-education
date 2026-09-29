@@ -8,9 +8,18 @@ import {
   RECORD_TYPES,
   applyRecord,
   isPublicRecord,
+  migrateSubmissionHistory,
   toPublicRecord,
 } from '../src/domain/records.js';
-import { decodeRecord, encodeRecord, recordTags } from '../src/services/records.js';
+import {
+  headAddress,
+  isHistoryRecord,
+  recordEvent,
+  recordKind,
+  recordTags,
+  decodeRecord,
+  encodeRecord,
+} from '../src/services/records.js';
 
 const EMPTY = {
   academies: {},
@@ -30,6 +39,33 @@ test('recordTags makes a public invite directly searchable by code', () => {
     ['type', 'joinlink'],
     ['code', 'abcd1234'],
   ]);
+});
+
+test('history record types publish as regular kind:78 with a head link', () => {
+  assert.equal(recordKind('submission-ver'), 78);
+  assert.equal(recordKind('assessment-rev'), 78);
+  assert.equal(recordKind('homework-rev'), 78);
+  assert.equal(recordKind('submission'), 30078);
+  assert.equal(isHistoryRecord('submission-ver'), true);
+  assert.equal(isHistoryRecord('grade'), false);
+
+  assert.equal(headAddress('submission', 'sub1', 'stu'), '30078:stu:submission:sub1');
+  assert.equal(headAddress('submission', 'sub1', null), null);
+
+  const tags = recordTags('submission-ver', 'ver1', {
+    head: headAddress('submission', 'sub1', 'stu'),
+    recipients: ['teacher'],
+  });
+  assert.deepEqual(tags[0], ['d', 'submission-ver:ver1']);
+  assert.deepEqual(tags.find((tag) => tag[0] === 'a'), ['a', '30078:stu:submission:sub1']);
+  assert.deepEqual(tags.find((tag) => tag[0] === 'p'), ['p', 'teacher']);
+});
+
+test('recordEvent uses the regular kind only for history records', () => {
+  assert.equal(recordEvent({ type: 'assessment-rev', id: 'a1', payload: {} }).kind, 78);
+  assert.equal(recordEvent({ type: 'submission-ver', id: 'v1', payload: {} }).kind, 78);
+  assert.equal(recordEvent({ type: 'grade', id: 'g1', payload: {} }).kind, 30078);
+  assert.equal(recordEvent({ type: 'submission', id: 's1', payload: {} }).kind, 30078);
 });
 
 test('record envelope fields cannot be overwritten by its payload', () => {
@@ -134,6 +170,35 @@ test('applyRecord applies a revision request to the submission', () => {
   assert.equal(patch.submissions[0].feedback, 'Please expand');
 });
 
+test('applyRecord stores capabilities and applies a revocation', () => {
+  const base = { ...EMPTY, capabilities: [] };
+  const created = applyRecord(base, {
+    type: 'capability',
+    id: 'enrollment:org1:cls1:stu',
+    academyId: 'org1',
+    accountId: 'stu',
+    kind: 'enrollment',
+    classroomId: 'cls1',
+    status: 'active',
+  });
+  assert.equal(created.capabilities.length, 1);
+  assert.equal(created.capabilities[0].status, 'active');
+
+  const revoked = applyRecord({ ...base, ...created }, {
+    type: 'capability',
+    id: 'enrollment:org1:cls1:stu',
+    academyId: 'org1',
+    accountId: 'stu',
+    kind: 'enrollment',
+    classroomId: 'cls1',
+    status: 'revoked',
+  });
+  assert.equal(revoked.capabilities.length, 1);
+  assert.equal(revoked.capabilities[0].status, 'revoked');
+
+  assert.equal(applyRecord(base, { type: 'capability', id: 'x', accountId: 'stu' }), null);
+});
+
 test('applyRecord stores a public join link invite without wrapper fields', () => {
   const patch = applyRecord(EMPTY, {
     v: 1,
@@ -228,4 +293,109 @@ test('isPublicRecord only accepts catalog record types', () => {
   assert.equal(isPublicRecord({ type: RECORD_TYPES.CLASSROOM }), true);
   assert.equal(isPublicRecord({ type: RECORD_TYPES.GRADE }), false);
   assert.equal(isPublicRecord(null), false);
+});
+
+test('applyRecord appends submission versions and keeps every version', () => {
+  const base = { ...EMPTY, submissions: [], submissionVersions: [] };
+  const v1 = applyRecord(base, {
+    type: RECORD_TYPES.SUBMISSION_VERSION,
+    id: 'ver1',
+    submissionId: 'sub1',
+    homeworkId: 'hw1',
+    classroomId: 'c1',
+    studentId: 'stu',
+    version: 1,
+    text: 'first answer',
+  });
+  assert.equal(v1.submissions.length, 1);
+  assert.equal(v1.submissions[0].status, 'submitted');
+  assert.equal(v1.submissions[0].version, 1);
+  assert.equal(v1.submissionVersions.length, 1);
+
+  const v2 = applyRecord({ ...base, ...v1 }, {
+    type: RECORD_TYPES.SUBMISSION_VERSION,
+    id: 'ver2',
+    submissionId: 'sub1',
+    version: 2,
+    text: 'second answer',
+  });
+  assert.equal(v2.submissionVersions.length, 2);
+  assert.equal(v2.submissions[0].text, 'second answer');
+  assert.equal(v2.submissions[0].version, 2);
+  assert.equal(v2.submissionVersions.find((entry) => entry.id === 'ver1').text, 'first answer');
+});
+
+test('applyRecord keeps finalized assessment revisions and a correction', () => {
+  const base = {
+    ...EMPTY,
+    submissions: [{ id: 'sub1', status: 'submitted', score: null }],
+    assessmentRevisions: [],
+  };
+  const first = applyRecord(base, {
+    type: RECORD_TYPES.ASSESSMENT_REVISION,
+    id: 'a1',
+    submissionId: 'sub1',
+    status: 'finalized',
+    score: 80,
+    feedback: 'good',
+    version: 1,
+  });
+  assert.equal(first.submissions[0].status, 'graded');
+  assert.equal(first.submissions[0].score, 80);
+
+  const second = applyRecord({ ...base, ...first }, {
+    type: RECORD_TYPES.ASSESSMENT_REVISION,
+    id: 'a2',
+    submissionId: 'sub1',
+    status: 'finalized',
+    score: 92,
+    feedback: 'corrected',
+    version: 2,
+  });
+  assert.equal(second.assessmentRevisions.length, 2);
+  assert.equal(second.submissions[0].score, 92);
+  assert.equal(second.assessmentRevisions.find((entry) => entry.id === 'a1').score, 80);
+  assert.equal(second.assessmentRevisions.find((entry) => entry.id === 'a2').feedback, 'corrected');
+});
+
+test('applyRecord marks a revision request without dropping revision history', () => {
+  const base = {
+    ...EMPTY,
+    submissions: [{ id: 'sub1', status: 'graded', score: 80 }],
+    assessmentRevisions: [],
+  };
+  const patch = applyRecord(base, {
+    type: RECORD_TYPES.ASSESSMENT_REVISION,
+    id: 'a1',
+    submissionId: 'sub1',
+    status: 'revision',
+    feedback: 'expand your answer',
+  });
+  assert.equal(patch.submissions[0].status, 'revision');
+  assert.equal(patch.submissions[0].score, null);
+  assert.equal(patch.assessmentRevisions[0].status, 'revision');
+});
+
+test('migrateSubmissionHistory backfills history from v1 rows', () => {
+  const patch = migrateSubmissionHistory({
+    submissions: [
+      {
+        id: 's1',
+        homeworkId: 'hw1',
+        classroomId: 'c1',
+        studentId: 'stu',
+        text: 'v1 text',
+        version: 1,
+        status: 'graded',
+        score: 75,
+        maxScore: 100,
+        feedback: 'nice',
+      },
+    ],
+  });
+  assert.equal(patch.submissionVersions.length, 1);
+  assert.equal(patch.submissionVersions[0].text, 'v1 text');
+  assert.equal(patch.assessmentRevisions.length, 1);
+  assert.equal(patch.assessmentRevisions[0].score, 75);
+  assert.equal(migrateSubmissionHistory({ submissions: [] }), null);
 });

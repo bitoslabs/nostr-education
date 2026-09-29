@@ -10,9 +10,10 @@ import { DEFAULT_SIGNER } from './domain/account.js';
 import { findAcademyById } from './domain/academy.js';
 import { classroomById } from './domain/classroom.js';
 import { credentialFromEvent } from './domain/credential.js';
-import { RECORD_TYPES, applyRecord, isPublicRecord } from './domain/records.js';
+import { RECORD_TYPES, applyRecord, isPublicRecord, migrateSubmissionHistory } from './domain/records.js';
 import { parseProfileMeta } from './domain/profile.js';
 import { normalizeRelayList } from './domain/relay.js';
+import { normalizeMode } from './domain/mode.js';
 import { MEMBERSHIP } from './domain/school.js';
 import { APP_TAG, decodeRecord } from './services/records.js';
 import { BLOSSOM_SERVERS } from './services/blossom.js';
@@ -29,6 +30,7 @@ import {
   localSigner,
   verify,
 } from './services/nostr.js';
+import { GIFT_WRAP_KIND, unwrapGiftWrap } from './services/giftwrap.js';
 import { createRelayService } from './services/relay.js';
 import { createSignerService } from './services/signer.js';
 import { loadSecretKey, loadState, saveState } from './services/storage.js';
@@ -61,6 +63,11 @@ const overlayRoot = qs('[data-overlay-root]');
 const persisted = loadState() ?? {};
 const session = persisted.session ?? null;
 
+// Backfill append-only history for submissions and grades saved by older builds.
+const historyPatch = migrateSubmissionHistory(persisted);
+const submissionVersions = historyPatch?.submissionVersions ?? persisted.submissionVersions ?? [];
+const assessmentRevisions = historyPatch?.assessmentRevisions ?? persisted.assessmentRevisions ?? [];
+
 hydrateProfiles(Object.values(persisted.profiles ?? {}));
 if (session) registerPersona(session);
 
@@ -90,7 +97,10 @@ const store = createStore({
   classrooms: persisted.classrooms ?? [],
   homework: persisted.homework ?? [],
   submissions: persisted.submissions ?? [],
+  submissionVersions,
+  assessmentRevisions,
   profiles: persisted.profiles ?? {},
+  mode: normalizeMode(persisted.mode),
   blossomServer: persisted.blossomServer ?? BLOSSOM_SERVERS[0],
   relayConfig: normalizeRelayList(persisted.relayConfig ?? persisted.relays ?? DEFAULT_RELAYS, {
     defaults: DEFAULT_RELAYS,
@@ -102,6 +112,7 @@ const store = createStore({
   events: [],
   signQueue: persisted.signQueue ?? [],
   recommendations: persisted.recommendations ?? [],
+  capabilities: persisted.capabilities ?? [],
   grants: [],
   credentials: persisted.credentials ?? [],
   deliveries: [],
@@ -175,8 +186,9 @@ function syncRecords() {
   if (!me) return;
 
   const filters = [
-    { kinds: [KIND.APP_DATA], '#t': [APP_TAG], authors: [me] },
-    { kinds: [KIND.APP_DATA], '#t': [APP_TAG], '#p': [me] },
+    { kinds: [KIND.APP_DATA, KIND.APP_DATA_HISTORY], '#t': [APP_TAG], authors: [me] },
+    { kinds: [KIND.APP_DATA, KIND.APP_DATA_HISTORY], '#t': [APP_TAG], '#p': [me] },
+    { kinds: [GIFT_WRAP_KIND], '#p': [me] },
   ];
   const seen = new Set();
 
@@ -185,6 +197,17 @@ function syncRecords() {
       if (seen.has(event.id)) return;
       seen.add(event.id);
       const active = signer.getSigner();
+
+      if (event.kind === GIFT_WRAP_KIND) {
+        const unwrapped = await unwrapGiftWrap({ wrap: event, signer: active });
+        if (!unwrapped) return;
+        const record = decodeRecord(unwrapped.content, []);
+        if (!record) return;
+        const patch = applyRecord(store.getState(), record);
+        if (patch) store.setState(patch);
+        return;
+      }
+
       const addressed = event.tags.some((tag) => tag[0] === 'p' && tag[1] === me);
       let content = event.content;
       if (addressed && event.pubkey !== me) {

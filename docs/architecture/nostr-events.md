@@ -1,6 +1,6 @@
 # Nostr event strategy and kind registry
 
-Status: proposed, checked against the linked NIPs in September 2026. Nostr is optional for the first school release. The private [data model](data-model.md) is the source of truth for enrollment, homework, submissions, grades, and completion decisions.
+Status: proposed, checked against the linked NIPs in September 2026. Nostr is optional for the first school release. The private [data model](data-model.md) is the source of truth for enrollment, homework, submissions, grades, and completion decisions. Whether the application API is itself optional is covered in [Nostr-native mode (server optional)](nostr-native.md).
 
 ## Core rule
 
@@ -77,8 +77,30 @@ The prototype publishes only the events below. Everything else stays local or is
 | Credential | `30080` | title, course, holder name, completion `average`, policy version, issuer key + nip05, issued-at, signature |
 | Credential revocation | `30080` (`d` = credential id, `status` tag) | credential id, issuer, revoked-at, signature |
 
-Encrypted records (NIP-44, one `#p` tag per recipient): `invite`, `joinreq`, `homework`, `submission`,
-`grade`, `revision`, `recommendation`. They are never written in plaintext.
+Encrypted records: `invite`, `joinreq`, `homework`, `submission`, `grade`, `revision`,
+`recommendation`, `submission-ver`, `assessment-rev`, `capability`. They are never written in
+plaintext. By default they are sent as **NIP-59 gift wraps** (`kind:1059`, ephemeral author, only a
+`p` tag for the recipient) so relay observers cannot see the real author or recipient; `giftWrap: false`
+falls back to plain NIP-44 with a `#p` tag.
+
+### Append-only coursework history (implemented)
+
+Earlier builds published every encrypted record as addressable `kind:30078` with `d = <type>:<id>`, so a
+resubmission with the same id replaced the previous version on every relay. The code now uses the
+NIP-01 regular/addressable split: **current state** stays in `kind:30078` heads, and **immutable facts**
+append as regular `kind:78` events (`submission-ver:*`, `assessment-rev:*`, `homework-rev:*`) linked to
+their head with an `a` tag (`30078:<author>:<headType>:<headId>`).
+
+| Encrypted event | Kind | Replaced? |
+| --- | --- | --- |
+| `submission-ver:*`, `assessment-rev:*`, `homework-rev:*` | `78` (regular) | no, append-only |
+| `homework`, `submission`, `grade`, `revision`, `invite`, `joinreq`, `recommendation` | `30078` (addressable) | yes, latest `d` wins |
+
+`recordKind()` / `HISTORY_RECORD_TYPES` in `src/services/records.js` decide the kind, and `syncRecords`
+subscribes to both kinds. See the [homework submission flow and event plan](submission-events-plan.md)
+for the tag schema and migration. Note NIP-78 expects relay-side NIP-42 AUTH limited to the author, so
+cross-person delivery over this bridge is a prototype transport, not the production path; recipient
+privacy needs [gift wrap](nostr-native.md).
 
 The public record set is enforced by `PUBLIC_RECORD_TYPES` (`academy`, `subject`, `classroom`) and
 `toPublicRecord`, both covered by tests. The credential event deliberately omits rosters and

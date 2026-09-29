@@ -143,7 +143,7 @@ function joinCard(membership, app) {
 }
 
 function classCards(state, app, persona) {
-  const classrooms = classroomsForStudent(state.classrooms ?? [], persona.id);
+  const classrooms = classroomsForStudent(state.classrooms ?? [], persona.id, state.capabilities ?? []);
   if (!classrooms.length) {
     return [emptyState('No classes yet. Use an invite link from your teacher or academy.')];
   }
@@ -210,6 +210,7 @@ function homeworkRow(state, app, persona, item) {
     item.instructions ? el('p', { class: 'muted small' }, item.instructions) : null,
     el('div', { class: 'arow' }, [
       statusBadge(token.label, token.tone),
+      submission?.late ? statusBadge('late', 'warn') : null,
       button(label, {
         variant: graded ? 'default' : 'gold',
         small: true,

@@ -1,5 +1,13 @@
 import { el } from '../../core/dom.js';
-import { CLASS_STATUS, HOMEWORK_STATUS, classStatusBadge, homeworkStatusBadge } from '../../domain/classroom.js';
+import {
+  CLASS_STATUS,
+  HOMEWORK_STATUS,
+  LATE_POLICY,
+  classStatusBadge,
+  homeworkStatusBadge,
+  latePolicyLabel,
+  normalizeLatePolicy,
+} from '../../domain/classroom.js';
 import { normalizePolicy } from '../../domain/completion.js';
 import { buildScoreSheet, normalizeRubric, rubricMax, scoresTotal } from '../../domain/rubric.js';
 import { button, noteBox } from './primitives.js';
@@ -9,6 +17,28 @@ import { statusBadge } from './status-badge.js';
 
 function errorLine() {
   return el('p', { class: 'small danger', 'aria-live': 'polite' });
+}
+
+function preview(text, limit = 140) {
+  const value = String(text ?? '').trim();
+  return value.length > limit ? `${value.slice(0, limit)}…` : value;
+}
+
+function historyBlock(versions = []) {
+  if (!versions.length) return null;
+  return el('div', {}, [
+    el('h3', {}, `History · ${versions.length} version${versions.length === 1 ? '' : 's'}`),
+    el(
+      'div',
+      { class: 'rows' },
+      versions.map((entry) =>
+        el('div', { class: 'row' }, [
+          el('span', { class: 'muted small' }, `v${entry.version} · ${entry.submittedAt ?? 'saved'}`),
+          el('span', { class: 'quote' }, preview(entry.text) || '(no text)'),
+        ]),
+      ),
+    ),
+  ]);
 }
 
 function rubricEditor(initial = []) {
@@ -385,8 +415,27 @@ export function renderCreateHomework({ classroom, subject, actions, close }) {
   const titleInput = el('input', { type: 'text', placeholder: 'Hash functions', 'aria-label': 'Homework title' });
   const instructions = el('textarea', { rows: '4', placeholder: 'What should learners do?', 'aria-label': 'Instructions' });
   const due = el('input', { type: 'text', placeholder: 'Mar 14', 'aria-label': 'Due date' });
+  const dueAt = el('input', { type: 'datetime-local', 'aria-label': 'Due date and time' });
   const maxScore = el('input', { type: 'number', value: '100', min: '1', 'aria-label': 'Max score' });
   const rubric = rubricEditor();
+
+  const submit = (publish) => {
+    if (!String(titleInput.value).trim()) {
+      error.textContent = 'Enter a homework title.';
+      return;
+    }
+    const item = actions.createHomework({
+      classroomId: classroom.id,
+      title: titleInput.value,
+      instructions: instructions.value,
+      due: due.value,
+      dueAt: dueAt.value,
+      maxScore: maxScore.value,
+      rubric: rubric.value(),
+      publish,
+    });
+    if (item) close();
+  };
 
   return el('div', {}, [
     el('h2', {}, 'Post homework'),
@@ -397,6 +446,8 @@ export function renderCreateHomework({ classroom, subject, actions, close }) {
     instructions,
     el('label', {}, 'Due'),
     due,
+    el('label', {}, 'Due date & time (used to flag late work)'),
+    dueAt,
     el('label', {}, 'Max score (used when no rubric)'),
     maxScore,
     el('label', {}, 'Rubric (optional)'),
@@ -404,24 +455,8 @@ export function renderCreateHomework({ classroom, subject, actions, close }) {
     error,
     el('div', { class: 'dlg-foot' }, [
       button('Cancel', { onClick: close }),
-      button('Post homework', {
-        variant: 'gold',
-        onClick: () => {
-          if (!String(titleInput.value).trim()) {
-            error.textContent = 'Enter a homework title.';
-            return;
-          }
-          const item = actions.createHomework({
-            classroomId: classroom.id,
-            title: titleInput.value,
-            instructions: instructions.value,
-            due: due.value,
-            maxScore: maxScore.value,
-            rubric: rubric.value(),
-          });
-          if (item) close();
-        },
-      }),
+      button('Save draft', { small: true, onClick: () => submit(false) }),
+      button('Post homework', { variant: 'gold', onClick: () => submit(true) }),
     ]),
   ]);
 }
@@ -429,6 +464,7 @@ export function renderCreateHomework({ classroom, subject, actions, close }) {
 export function renderManageHomework({ homeworkItem, actions, close }) {
   const error = errorLine();
   const closed = homeworkItem.status === HOMEWORK_STATUS.CLOSED;
+  const isDraft = homeworkItem.status === HOMEWORK_STATUS.DRAFT;
   const badge = homeworkStatusBadge(homeworkItem.status);
   const titleInput = el('input', { type: 'text', value: homeworkItem.title ?? '', 'aria-label': 'Homework title' });
   const instructions = el('textarea', {
@@ -438,6 +474,11 @@ export function renderManageHomework({ homeworkItem, actions, close }) {
     'aria-label': 'Instructions',
   });
   const due = el('input', { type: 'text', value: homeworkItem.due ?? '', 'aria-label': 'Due date' });
+  const dueAt = el('input', {
+    type: 'datetime-local',
+    value: homeworkItem.dueAt ?? '',
+    'aria-label': 'Due date and time',
+  });
   const maxScore = el('input', {
     type: 'number',
     value: String(homeworkItem.maxScore ?? 100),
@@ -455,6 +496,8 @@ export function renderManageHomework({ homeworkItem, actions, close }) {
     instructions,
     el('label', {}, 'Due'),
     due,
+    el('label', {}, 'Due date & time (used to flag late work)'),
+    dueAt,
     el('label', {}, 'Max score (used when no rubric)'),
     maxScore,
     el('label', {}, 'Rubric (optional)'),
@@ -474,6 +517,7 @@ export function renderManageHomework({ homeworkItem, actions, close }) {
             title: titleInput.value,
             instructions: instructions.value,
             due: due.value,
+            dueAt: dueAt.value,
             maxScore: maxScore.value,
             rubric: rubric.value(),
           });
@@ -482,9 +526,15 @@ export function renderManageHomework({ homeworkItem, actions, close }) {
       }),
     ]),
     el('div', { class: 'arow' }, [
-      closed
-        ? button('Reopen submissions', { small: true, onClick: () => { actions.reopenHomework(homeworkItem.id); close(); } })
-        : button('Close submissions', { small: true, onClick: () => { actions.closeHomework(homeworkItem.id); close(); } }),
+      isDraft
+        ? button('Publish to learners', {
+            variant: 'gold',
+            small: true,
+            onClick: () => { actions.publishHomework(homeworkItem.id); close(); },
+          })
+        : closed
+          ? button('Reopen submissions', { small: true, onClick: () => { actions.reopenHomework(homeworkItem.id); close(); } })
+          : button('Close submissions', { small: true, onClick: () => { actions.closeHomework(homeworkItem.id); close(); } }),
       button('Delete homework', {
         variant: 'ghost',
         small: true,
@@ -497,7 +547,7 @@ export function renderManageHomework({ homeworkItem, actions, close }) {
   ]);
 }
 
-export function renderSubmitHomework({ homeworkItem, submission, actions, close }) {
+export function renderSubmitHomework({ homeworkItem, submission, versions = [], actions, close }) {
   const error = errorLine();
   const body = el('textarea', {
     rows: '6',
@@ -513,6 +563,7 @@ export function renderSubmitHomework({ homeworkItem, submission, actions, close 
     submission
       ? noteBox(`Submitting creates version ${submission.version + 1}. Version ${submission.version} stays in history.`)
       : null,
+    historyBlock(versions),
     el('label', {}, 'Your answer'),
     body,
     error,
@@ -530,7 +581,15 @@ export function renderSubmitHomework({ homeworkItem, submission, actions, close 
   ]);
 }
 
-export function renderGradeSubmission({ submission, homeworkItem, learnerName, actions, close }) {
+export function renderGradeSubmission({
+  submission,
+  homeworkItem,
+  learnerName,
+  versions = [],
+  revisions = [],
+  actions,
+  close,
+}) {
   const error = errorLine();
   const criteria = normalizeRubric(homeworkItem.rubric);
   const usesRubric = criteria.length > 0;
@@ -612,6 +671,36 @@ export function renderGradeSubmission({ submission, homeworkItem, learnerName, a
     ),
     el('h3', {}, 'Submission'),
     el('blockquote', { class: 'quote' }, submission.text || '(no text)'),
+    versions.length > 1
+      ? el(
+          'p',
+          { class: 'muted small' },
+          `Version ${submission.version} of ${versions.length} — earlier versions stay in history.`,
+        )
+      : null,
+    revisions.some((entry) => entry.status === 'finalized')
+      ? el('div', {}, [
+          el('h3', {}, 'Previous scores'),
+          el(
+            'div',
+            { class: 'rows' },
+            revisions
+              .filter((entry) => entry.status === 'finalized')
+              .map((entry) =>
+                el('div', { class: 'row' }, [
+                  el('span', { class: 'muted small' }, `v${entry.version}`),
+                  el(
+                    'span',
+                    { class: 'quote' },
+                    `${entry.score}/${entry.maxScore ?? submission.maxScore}${
+                      entry.feedback ? ` — ${preview(entry.feedback, 80)}` : ''
+                    }`,
+                  ),
+                ]),
+              ),
+          ),
+        ])
+      : null,
     scoringBlock,
     el('label', {}, 'Feedback'),
     feedback,
@@ -634,6 +723,14 @@ export function renderCompletionPolicy({ classroom, actions, close }) {
     'aria-label': 'Minimum average',
   });
   const requireAll = el('input', { type: 'checkbox', checked: policy.requireAllHomework });
+  const currentLate = normalizeLatePolicy(classroom.latePolicy);
+  const lateSelect = el(
+    'select',
+    { 'aria-label': 'Late work policy' },
+    Object.values(LATE_POLICY).map((value) =>
+      el('option', { value, selected: value === currentLate }, latePolicyLabel(value)),
+    ),
+  );
 
   return el('div', {}, [
     el('h2', {}, `Completion rules · ${classroom.name}`),
@@ -645,6 +742,8 @@ export function renderCompletionPolicy({ classroom, actions, close }) {
     el('label', {}, 'Minimum average (%)'),
     minAverage,
     el('label', { class: 'check' }, [requireAll, el('span', {}, 'All homework must be graded')]),
+    el('label', {}, 'Late work'),
+    lateSelect,
     error,
     el('div', { class: 'dlg-foot' }, [
       button('Cancel', { onClick: close }),
@@ -655,6 +754,7 @@ export function renderCompletionPolicy({ classroom, actions, close }) {
             classroomId: classroom.id,
             minAverage: minAverage.value,
             requireAllHomework: requireAll.checked,
+            latePolicy: lateSelect.value,
           });
           if (ok) close();
           else error.textContent = 'Only the academy owner can change completion rules.';

@@ -177,6 +177,75 @@ test('credential revocation is owner-only', async () => {
   });
 });
 
+test('only an enrolled learner can submit and resubmit; versions are kept', async () => {
+  await withServer(async (base) => {
+    const denied = await call(base, '/api/homework/hw1/submissions', {
+      key: learnerKey,
+      body: { text: 'not enrolled yet' },
+    });
+    assert.equal(denied.status, 403);
+
+    await call(base, '/api/enrollments/enr1/decision', {
+      key: ownerKey,
+      body: { decision: 'approve' },
+    });
+
+    const submitted = await call(base, '/api/homework/hw1/submissions', {
+      key: learnerKey,
+      body: { id: 'subX', text: 'first answer' },
+    });
+    assert.equal(submitted.status, 201);
+    assert.equal(submitted.json.submission.version, 1);
+
+    const resubmit = await call(base, '/api/submissions/subX/versions', {
+      key: learnerKey,
+      body: { text: 'second answer' },
+    });
+    assert.equal(resubmit.status, 201);
+    assert.equal(resubmit.json.version, 2);
+
+    const teacherDenied = await call(base, '/api/submissions/subX/versions', {
+      key: teacherKey,
+      body: { text: 'tampering' },
+    });
+    assert.equal(teacherDenied.status, 403);
+  });
+});
+
+test('finalize and correction append assessment revisions', async () => {
+  await withServer(async (base) => {
+    const denied = await call(base, '/api/submissions/sub1/assessments', {
+      key: learnerKey,
+      body: { score: 90 },
+    });
+    assert.equal(denied.status, 403);
+
+    const finalized = await call(base, '/api/submissions/sub1/assessments', {
+      key: teacherKey,
+      body: { score: 90, feedback: 'Good' },
+    });
+    assert.equal(finalized.status, 201);
+    assert.equal(finalized.json.revision.status, 'finalized');
+    assert.equal(finalized.json.revision.score, 90);
+
+    const missingReason = await call(
+      base,
+      `/api/assessments/${finalized.json.revision.id}/corrections`,
+      { key: teacherKey, body: { score: 95 } },
+    );
+    assert.equal(missingReason.status, 400);
+
+    const corrected = await call(
+      base,
+      `/api/assessments/${finalized.json.revision.id}/corrections`,
+      { key: teacherKey, body: { score: 95, reason: 'Missed a point' } },
+    );
+    assert.equal(corrected.status, 201);
+    assert.equal(corrected.json.revision.replaces, finalized.json.revision.id);
+    assert.equal(corrected.json.revision.score, 95);
+  });
+});
+
 test('a tampered payload hash is rejected', async () => {
   await withServer(async (base) => {
     const path = '/api/classrooms/cls1/policy';

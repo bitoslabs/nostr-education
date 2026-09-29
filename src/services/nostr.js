@@ -13,6 +13,10 @@ export const DEFAULT_RELAYS = Object.freeze([
 export const KIND = Object.freeze({
   PROFILE: 0,
   NOTE: 1,
+  // NIP-78: kind 78 is a regular event (append-only), kind 30078 is addressable
+  // (latest value wins by `d`). Immutable coursework history uses 78; mutable
+  // heads use 30078.
+  APP_DATA_HISTORY: 78,
   APP_DATA: 30078,
   CREDENTIAL: 30080,
 });

@@ -5,6 +5,7 @@ import { academyTypeLabel } from '../../domain/academy.js';
 import { classroomsForStudent, classroomsForTeacher, subjectById } from '../../domain/classroom.js';
 import { normalizeHandle, validateHandle } from '../../domain/handle.js';
 import { identitySecondary, isVerified, truncateNpub } from '../../domain/identity.js';
+import { MODE, modeDescription, modeLabel, normalizeMode } from '../../domain/mode.js';
 import { relayModeLabel } from '../../domain/relay.js';
 import { MEMBERSHIP, REQUEST_STATUS, ROLE, membershipBadge } from '../../domain/school.js';
 import { backupNsecForPubkey, decodeKey } from '../../services/nostr.js';
@@ -331,10 +332,10 @@ function joinedAcademies(state, personaId) {
 
   for (const academy of academies) {
     if (!academy?.id) continue;
-    const teacherRooms = classroomsForTeacher(classrooms, personaId).filter(
+    const teacherRooms = classroomsForTeacher(classrooms, personaId, state.capabilities ?? []).filter(
       (room) => room.academyId === academy.id,
     );
-    const learnerRooms = classroomsForStudent(classrooms, personaId).filter(
+    const learnerRooms = classroomsForStudent(classrooms, personaId, state.capabilities ?? []).filter(
       (room) => room.academyId === academy.id,
     );
     const accepted = invites.filter(
@@ -556,8 +557,20 @@ function relayCard(state, app) {
     }
   });
 
+  const currentMode = normalizeMode(state.mode);
+  const modeSelect = el(
+    'select',
+    { 'aria-label': 'Deployment mode', onChange: (event) => app.setMode(event.target.value) },
+    Object.values(MODE).map((value) =>
+      el('option', { value, selected: value === currentMode }, modeLabel(value)),
+    ),
+  );
+
   return el('div', {}, [
-    el('div', { class: 'dhead' }, [
+    el('span', { class: 'field-label' }, 'Deployment mode'),
+    modeSelect,
+    el('p', { class: 'muted small' }, modeDescription(state.mode)),
+    el('div', { class: 'dhead', style: { marginTop: '14px' } }, [
       el('h3', {}, 'Relays'),
       statusBadge(
         relays.length ? `${healthy}/${relays.length} online` : 'none configured',

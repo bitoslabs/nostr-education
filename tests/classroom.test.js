@@ -3,9 +3,16 @@ import test from 'node:test';
 
 import {
   CLASS_STATUS,
+  LATE_POLICY,
   SUBMISSION_STATUS,
+  assessmentRevisionsFor,
   averagePercent,
+  canSubmitLate,
   classStatusBadge,
+  isLate,
+  lateBadge,
+  latePolicyLabel,
+  normalizeLatePolicy,
   classroomActivity,
   classroomById,
   classroomsForAcademy,
@@ -18,6 +25,8 @@ import {
   isEnrollable,
   isHomeworkOpen,
   isValidScore,
+  latestAssessmentRevision,
+  latestVersion,
   publishedClassrooms,
   reviewCounts,
   reviewQueue,
@@ -29,6 +38,7 @@ import {
   submissionStatusBadge,
   submissionsForClassroom,
   submissionsForHomework,
+  versionsFor,
 } from '../src/domain/classroom.js';
 
 const SUBJECTS = [
@@ -162,4 +172,73 @@ test('gradebook helpers average graded work per class', () => {
   assert.equal(averagePercent(submissions), 73);
   assert.equal(averagePercent([{ status: 'submitted', score: null, maxScore: 100 }]), null);
   assert.equal(averagePercent([]), null);
+});
+
+test('signed capabilities extend the student and teacher roster', () => {
+  const rooms = [
+    { id: 'r1', academyId: 'org1', status: 'published', teacherId: null, studentIds: [] },
+    { id: 'r2', academyId: 'org1', status: 'published', teacherId: 'bob', studentIds: [] },
+  ];
+  const caps = [
+    { id: 'e1', kind: 'enrollment', academyId: 'org1', accountId: 'alice', classroomId: 'r1', status: 'active' },
+    { id: 't1', kind: 'teacher-assignment', academyId: 'org1', accountId: 'zoe', classroomId: 'r2', status: 'active' },
+    { id: 'e2', kind: 'enrollment', academyId: 'org1', accountId: 'carol', classroomId: 'r2', status: 'revoked' },
+  ];
+  assert.deepEqual(classroomsForStudent(rooms, 'alice', caps).map((room) => room.id), ['r1']);
+  assert.deepEqual(classroomsForStudent(rooms, 'carol', caps).map((room) => room.id), []);
+  assert.deepEqual(classroomsForTeacher(rooms, 'zoe', caps).map((room) => room.id), ['r2']);
+  assert.deepEqual(classroomsForTeacher(rooms, 'bob', caps).map((room) => room.id), ['r2']);
+
+  const homework = [{ id: 'h1', classroomId: 'r1', status: 'published' }];
+  assert.deepEqual(homeworkForStudent(homework, rooms, 'alice', caps).map((item) => item.id), ['h1']);
+  assert.deepEqual(homeworkForStudent(homework, rooms, 'nobody', caps), []);
+});
+
+test('late policy normalizes, labels, and gates late submissions', () => {
+  assert.equal(normalizeLatePolicy('block'), LATE_POLICY.BLOCK);
+  assert.equal(normalizeLatePolicy('accept'), LATE_POLICY.ACCEPT);
+  assert.equal(normalizeLatePolicy(undefined), LATE_POLICY.FLAG);
+  assert.equal(normalizeLatePolicy('nonsense'), LATE_POLICY.FLAG);
+  assert.equal(latePolicyLabel('block'), 'late work is refused');
+
+  const homework = { dueAt: '2026-09-30T12:00:00Z' };
+  const before = Date.parse('2026-09-30T11:00:00Z');
+  const after = Date.parse('2026-09-30T13:00:00Z');
+  assert.equal(isLate(homework, before), false);
+  assert.equal(isLate(homework, after), true);
+  assert.equal(isLate({}, after), false);
+  assert.equal(isLate({ dueAt: 'not-a-date' }, after), false);
+
+  assert.equal(canSubmitLate({ latePolicy: 'block' }, homework, after), false);
+  assert.equal(canSubmitLate({ latePolicy: 'flag' }, homework, after), true);
+  assert.equal(canSubmitLate({ latePolicy: 'accept' }, homework, after), true);
+  assert.equal(canSubmitLate({ latePolicy: 'block' }, homework, before), true);
+});
+
+test('lateBadge marks late submissions only', () => {
+  assert.equal(lateBadge(null), null);
+  assert.equal(lateBadge({ late: false }), null);
+  assert.deepEqual(lateBadge({ late: true }), { label: 'late', tone: 'warn' });
+});
+
+test('versionsFor returns submission versions in order', () => {
+  const versions = [
+    { id: 'v3', submissionId: 's1', version: 3 },
+    { id: 'v1', submissionId: 's1', version: 1 },
+    { id: 'v2', submissionId: 's1', version: 2 },
+    { id: 'other', submissionId: 's2', version: 1 },
+  ];
+  assert.deepEqual(versionsFor(versions, 's1').map((entry) => entry.id), ['v1', 'v2', 'v3']);
+  assert.equal(latestVersion(versions, 's1').id, 'v3');
+  assert.equal(latestVersion(versions, 'missing'), null);
+});
+
+test('assessmentRevisionsFor orders revisions and finds the latest', () => {
+  const revisions = [
+    { id: 'a2', submissionId: 's1', version: 2, status: 'finalized' },
+    { id: 'a1', submissionId: 's1', version: 1, status: 'finalized' },
+  ];
+  assert.deepEqual(assessmentRevisionsFor(revisions, 's1').map((entry) => entry.id), ['a1', 'a2']);
+  assert.equal(latestAssessmentRevision(revisions, 's1').id, 'a2');
+  assert.equal(latestAssessmentRevision(revisions, 'missing'), null);
 });

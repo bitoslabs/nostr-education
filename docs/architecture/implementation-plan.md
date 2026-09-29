@@ -21,6 +21,7 @@ flowchart LR
 | Document | Question it answers |
 | --- | --- |
 | [School system design](../school-system.md) | What can each role do, and what is the school workflow? |
+| [User flows](../user-flows.md) | What steps does each role take, including alternate and failure paths? |
 | [Data model](data-model.md) | What records exist, and which constraints protect them? |
 | [Nostr event strategy](nostr-events.md) | Which NIPs and event kinds apply, and what stays private? |
 | [Prototype test guide](../idea-prototype.md) | How should a later prototype be tested with users? |
