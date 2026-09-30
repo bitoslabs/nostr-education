@@ -196,20 +196,18 @@ export function revisionTime(revision) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-// Total order for assessment revisions, newest last:
-//   1. higher version
-//   2. a finalized grade beats a revision request at the same version (older
-//      builds could give both the same number)
-//   3. later authored time
-//   4. id, so the result is deterministic even without a timestamp
+// Total order for assessment revisions, newest last. Authored time leads
+// because a version counter can reset across a teacher's devices while the
+// timestamp still reflects the real order; version is the tie-break, and a
+// finalized grade beats a same-version revision request left by older builds.
 export function compareRevisions(left, right) {
+  const time = revisionTime(left) - revisionTime(right);
+  if (time !== 0) return time;
   const version = (Number(left?.version) || 0) - (Number(right?.version) || 0);
   if (version !== 0) return version;
   const rank = (entry) => (entry?.status === 'finalized' ? 1 : 0);
   const status = rank(left) - rank(right);
   if (status !== 0) return status;
-  const time = revisionTime(left) - revisionTime(right);
-  if (time !== 0) return time;
   return String(left?.id ?? '').localeCompare(String(right?.id ?? ''));
 }
 

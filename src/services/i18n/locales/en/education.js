@@ -38,6 +38,7 @@ export default {
   resubmit: 'Resubmit',
   submitNewVersion: 'Submit new version',
   submitHomework: 'Submit homework',
+  refreshHomework: 'Refresh score',
   homeworkMeta: '{title} · due {due} · out of {maxScore}',
   dueMeta: 'Due {due}',
   maxMeta: 'Out of {maxScore}',

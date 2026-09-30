@@ -255,7 +255,7 @@ test('a finalized grade beats a same-version revision request', () => {
     status: 'revision',
     score: null,
     maxScore: 100,
-    requestedAt: '2026-09-30T10:00:00.000Z',
+    requestedAt: 'now',
     // A misleading randomized wrap time must not decide the winner.
     eventCreatedAt: 9_999_999_999,
   });
@@ -272,12 +272,43 @@ test('a finalized grade beats a same-version revision request', () => {
     status: 'finalized',
     score: 15,
     maxScore: 100,
-    gradedAt: '2026-09-30T09:00:00.000Z',
+    gradedAt: 'now',
     eventCreatedAt: 1,
   });
   state = { ...state, ...graded };
   assert.equal(state.submissions[0].status, 'graded');
   assert.equal(state.submissions[0].score, 15);
+});
+
+test('a newer grade wins even if its version counter reset lower', () => {
+  const base = {
+    ...EMPTY,
+    submissions: [
+      {
+        id: 's5',
+        homeworkId: 'h1',
+        status: 'graded',
+        score: 10,
+        maxScore: 100,
+        assessmentVersion: 5,
+        gradedAt: '2026-09-30T09:00:00.000Z',
+      },
+    ],
+  };
+  const patch = applyRecord(base, {
+    type: 'assessment-rev',
+    id: 'g1',
+    submissionId: 's5',
+    studentId: 'stu',
+    homeworkId: 'h1',
+    version: 1,
+    status: 'finalized',
+    score: 90,
+    maxScore: 100,
+    gradedAt: '2026-09-30T12:00:00.000Z',
+  });
+  assert.equal(patch.submissions[0].score, 90);
+  assert.equal(patch.submissions[0].status, 'graded');
 });
 
 test('reconcileAssessmentHeads repairs a head resolved with the old ordering', () => {

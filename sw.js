@@ -69,7 +69,10 @@ self.addEventListener('fetch', (event) => {
 async function networkFirst(request, fallback) {
   const cache = await caches.open(cacheName);
   try {
-    const response = await fetch(request);
+    // Bypass the browser HTTP cache while online. Static dev servers (for
+    // example `python3 -m http.server`) send no Cache-Control, so a plain
+    // fetch() can return a stale module and edits never reach the running app.
+    const response = await fetch(request, { cache: 'no-store' });
     if (response.ok && response.type === 'basic') cache.put(request, response.clone());
     return response;
   } catch {

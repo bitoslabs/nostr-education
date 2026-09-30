@@ -284,6 +284,10 @@ function homeworkRow(state, app, persona, item) {
       submission
         ? timeStamp('education.submittedAt', submission.submittedEventAt ?? submission.submittedAt)
         : null,
+      button(t('education.refreshHomework'), {
+        small: true,
+        onClick: () => app.refreshRecords?.(),
+      }),
       button(label, {
         variant: graded ? 'default' : 'gold',
         small: true,

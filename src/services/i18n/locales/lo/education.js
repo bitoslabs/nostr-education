@@ -38,6 +38,7 @@ export default {
   resubmit: 'ສົ່ງຄືນ',
   submitNewVersion: 'ສົ່ງເວີຊັນໃໝ່',
   submitHomework: 'ສົ່ງການບ້ານ',
+  refreshHomework: 'ໂຫຼດຄະແນນໃໝ່',
   homeworkMeta: '{title} · ກຳນົດ {due} · ຈາກຄະແນນເຕັມ {maxScore}',
   dueMeta: 'ກຳນົດ {due}',
   maxMeta: 'ຈາກຄະແນນເຕັມ {maxScore}',

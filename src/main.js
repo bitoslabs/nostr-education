@@ -229,11 +229,22 @@ async function applyIncomingRecord(event, seen) {
   const active = signer.getSigner();
 
   if (event.kind === GIFT_WRAP_KIND) {
-    const unwrapped = await unwrapGiftWrap({ wrap: event, signer: active });
     // A grade or homework can arrive before the signer is restored, or while an
     // extension is locked. Do not consume the event: a later refresh retries it
     // instead of losing the score for good.
-    if (!unwrapped) return;
+    if (typeof active?.nip44Decrypt !== 'function') {
+      if (typeof console !== 'undefined') {
+        console.warn('[records] gift wrap received but the session cannot decrypt (no NIP-44 signer)');
+      }
+      return;
+    }
+    const unwrapped = await unwrapGiftWrap({ wrap: event, signer: active });
+    if (!unwrapped) {
+      if (typeof console !== 'undefined') {
+        console.warn('[records] gift wrap failed to decrypt', event.id);
+      }
+      return;
+    }
     const record = decodeRecord(unwrapped.content, [], unwrapped.createdAt ?? event.created_at);
     // Decoded with no tags and no type/id: nothing to apply, so consume it.
     if (!record) {
@@ -289,33 +300,60 @@ function refreshRecords({ timeoutMs = 8000, silent = false } = {}) {
   if (!me) return Promise.resolve(0);
   if (refreshInFlight) return refreshInFlight;
   if (!silent) bus.emit('toast', { message: t('actions.refreshingRecords'), tone: 'info' });
-  refreshInFlight = new Promise((resolve) => {
-    const seen = new Set();
-    let count = 0;
-    let settled = false;
-    let sub = null;
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      try {
-        sub?.close?.();
-      } catch {
-        /* the subscription may already be closed */
-      }
-      if (!silent) bus.emit('toast', { message: t('actions.recordsRefreshed', { count }), tone: 'ok' });
-      resolve(count);
-    };
-    const timer = setTimeout(finish, timeoutMs);
-    sub = relayService.subscribe(recordFilters(me), {
-      onEvent: async (event) => {
-        const before = seen.size;
-        await applyIncomingRecord(event, seen);
-        if (seen.size > before) count += 1;
-      },
-      onEose: finish,
+
+  // A restored browser session can still be authenticated while its signer is
+  // not ready (most commonly an extension whose background page was asleep).
+  // Restore it before asking relays for encrypted records; otherwise the relay
+  // correctly returns the missed grade but the client cannot decrypt it.
+  refreshInFlight = (async () => {
+    if (!signer.getSigner()) await restoreSigner();
+
+    return new Promise((resolve) => {
+      const seen = new Set();
+      const pending = new Set();
+      let count = 0;
+      let settled = false;
+      let eose = false;
+      let sub = null;
+      const finish = (force = false) => {
+        if (settled) return;
+        // Relay EOSE means no more stored events are coming, but decrypting the
+        // events already received is asynchronous. Do not close/resolve until
+        // those operations have applied their records to the store.
+        if (!force && (!eose || pending.size)) return;
+        settled = true;
+        clearTimeout(timer);
+        try {
+          sub?.close?.();
+        } catch {
+          /* the subscription may already be closed */
+        }
+        if (!silent) bus.emit('toast', { message: t('actions.recordsRefreshed', { count }), tone: 'ok' });
+        resolve(count);
+      };
+      const timer = setTimeout(() => finish(true), timeoutMs);
+      sub = relayService.subscribe(recordFilters(me), {
+        onEvent: (event) => {
+          const task = (async () => {
+            const before = seen.size;
+            await applyIncomingRecord(event, seen);
+            if (seen.size > before) count += 1;
+          })().catch((error) => {
+            if (typeof console !== 'undefined') console.warn('[records] failed to apply relay event', error);
+          });
+          pending.add(task);
+          task.finally(() => {
+            pending.delete(task);
+            finish();
+          });
+        },
+        onEose: () => {
+          eose = true;
+          finish();
+        },
+      });
     });
-  }).finally(() => {
+  })().finally(() => {
     refreshInFlight = null;
   });
   return refreshInFlight;

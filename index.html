@@ -59,11 +59,27 @@
     <script type="module" src="./src/main.js"></script>
     <script>
       // Offline shell: cache the app after the first online visit (see sw.js).
+      // updateViaCache:'none' keeps the worker script itself out of the browser
+      // HTTP cache so a new build is picked up on the next load.
       if ('serviceWorker' in navigator) {
+        var hadController = !!navigator.serviceWorker.controller;
+        var reloaded = false;
+        // When a new worker takes over, reload once so the page runs the new
+        // build instead of the modules the old worker cached.
+        navigator.serviceWorker.addEventListener('controllerchange', function () {
+          if (!hadController || reloaded) return;
+          reloaded = true;
+          location.reload();
+        });
         window.addEventListener('load', function () {
-          navigator.serviceWorker.register('./sw.js').catch(function () {
-            /* offline mode unavailable; the app still runs online */
-          });
+          navigator.serviceWorker
+            .register('./sw.js', { updateViaCache: 'none' })
+            .then(function (registration) {
+              return registration.update();
+            })
+            .catch(function () {
+              /* offline mode unavailable; the app still runs online */
+            });
         });
       }
     </script>

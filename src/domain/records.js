@@ -183,9 +183,10 @@ export function applyRecord(state, record) {
       const assessmentRevisions = upsert(state.assessmentRevisions ?? [], record);
       // Revisions are append-only and can arrive out of order (relay replay, a
       // refetch, or a late delivery). Drive the submission from the latest
-      // revision — highest version, then authored time — so the learner always
-      // sees the *last* score the teacher set, not whichever record arrived
-      // last. Ties keep the already-selected head.
+      // revision by authored time, then version, so the learner always sees the
+      // *last* score the teacher set, never whichever record arrived last. A
+      // version counter can reset across a teacher's devices, so it is not used
+      // to reject an update; `latest` already includes any existing head.
       const related = assessmentRevisions.filter((entry) => entry.submissionId === record.submissionId);
       const latest = related.reduce(
         (best, entry) => (compareRevisions(entry, best) > 0 ? entry : best),
@@ -231,11 +232,6 @@ export function applyRecord(state, record) {
         };
       }
 
-      const current = list[index];
-      if (latestVersion < (Number(current.assessmentVersion) || 0)) {
-        // An older revision arrived after a newer one; keep the newer result.
-        return { assessmentRevisions };
-      }
       const submissions = list.map((submission) => {
         if (submission.id !== record.submissionId) return submission;
         if (latest.status === 'revision') {
@@ -435,7 +431,6 @@ export function reconcileAssessmentHeads(state = {}) {
       related[0],
     );
     const version = Number(latest.version) || 0;
-    if (version < (Number(submission.assessmentVersion) || 0)) return submission;
     const revision = latest.status === 'revision';
     const score = revision ? null : latest.score ?? null;
     const scores = revision ? null : latest.scores ?? submission.scores ?? null;
