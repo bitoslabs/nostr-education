@@ -43,6 +43,7 @@ import {
   HOMEWORK_STATUS,
   SUBMISSION_STATUS,
   canSubmitLate,
+  classroomsForStudent,
   classroomActivity,
   classroomById,
   enrolledAccountIds,
@@ -61,7 +62,7 @@ import { DELIVERY_STATE } from '../domain/delivery.js';
 import { normalizeHandle, validateHandle } from '../domain/handle.js';
 import { truncateNpub } from '../domain/identity.js';
 import { normalizeMode } from '../domain/mode.js';
-import { normalizePrivateName, validatePrivateName } from '../domain/private-name.js';
+import { normalizePrivateName, formatPrivateName, validatePrivateName } from '../domain/private-name.js';
 import { normalizeUrl, parseProfileMeta, profileContent } from '../domain/profile.js';
 import {
   addRelay as addRelayToList,
@@ -636,9 +637,11 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
   }
 
   // Academy-scoped private name (gender, first/last name) plus its visibility
-  // policy. This is deliberately NOT published to a relay: docs/architecture/
-  // data-model.md keeps structured legal/professional names in the private
-  // data plane, so the prototype stores them on-device only.
+  // policy. Never a public record: it stays on-device and is delivered only as
+  // an encrypted record to the assigned teachers of the learner's classes, so a
+  // teacher on another device can read an authorized name. This mirrors the
+  // private data plane in docs/architecture/data-model.md until the private API
+  // endpoints exist.
   function savePrivateName(fields = {}) {
     const current = state();
     const persona = getPersona(current.personaId);
@@ -650,11 +653,32 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     }
     const record = {
       ...normalizePrivateName(fields, { role }),
+      subjectId: persona.id,
       role: role ?? null,
       updatedAt: new Date().toISOString(),
     };
     update({ privateNames: { ...(current.privateNames ?? {}), [persona.id]: record } });
-    toast(t('actions.privateNameSaved'), 'ok');
+
+    const teachers = new Set();
+    for (const room of classroomsForStudent(current.classrooms ?? [], persona.id, current.capabilities ?? [])) {
+      if (room.teacherId && room.teacherId !== persona.id) teachers.add(room.teacherId);
+    }
+    if (teachers.size && signer.canSign()) {
+      publishRecord({
+        type: RECORD_TYPES.PRIVATE_NAME,
+        id: persona.id,
+        payload: record,
+        recipients: [...teachers],
+        encrypted: true,
+        title: t('actions.privateNameDelivery'),
+        action: el('span', {}, t('actions.privateNameShared', { name: formatPrivateName(record) })),
+      });
+    }
+
+    toast(
+      teachers.size ? t('actions.privateNameSavedShared') : t('actions.privateNameSaved'),
+      'ok',
+    );
     return true;
   }
 

@@ -13,8 +13,9 @@ import {
   validatePrivateName,
 } from '../src/domain/private-name.js';
 import { ROLE } from '../src/domain/school.js';
+import { RECORD_TYPES, applyRecord } from '../src/domain/records.js';
 import { clearRegistry, registerPersona } from '../src/data/personas.js';
-import { learnerDisplayName, visiblePrivateName } from '../src/ui/private-name-view.js';
+import { learnerDisplayName, visiblePrivateGender, visiblePrivateName } from '../src/ui/private-name-view.js';
 
 test('default visibility is stricter for students than for teachers', () => {
   assert.equal(emptyPrivateName(ROLE.STUDENT).visibility, NAME_VISIBILITY.SELF_AND_STAFF);
@@ -31,6 +32,7 @@ test('normalizePrivateName trims names and keeps known gender/visibility values'
   });
   assert.deepEqual(profile, {
     gender: 'female',
+    honorific: '',
     givenName: 'Alex',
     familyName: 'Sunder',
     visibility: NAME_VISIBILITY.CLASS_PARTICIPANTS,
@@ -64,6 +66,15 @@ test('formatPrivateName joins available parts and hasPrivateName reports presenc
   assert.equal(hasPrivateName({ givenName: 'Alex' }), true);
   assert.equal(hasPrivateName({ givenName: '  ' }), false);
   assert.equal(hasPrivateName(null), false);
+});
+
+test('formatPrivateName prefixes Mr/Ms from gender and honors an explicit honorific', () => {
+  assert.equal(formatPrivateName({ gender: 'female', givenName: 'Alex', familyName: 'Sunder' }), 'Ms Alex Sunder');
+  assert.equal(formatPrivateName({ gender: 'male', givenName: 'Alex', familyName: 'Sunder' }), 'Mr Alex Sunder');
+  assert.equal(
+    formatPrivateName({ gender: 'female', honorific: 'Dr', givenName: 'Alex', familyName: 'Sunder' }),
+    'Dr Alex Sunder',
+  );
 });
 
 test('an assigned teacher may read an enrolled student private name', () => {
@@ -102,6 +113,7 @@ test('teacher-facing labels use the private name only inside assigned classes', 
     privateNames: {
       'student-1': {
         role: ROLE.STUDENT,
+        gender: 'female',
         givenName: 'Alex',
         familyName: 'Sunder',
         visibility: NAME_VISIBILITY.SELF_AND_STAFF,
@@ -115,9 +127,11 @@ test('teacher-facing labels use the private name only inside assigned classes', 
   const owner = { id: 'owner-1', role: ROLE.OWNER };
 
   // Authorization follows the class relationship, not the viewer role label.
-  assert.equal(visiblePrivateName(state, assigned, 'student-1'), 'Alex Sunder');
-  assert.equal(learnerDisplayName(state, assigned, 'student-1'), 'Alex Sunder');
+  assert.equal(visiblePrivateName(state, assigned, 'student-1'), 'Ms Alex Sunder');
+  assert.equal(visiblePrivateGender(state, assigned, 'student-1'), 'female');
+  assert.equal(learnerDisplayName(state, assigned, 'student-1'), 'Ms Alex Sunder');
   assert.equal(visiblePrivateName(state, other, 'student-1'), null);
+  assert.equal(visiblePrivateGender(state, other, 'student-1'), null);
   assert.equal(learnerDisplayName(state, other, 'student-1'), 'alex');
   assert.equal(visiblePrivateName(state, owner, 'student-1'), null);
 });
@@ -152,4 +166,20 @@ test('an enrolled student sees an assigned teacher only under class_participants
   assert.equal(visiblePrivateName(state, student, 'teacher-1'), 'Tara Ng');
   assert.equal(visiblePrivateName(state, student, 'teacher-2'), null);
   assert.equal(learnerDisplayName(state, student, 'teacher-2'), 'Mr X');
+});
+
+test('a delivered private-name record lands in privateNames by subject', () => {
+  const patch = applyRecord(
+    { privateNames: {}, classrooms: [] },
+    {
+      type: RECORD_TYPES.PRIVATE_NAME,
+      id: 'student-1',
+      subjectId: 'student-1',
+      givenName: 'Alex',
+      familyName: 'Sunder',
+      visibility: NAME_VISIBILITY.SELF_AND_STAFF,
+    },
+  );
+  assert.equal(patch.privateNames['student-1'].givenName, 'Alex');
+  assert.equal(patch.privateNames['student-1'].subjectId, 'student-1');
 });

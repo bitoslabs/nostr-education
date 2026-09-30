@@ -35,6 +35,7 @@ export function emptyPrivateName(role) {
 export function normalizePrivateName(input = {}, { role } = {}) {
   return {
     gender: GENDER_VALUES.has(input.gender) ? input.gender : '',
+    honorific: String(input.honorific ?? '').trim().slice(0, 16),
     givenName: String(input.givenName ?? '').trim().slice(0, 80),
     familyName: String(input.familyName ?? '').trim().slice(0, 80),
     visibility: NAME_VISIBILITY_VALUES.includes(input.visibility)
@@ -50,11 +51,24 @@ export function validatePrivateName(input = {}) {
   return { valid: Object.keys(errors).length === 0, errors };
 }
 
+// Title for the rendered academy name: an explicit honorific wins, otherwise
+// derive Mr/Ms from gender. No gender or honorific renders the bare name.
+export function honorificFor(profile = {}) {
+  const explicit = String(profile.honorific ?? '').trim();
+  if (explicit) return explicit;
+  if (profile.gender === 'female') return 'Ms';
+  if (profile.gender === 'male') return 'Mr';
+  return '';
+}
+
+// Render the structured name for display, e.g. `Mr Alex Sunder`.
 export function formatPrivateName(profile = {}) {
-  return [profile.givenName, profile.familyName]
+  const name = [profile.givenName, profile.familyName]
     .map((part) => String(part ?? '').trim())
     .filter(Boolean)
     .join(' ');
+  const honorific = honorificFor(profile);
+  return [honorific, name].filter(Boolean).join(' ');
 }
 
 export function hasPrivateName(profile) {

@@ -17,6 +17,7 @@ export const RECORD_TYPES = Object.freeze({
   JOIN_LINK: 'joinlink',
   JOIN_REQUEST: 'joinreq',
   MEMBER: 'member',
+  PRIVATE_NAME: 'private-name',
 });
 
 export const PUBLIC_RECORD_TYPES = Object.freeze([
@@ -51,6 +52,7 @@ export const PRIVATE_RECORD_TYPES = Object.freeze([
   RECORD_TYPES.INVITE,
   RECORD_TYPES.JOIN_REQUEST,
   RECORD_TYPES.MEMBER,
+  RECORD_TYPES.PRIVATE_NAME,
 ]);
 
 // The owner's original draft and the teacher's published assignment share an
@@ -386,6 +388,14 @@ export function applyRecord(state, record) {
     case RECORD_TYPES.CAPABILITY: {
       if (!record.accountId || !record.academyId) return null;
       return { capabilities: upsert(state.capabilities ?? [], record) };
+    }
+    case RECORD_TYPES.PRIVATE_NAME: {
+      // Academy-scoped private name, delivered encrypted to an authorized
+      // viewer (the person themselves or an assigned teacher). It is never a
+      // public record, so it only ever lands in `privateNames`.
+      const subjectId = record.subjectId ?? record.id;
+      if (!subjectId) return null;
+      return { privateNames: { ...(state.privateNames ?? {}), [subjectId]: { ...record, subjectId } } };
     }
     default:
       return null;

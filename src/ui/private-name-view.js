@@ -33,25 +33,40 @@ function studentHasTeacher(state, studentId, teacherId) {
 // required and is not modeled yet, so an owner who does not teach the class
 // gets nothing here. Callers fall back to the public alias — never to a
 // redacted structured field.
-export function visiblePrivateName(state, viewer, subjectId) {
+export function visiblePrivateProfile(state, viewer, subjectId) {
   if (!state || !viewer || !subjectId) return null;
   const profile = state.privateNames?.[subjectId];
   if (!hasPrivateName(profile)) return null;
-  if (viewer.id === subjectId) return formatPrivateName(profile);
+  if (viewer.id === subjectId) return profile;
 
   if (teachesStudent(state, viewer.id, subjectId)) {
     return canReadPrivateName(profile, { viewerId: viewer.id, subjectId, relationship: NAME_VIEWER.ASSIGNED_TEACHER })
-      ? formatPrivateName(profile)
+      ? profile
       : null;
   }
 
   if (studentHasTeacher(state, viewer.id, subjectId)) {
     return canReadPrivateName(profile, { viewerId: viewer.id, subjectId, relationship: NAME_VIEWER.CLASS_PARTICIPANT })
-      ? formatPrivateName(profile)
+      ? profile
       : null;
   }
 
   return null;
+}
+
+// The private academy name a viewer is authorized to read for `subjectId`, or
+// null. Authorization is decided from the class relationship, not the viewer's
+// role label, so a teacher whose role field is stale still works. See
+// `visiblePrivateProfile` for the rule.
+export function visiblePrivateName(state, viewer, subjectId) {
+  const profile = visiblePrivateProfile(state, viewer, subjectId);
+  return profile ? formatPrivateName(profile) : null;
+}
+
+// The private gender a viewer is authorized to read for `subjectId`, or null.
+export function visiblePrivateGender(state, viewer, subjectId) {
+  const profile = visiblePrivateProfile(state, viewer, subjectId);
+  return profile?.gender || null;
 }
 
 // Label for a person in an authorized view: the private name when available,
