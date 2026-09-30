@@ -11,7 +11,13 @@ import { DEFAULT_SIGNER } from './domain/account.js';
 import { findAcademyById } from './domain/academy.js';
 import { classroomById } from './domain/classroom.js';
 import { credentialFromEvent } from './domain/credential.js';
-import { RECORD_TYPES, applyRecord, isPublicRecord, migrateSubmissionHistory } from './domain/records.js';
+import {
+  RECORD_TYPES,
+  applyRecord,
+  isPublicRecord,
+  migrateSubmissionHistory,
+  reconcileAssessmentHeads,
+} from './domain/records.js';
 import { parseProfileMeta } from './domain/profile.js';
 import { normalizeRelayList } from './domain/relay.js';
 import { normalizeMode } from './domain/mode.js';
@@ -130,6 +136,14 @@ const store = createStore({
   membership: MEMBERSHIP.NONE,
 });
 
+// Repair any submission head that was resolved with the old revision ordering,
+// so a persisted score shows correctly without waiting for a relay replay.
+const headPatch = reconcileAssessmentHeads({
+  submissions: persisted.submissions ?? [],
+  assessmentRevisions,
+});
+if (headPatch) store.setState(headPatch);
+
 const reactiveState = createReactiveStore(store);
 
 const bus = createEmitter();
@@ -211,15 +225,22 @@ function recordFilters(me) {
 
 async function applyIncomingRecord(event, seen) {
   if (seen.has(event.id)) return;
-  seen.add(event.id);
   const me = store.getState().accountId;
   const active = signer.getSigner();
 
   if (event.kind === GIFT_WRAP_KIND) {
     const unwrapped = await unwrapGiftWrap({ wrap: event, signer: active });
+    // A grade or homework can arrive before the signer is restored, or while an
+    // extension is locked. Do not consume the event: a later refresh retries it
+    // instead of losing the score for good.
     if (!unwrapped) return;
     const record = decodeRecord(unwrapped.content, [], unwrapped.createdAt ?? event.created_at);
-    if (!record) return;
+    // Decoded with no tags and no type/id: nothing to apply, so consume it.
+    if (!record) {
+      seen.add(event.id);
+      return;
+    }
+    seen.add(event.id);
     const patch = applyRecord(store.getState(), record);
     if (patch) store.setState(patch);
     if (record.type === RECORD_TYPES.CAPABILITY) actions.backfillHomeworkForEnrollment?.(record);
@@ -239,6 +260,7 @@ async function applyIncomingRecord(event, seen) {
     return;
   }
   const record = decodeRecord(content, event.tags, event.created_at);
+  seen.add(event.id);
   if (!record) return;
   const patch = applyRecord(store.getState(), record);
   if (patch) store.setState(patch);
@@ -259,12 +281,15 @@ function syncRecords() {
 }
 
 // Re-query relays for this account's records so a student can recover homework
-// (or any record) that a live subscription missed.
+// or a grade the teacher set while the tab was closed. Concurrent calls (page
+// load, opening the learner workspace, returning to the tab) share one query.
+let refreshInFlight = null;
 function refreshRecords({ timeoutMs = 8000, silent = false } = {}) {
   const me = store.getState().accountId;
   if (!me) return Promise.resolve(0);
+  if (refreshInFlight) return refreshInFlight;
   if (!silent) bus.emit('toast', { message: t('actions.refreshingRecords'), tone: 'info' });
-  return new Promise((resolve) => {
+  refreshInFlight = new Promise((resolve) => {
     const seen = new Set();
     let count = 0;
     let settled = false;
@@ -290,7 +315,10 @@ function refreshRecords({ timeoutMs = 8000, silent = false } = {}) {
       },
       onEose: finish,
     });
+  }).finally(() => {
+    refreshInFlight = null;
   });
+  return refreshInFlight;
 }
 
 let credentialSub = null;
@@ -462,6 +490,9 @@ function mount(render, path) {
     render({ store, bus, app, theme, scope: activeScope, state: reactiveState }),
   );
   shell.content.scrollTop = 0;
+  // Opening any page re-queries relays, so records created elsewhere (a score a
+  // teacher set) show up without a manual refresh. Concurrent calls coalesce.
+  if (state.authed) refreshRecords({ silent: true });
 }
 
 const router = createRouter({
@@ -472,15 +503,39 @@ const router = createRouter({
 
 restoreSigner().finally(() => {
   router.start();
+  // Subscribe with the restored signer so encrypted records can be decrypted as
+  // they arrive (the initial store change may have started a subscription with
+  // no signer yet).
+  syncRecords();
   syncProfiles();
   syncCatalog();
   syncCredentials();
   if (store.getState().authed) {
-    relayService.check().then(() => store.setState({ relays: relayService.statuses() }));
-    // Pull grades, homework, or other records that arrived while away, so
-    // reopening the app later surfaces them without a manual refresh.
-    setTimeout(() => refreshRecords({ silent: true }), 1500);
+    // Once relays are confirmed reachable, pull records that arrived while the
+    // tab was closed (for example a score the teacher set). Querying only on a
+    // timer races relay connection, which is why the grade sometimes missed.
+    relayService.check().then(() => {
+      store.setState({ relays: relayService.statuses() });
+      refreshRecords({ silent: true });
+    });
+    // Backstop for a relay that is slow to answer the first check.
+    setTimeout(() => refreshRecords({ silent: true }), 3000);
   }
 });
+
+// A student who closed the tab or lost the network may have missed the live
+// delivery of a grade. Refetch whenever the page is shown again or the network
+// returns, so the score appears without hunting for the Refresh button.
+function refetchIfAuthed() {
+  if (store.getState().authed) refreshRecords({ silent: true });
+}
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') refetchIfAuthed();
+  });
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', refetchIfAuthed);
+}
 
 export { store, bus };

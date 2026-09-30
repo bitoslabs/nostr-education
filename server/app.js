@@ -267,16 +267,18 @@ function runFinalizeAssessment({ store, actor, body, context }) {
   } else if (!Number.isFinite(score) || score < 0 || score > max) {
     return { status: 422, body: { error: 'invalid_score', max } };
   }
-  const finalizedCount =
+  // Version across every revision (not just finalized) so a later finalize
+  // cannot reuse a revision-request version.
+  const revisionCount =
     (store.state.assessmentRevisions ?? []).filter(
-      (entry) => entry.submissionId === submission.id && entry.status === 'finalized',
+      (entry) => entry.submissionId === submission.id,
     ).length + 1;
   const revision = {
-    id: body?.id ?? `asmt-${submission.id}-${finalizedCount}`,
+    id: body?.id ?? `asmt-${submission.id}-${revisionCount}`,
     submissionId: submission.id,
     studentId: submission.studentId,
     homeworkId: submission.homeworkId,
-    version: finalizedCount,
+    version: revisionCount,
     status: 'finalized',
     score,
     scores,

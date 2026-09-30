@@ -9,6 +9,7 @@ import {
   applyRecord,
   isPublicRecord,
   migrateSubmissionHistory,
+  reconcileAssessmentHeads,
   toPublicRecord,
 } from '../src/domain/records.js';
 import {
@@ -136,6 +137,160 @@ test('applyRecord keeps the earliest event time as created and the latest as upd
   state = { ...state, ...replay };
   assert.equal(state.homework[0].eventCreatedAt, 1_700_000_000);
   assert.equal(state.homework[0].eventUpdatedAt, 1_700_600_000);
+});
+
+test('a stale published replay cannot re-open a closed homework', () => {
+  const closed = { id: 'hw1', classroomId: 'c1', status: 'closed', updatedAt: '2026-09-30T10:00:00.000Z' };
+  const state = { ...EMPTY, homework: [closed] };
+
+  // A leftover copy of the original publish (no updatedAt) must be ignored.
+  const stale = applyRecord(state, { type: 'homework', id: 'hw1', classroomId: 'c1', status: 'published' });
+  assert.equal(stale, null, 'stale replay should not change state');
+  assert.equal(state.homework[0].status, 'closed');
+
+  // An older stamped edit is also refused.
+  const older = applyRecord(state, {
+    type: 'homework',
+    id: 'hw1',
+    classroomId: 'c1',
+    status: 'published',
+    updatedAt: '2026-09-30T09:00:00.000Z',
+  });
+  assert.equal(older, null);
+
+  // A genuine reopen is newer, so it applies.
+  const reopened = applyRecord(state, {
+    type: 'homework',
+    id: 'hw1',
+    classroomId: 'c1',
+    status: 'published',
+    updatedAt: '2026-09-30T11:00:00.000Z',
+  });
+  assert.equal(reopened.homework[0].status, 'published');
+});
+
+test('the submission head follows the latest assessment revision, not arrival order', () => {
+  const base = { ...EMPTY, submissions: [{ id: 's1', homeworkId: 'h1', status: 'submitted', assessmentVersion: 0 }] };
+  const first = applyRecord(base, {
+    type: 'assessment-rev',
+    id: 'a1',
+    submissionId: 's1',
+    studentId: 'stu',
+    homeworkId: 'h1',
+    version: 1,
+    status: 'finalized',
+    score: 60,
+    maxScore: 100,
+    gradedAt: '2026-09-30T09:00:00.000Z',
+  });
+  let state = { ...base, ...first };
+  assert.equal(state.submissions[0].score, 60);
+
+  const second = applyRecord(state, {
+    type: 'assessment-rev',
+    id: 'a2',
+    submissionId: 's1',
+    studentId: 'stu',
+    homeworkId: 'h1',
+    version: 2,
+    status: 'finalized',
+    score: 90,
+    maxScore: 100,
+    gradedAt: '2026-09-30T10:00:00.000Z',
+  });
+  state = { ...state, ...second };
+  assert.equal(state.submissions[0].score, 90);
+
+  // A late replay of the older grade must not downgrade the head.
+  const replay = applyRecord(state, {
+    type: 'assessment-rev',
+    id: 'a1',
+    submissionId: 's1',
+    studentId: 'stu',
+    homeworkId: 'h1',
+    version: 1,
+    status: 'finalized',
+    score: 60,
+    maxScore: 100,
+    gradedAt: '2026-09-30T09:00:00.000Z',
+  });
+  if (replay) state = { ...state, ...replay };
+  assert.equal(state.submissions[0].score, 90);
+});
+
+test('same-version revisions resolve to the later authored time', () => {
+  const base = { ...EMPTY, submissions: [{ id: 's2', homeworkId: 'h1', status: 'submitted', assessmentVersion: 0 }] };
+  const revision = (id, score, gradedAt) => ({
+    type: 'assessment-rev',
+    id,
+    submissionId: 's2',
+    studentId: 'stu',
+    homeworkId: 'h1',
+    version: 2,
+    status: 'finalized',
+    score,
+    maxScore: 100,
+    gradedAt,
+  });
+
+  let state = { ...base, ...applyRecord(base, revision('b1', 70, '2026-09-30T10:00:00.000Z')) };
+  state = { ...state, ...applyRecord(state, revision('b2', 80, '2026-09-30T11:00:00.000Z')) };
+  assert.equal(state.submissions[0].score, 80);
+
+  // A colliding version with an earlier time must not win.
+  const late = applyRecord(state, revision('b3', 50, '2026-09-30T09:00:00.000Z'));
+  if (late) state = { ...state, ...late };
+  assert.equal(state.submissions[0].score, 80);
+});
+
+test('a finalized grade beats a same-version revision request', () => {
+  const base = { ...EMPTY, submissions: [{ id: 's3', homeworkId: 'h1', status: 'revision', assessmentVersion: 0 }] };
+  const requested = applyRecord(base, {
+    type: 'assessment-rev',
+    id: 'r2',
+    submissionId: 's3',
+    studentId: 'stu',
+    homeworkId: 'h1',
+    version: 2,
+    status: 'revision',
+    score: null,
+    maxScore: 100,
+    requestedAt: '2026-09-30T10:00:00.000Z',
+    // A misleading randomized wrap time must not decide the winner.
+    eventCreatedAt: 9_999_999_999,
+  });
+  let state = { ...base, ...requested };
+  assert.equal(state.submissions[0].status, 'revision');
+
+  const graded = applyRecord(state, {
+    type: 'assessment-rev',
+    id: 'g2',
+    submissionId: 's3',
+    studentId: 'stu',
+    homeworkId: 'h1',
+    version: 2,
+    status: 'finalized',
+    score: 15,
+    maxScore: 100,
+    gradedAt: '2026-09-30T09:00:00.000Z',
+    eventCreatedAt: 1,
+  });
+  state = { ...state, ...graded };
+  assert.equal(state.submissions[0].status, 'graded');
+  assert.equal(state.submissions[0].score, 15);
+});
+
+test('reconcileAssessmentHeads repairs a head resolved with the old ordering', () => {
+  const patch = reconcileAssessmentHeads({
+    submissions: [{ id: 's4', homeworkId: 'h1', status: 'revision', score: null, assessmentVersion: 2 }],
+    assessmentRevisions: [
+      { id: 'r2', submissionId: 's4', homeworkId: 'h1', version: 2, status: 'revision', feedback: 'redo', requestedAt: '2026-09-30T10:00:00.000Z' },
+      { id: 'g2', submissionId: 's4', homeworkId: 'h1', version: 2, status: 'finalized', score: 42, maxScore: 100, gradedAt: '2026-09-30T11:00:00.000Z' },
+    ],
+  });
+  assert.ok(patch, 'expected the stale head to be reconciled');
+  assert.equal(patch.submissions[0].status, 'graded');
+  assert.equal(patch.submissions[0].score, 42);
 });
 
 test('applyRecord upserts subjects and classrooms without duplicates', () => {

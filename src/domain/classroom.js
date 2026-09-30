@@ -185,10 +185,38 @@ export function latestVersion(submissionVersions = [], submissionId) {
   return versions.length ? versions[versions.length - 1] : null;
 }
 
+// A revision's authored time, used to break ties between revisions that share a
+// version (older data, or two corrections made close together). Only the
+// payload timestamp is trustworthy: the record is delivered gift-wrapped and
+// its inner `created_at` is randomized, so `eventCreatedAt` would order
+// revisions randomly. Missing timestamps return 0 and fall through to the id.
+export function revisionTime(revision) {
+  const raw = revision?.gradedAt ?? revision?.requestedAt ?? null;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+// Total order for assessment revisions, newest last:
+//   1. higher version
+//   2. a finalized grade beats a revision request at the same version (older
+//      builds could give both the same number)
+//   3. later authored time
+//   4. id, so the result is deterministic even without a timestamp
+export function compareRevisions(left, right) {
+  const version = (Number(left?.version) || 0) - (Number(right?.version) || 0);
+  if (version !== 0) return version;
+  const rank = (entry) => (entry?.status === 'finalized' ? 1 : 0);
+  const status = rank(left) - rank(right);
+  if (status !== 0) return status;
+  const time = revisionTime(left) - revisionTime(right);
+  if (time !== 0) return time;
+  return String(left?.id ?? '').localeCompare(String(right?.id ?? ''));
+}
+
 export function assessmentRevisionsFor(assessmentRevisions = [], submissionId) {
   return assessmentRevisions
     .filter((entry) => entry.submissionId === submissionId)
-    .sort((a, b) => (Number(a.version) || 0) - (Number(b.version) || 0));
+    .sort(compareRevisions);
 }
 
 export function latestAssessmentRevision(assessmentRevisions = [], submissionId) {

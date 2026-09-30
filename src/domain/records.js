@@ -1,4 +1,4 @@
-import { CLASS_STATUS } from './classroom.js';
+import { CLASS_STATUS, compareRevisions } from './classroom.js';
 import { MEMBERSHIP, REQUEST_STATUS } from './school.js';
 
 export const RECORD_TYPES = Object.freeze({
@@ -106,6 +106,20 @@ export function applyRecord(state, record) {
     case RECORD_TYPES.HOMEWORK: {
       if (record.deleted) return { homework: removeById(state.homework ?? [], record.id) };
       const existing = (state.homework ?? []).find((entry) => entry.id === record.id);
+      // Homework is delivered gift-wrapped, whose inner `created_at` is
+      // randomized into the past, so relay `created_at` cannot order updates.
+      // Every real edit/close/reopen stamps a payload `updatedAt` from the
+      // author's clock; refuse an older (or stale, unstamped) replay so a
+      // leftover `published` copy cannot re-open a `closed` homework.
+      const incomingUpdated = Date.parse(record.updatedAt);
+      const storedUpdated = Date.parse(existing?.updatedAt);
+      if (
+        existing &&
+        Number.isFinite(storedUpdated) &&
+        (!Number.isFinite(incomingUpdated) || incomingUpdated < storedUpdated)
+      ) {
+        return null;
+      }
       // The record is republished on every edit, so the earliest raw event time
       // is its creation and the latest is its last update. Keep both across
       // out-of-order relay replays.
@@ -168,12 +182,13 @@ export function applyRecord(state, record) {
       if (!record.submissionId) return null;
       const assessmentRevisions = upsert(state.assessmentRevisions ?? [], record);
       // Revisions are append-only and can arrive out of order (relay replay, a
-      // refetch, or a late delivery). Drive the submission from the highest
-      // revision version so the learner always sees the *last* score, not
-      // whichever record happened to arrive last.
+      // refetch, or a late delivery). Drive the submission from the latest
+      // revision — highest version, then authored time — so the learner always
+      // sees the *last* score the teacher set, not whichever record arrived
+      // last. Ties keep the already-selected head.
       const related = assessmentRevisions.filter((entry) => entry.submissionId === record.submissionId);
       const latest = related.reduce(
-        (best, entry) => ((Number(entry.version) || 0) >= (Number(best.version) || 0) ? entry : best),
+        (best, entry) => (compareRevisions(entry, best) > 0 ? entry : best),
         related[0] ?? record,
       );
       const latestVersion = Number(latest.version) || 0;
@@ -400,6 +415,49 @@ export function applyRecord(state, record) {
     default:
       return null;
   }
+}
+
+// Older builds could number a revision request and its follow-up grade with the
+// same version, and the submission head was then resolved with an unreliable
+// tie-break (a gift-wrapped record's `created_at` is randomized). Recompute each
+// head from its revisions on load so persisted state shows the actual last score.
+export function reconcileAssessmentHeads(state = {}) {
+  const revisions = state.assessmentRevisions ?? [];
+  const submissions = state.submissions ?? [];
+  if (!revisions.length || !submissions.length) return null;
+
+  let changed = false;
+  const next = submissions.map((submission) => {
+    const related = revisions.filter((entry) => entry.submissionId === submission.id);
+    if (!related.length) return submission;
+    const latest = related.reduce(
+      (best, entry) => (compareRevisions(entry, best) > 0 ? entry : best),
+      related[0],
+    );
+    const version = Number(latest.version) || 0;
+    if (version < (Number(submission.assessmentVersion) || 0)) return submission;
+    const revision = latest.status === 'revision';
+    const score = revision ? null : latest.score ?? null;
+    const scores = revision ? null : latest.scores ?? submission.scores ?? null;
+    const feedback = latest.feedback ?? submission.feedback;
+    const status = revision ? 'revision' : 'graded';
+    const gradedAt = revision ? null : latest.gradedAt ?? submission.gradedAt ?? null;
+    const gradedBy = revision ? null : latest.gradedBy ?? submission.gradedBy ?? null;
+    const maxScore = latest.maxScore ?? submission.maxScore;
+    const same =
+      submission.score === score &&
+      submission.status === status &&
+      submission.assessmentVersion === version &&
+      submission.feedback === feedback &&
+      submission.gradedAt === gradedAt &&
+      submission.gradedBy === gradedBy &&
+      JSON.stringify(submission.scores ?? null) === JSON.stringify(scores);
+    if (same) return submission;
+    changed = true;
+    return { ...submission, score, scores, status, feedback, gradedAt, gradedBy, maxScore, assessmentVersion: version };
+  });
+
+  return changed ? { submissions: next } : null;
 }
 
 // Older builds stored one mutable submission row per (homework, student) and one

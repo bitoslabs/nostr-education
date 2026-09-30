@@ -202,8 +202,18 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     return authorize(ACTION.CORRECT_ASSESSMENT, classroomContext(current, classroom));
   }
 
-  function homeworkRecipients(classroom) {
-    return [classroom?.teacherId, ...(classroom?.studentIds ?? [])].filter(Boolean);
+  // Address every enrolled account, including learners who self-enrolled through
+  // a link (their enrollment arrives as a capability, not a synced studentIds
+  // entry). Lifecycle records — close/reopen, edits, deletes — must reach them
+  // too, or a learner keeps a stale `published` copy and can still submit.
+  function homeworkRecipients(current, classroom) {
+    return [
+      ...new Set([
+        classroom?.teacherId,
+        ...(classroom?.studentIds ?? []),
+        ...enrolledAccountIds(current?.capabilities ?? [], classroom?.id),
+      ].filter(Boolean)),
+    ];
   }
 
   function normalizeInviteTarget(raw) {
@@ -860,6 +870,14 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     if (!signer.canSign()) return Promise.resolve(null);
     const plaintext = encodeRecord(type, id, payload);
 
+    // Encrypted records (homework, submissions, scores) are saved locally even
+    // when no relay accepts them, so tell the sender instead of leaving the
+    // recipient with nothing and a "saved" toast.
+    const warnIfUnpublished = (result) => {
+      if (result && result.count === 0) toast(t('actions.signedNoRelay'), 'warn');
+      return result;
+    };
+
     const run = async () => {
       if (encrypted && giftWrap) {
         const active = signer.getSigner();
@@ -874,7 +892,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           last = await relay.publish(wrap);
         }
         if (last) update({ deliveries: [...relaySnapshot(last), ...state().deliveries] });
-        return last;
+        return warnIfUnpublished(last);
       }
 
       if (encrypted) {
@@ -895,7 +913,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           last = await relay.publish(signed);
         }
         if (last) update({ deliveries: [...relaySnapshot(last), ...state().deliveries] });
-        return last;
+        return warnIfUnpublished(last);
       }
 
       const event = buildEvent({
@@ -910,7 +928,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       if (!signed) return null;
       const published = await relay.publish(signed);
       update({ deliveries: [...relaySnapshot(published), ...state().deliveries] });
-      return published;
+      return warnIfUnpublished(published);
     };
 
     return run().catch((error) => {
@@ -2380,13 +2398,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       // Address every enrolled account, including learners who self-enrolled
       // through a link (their enrollment arrives as a capability, not a synced
       // studentIds entry).
-      const recipients = [
-        ...new Set([
-          classroom.teacherId,
-          ...(classroom.studentIds ?? []),
-          ...enrolledAccountIds(current.capabilities ?? [], classroom.id),
-        ].filter(Boolean)),
-      ];
+      const recipients = homeworkRecipients(current, classroom);
       publishRecord({
         type: 'homework',
         id: item.id,
@@ -2602,9 +2614,12 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       return false;
     }
     const persona = getPersona(current.personaId);
-    const priorFinalized = (current.assessmentRevisions ?? []).filter(
-      (entry) => entry.submissionId === submission.id && entry.status === 'finalized',
+    // Count *all* revisions, not just finalized ones, so a re-grade after a
+    // revision request cannot reuse that revision's version number.
+    const priorRevisions = (current.assessmentRevisions ?? []).filter(
+      (entry) => entry.submissionId === submission.id,
     ).length;
+    const gradedAt = new Date().toISOString();
     // Append an immutable assessment revision; corrections and re-grades keep the
     // earlier results instead of overwriting them.
     const revisionRecord = {
@@ -2612,13 +2627,13 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       submissionId: submission.id,
       studentId: submission.studentId,
       homeworkId: submission.homeworkId,
-      version: priorFinalized + 1,
+      version: priorRevisions + 1,
       status: 'finalized',
       score: numeric,
       scores: sheet,
       maxScore,
       feedback: String(feedback ?? '').trim(),
-      gradedAt: 'now',
+      gradedAt,
       gradedBy: persona.id,
     };
     update({
@@ -2631,7 +2646,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
               scores: sheet,
               feedback: String(feedback ?? '').trim(),
               status: SUBMISSION_STATUS.GRADED,
-              gradedAt: 'now',
+              gradedAt,
               gradedBy: persona.id,
               assessmentVersion: revisionRecord.version,
             }
@@ -2698,7 +2713,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       score: null,
       scores: null,
       feedback: note,
-      requestedAt: 'now',
+      requestedAt: new Date().toISOString(),
       requestedBy: persona.id,
     };
     update({
@@ -2799,7 +2814,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       type: 'homework',
       id: updated.id,
       payload: updated,
-      recipients: homeworkRecipients(classroom),
+      recipients: homeworkRecipients(current, classroom),
       encrypted: true,
       title: t('actions.updateHomework'),
       action: el('span', {}, t('actions.sendUpdatedHomework', { title: nextTitle })),
@@ -2837,7 +2852,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       type: 'homework',
       id: updated.id,
       payload: updated,
-      recipients: homeworkRecipients(classroom),
+      recipients: homeworkRecipients(current, classroom),
       encrypted: true,
       title:
         status === HOMEWORK_STATUS.CLOSED
@@ -2908,7 +2923,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       type: 'homework',
       id: homeworkId,
       payload: { id: homeworkId, classroomId: item.classroomId, deleted: true },
-      recipients: homeworkRecipients(classroom),
+      recipients: homeworkRecipients(current, classroom),
       encrypted: true,
       title: t('actions.deleteHomework'),
       action: el('span', {}, t('actions.removeHomeworkFromClass', { title: item.title })),
