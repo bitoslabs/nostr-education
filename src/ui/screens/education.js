@@ -18,6 +18,7 @@ import { MEMBERSHIP, REQUEST_STATUS, membershipBadge } from '../../domain/school
 import { t } from '../../services/i18n/index.js';
 import { button, dateMeta, emptyState, fileChip, pageTitle, timeStamp } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
+import { learnerDisplayName } from '../private-name-view.js';
 
 const ACADEMY_TYPE_KEYS = Object.freeze({
   school: 'education.academyTypes.school',
@@ -202,7 +203,7 @@ function classCard(state, app, persona, room) {
       el('span', { class: 'who' }, room.name),
       subject ? el('span', { class: 'ctx' }, subject.name) : null,
     ]),
-    el('p', { class: 'muted small' }, teacher ? t('education.teacherAssigned', { name: teacher.displayName }) : t('education.noTeacher')),
+    el('p', { class: 'muted small' }, teacher ? t('education.teacherAssigned', { name: learnerDisplayName(state, persona, room.teacherId) }) : t('education.noTeacher')),
     recommended
       ? el('p', {}, statusBadge(t('education.completionRecommended'), 'ok'))
       : badge

@@ -28,6 +28,8 @@ export default {
   updateProfile: 'Update profile',
   publishProfile: 'Publish profile',
   profilePublished: 'Profile published to your relays.',
+  privateNameSaved: 'Private name saved on this device.',
+  privateNameRequired: 'Enter both a first name and a last name.',
   connectSignerToUpload: 'Connect a signer to upload images.',
   uploadingImage: 'Uploading image to Blossom…',
   uploadImage: 'Upload image',

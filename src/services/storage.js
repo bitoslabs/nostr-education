@@ -24,6 +24,7 @@ const PERSISTED_FIELDS = [
   'recommendations',
   'signQueue',
   'credentials',
+  'privateNames',
   'following',
   'capabilities',
 ];

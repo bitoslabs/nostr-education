@@ -118,6 +118,7 @@ const store = createStore({
   capabilities: persisted.capabilities ?? [],
   grants: [],
   credentials: persisted.credentials ?? [],
+  privateNames: persisted.privateNames ?? {},
   deliveries: [],
   lastCreated: null,
   route: '/home',

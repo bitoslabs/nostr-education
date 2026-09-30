@@ -61,6 +61,7 @@ import { DELIVERY_STATE } from '../domain/delivery.js';
 import { normalizeHandle, validateHandle } from '../domain/handle.js';
 import { truncateNpub } from '../domain/identity.js';
 import { normalizeMode } from '../domain/mode.js';
+import { normalizePrivateName, validatePrivateName } from '../domain/private-name.js';
 import { normalizeUrl, parseProfileMeta, profileContent } from '../domain/profile.js';
 import {
   addRelay as addRelayToList,
@@ -634,6 +635,29 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     return true;
   }
 
+  // Academy-scoped private name (gender, first/last name) plus its visibility
+  // policy. This is deliberately NOT published to a relay: docs/architecture/
+  // data-model.md keeps structured legal/professional names in the private
+  // data plane, so the prototype stores them on-device only.
+  function savePrivateName(fields = {}) {
+    const current = state();
+    const persona = getPersona(current.personaId);
+    const role = fields.role ?? persona.role;
+    const check = validatePrivateName(fields);
+    if (!check.valid) {
+      toast(t('actions.privateNameRequired'), 'warn');
+      return false;
+    }
+    const record = {
+      ...normalizePrivateName(fields, { role }),
+      role: role ?? null,
+      updatedAt: new Date().toISOString(),
+    };
+    update({ privateNames: { ...(current.privateNames ?? {}), [persona.id]: record } });
+    toast(t('actions.privateNameSaved'), 'ok');
+    return true;
+  }
+
   async function uploadImage(blob, { server } = {}) {
     if (!blob) return null;
     if (!signer.canSign()) {
@@ -1143,6 +1167,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       recommendations: [],
       capabilities: [],
       credentials: [],
+      privateNames: {},
       deliveries: [],
       lastCreated: null,
     });
@@ -3702,6 +3727,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     requestRevision,
     claimHandle,
     updateProfile,
+    savePrivateName,
     uploadImage,
     uploadAttachment,
     setBlossomServer,

@@ -24,6 +24,7 @@ import { ROLE } from '../../domain/school.js';
 import { t } from '../../services/i18n/index.js';
 import { button, dateMeta, emptyState, pageTitle, row, tabs, timeStamp } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
+import { learnerDisplayName, visiblePrivateName } from '../private-name-view.js';
 
 export function renderTeaching({ app, state }) {
   const node = el('section', { class: 'screen' });
@@ -169,11 +170,8 @@ function scopedRoster(state, persona) {
   return entries;
 }
 
-function rosterName(entry) {
-  return getPersona(entry.studentId).displayName ?? '';
-}
-
-function filterRoster(entries, { query = '', sort = 'name', classId = 'all', subjectId = 'all' } = {}) {
+function filterRoster(entries, { query = '', sort = 'name', classId = 'all', subjectId = 'all', resolveName } = {}) {
+  const nameOf = resolveName ?? ((entry) => getPersona(entry.studentId).displayName ?? '');
   const needle = String(query).trim().toLowerCase();
   let list = classId && classId !== 'all'
     ? entries.filter((entry) => entry.classroomId === classId)
@@ -184,17 +182,17 @@ function filterRoster(entries, { query = '', sort = 'name', classId = 'all', sub
   if (needle) {
     list = list.filter((entry) => {
       const learner = getPersona(entry.studentId);
-      return [learner.displayName, learner.handle, entry.classroomName]
+      return [nameOf(entry), learner.displayName, learner.handle, entry.classroomName]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(needle));
     });
   }
   list.sort((left, right) => {
     if (sort === 'class') {
-      return left.classroomName.localeCompare(right.classroomName) || rosterName(left).localeCompare(rosterName(right));
+      return left.classroomName.localeCompare(right.classroomName) || nameOf(left).localeCompare(nameOf(right));
     }
     if (sort === 'average') return (right.average ?? -1) - (left.average ?? -1);
-    return rosterName(left).localeCompare(rosterName(right));
+    return nameOf(left).localeCompare(nameOf(right));
   });
   return list;
 }
@@ -228,11 +226,20 @@ function rosterStat(value, label) {
   return el('div', { class: 'stat' }, [el('b', {}, value), el('span', {}, label)]);
 }
 
-function rosterTableRow(app, entry) {
+function rosterTableRow(app, entry, privateName) {
   const learner = getPersona(entry.studentId);
   const complete = entry.homeworkCount > 0 && entry.graded === entry.homeworkCount;
   return el('tr', {}, [
-    el('td', {}, el('span', { class: 'who' }, learner.displayName)),
+    el('td', {}, [
+      el('span', { class: 'who' }, learner.displayName),
+      privateName
+        ? el(
+            'span',
+            { class: 'muted small', style: { display: 'block' } },
+            t('teaching.privateName', { name: privateName }),
+          )
+        : null,
+    ]),
     el('td', {}, el('span', { class: 'muted small' }, learner.handle ? `@${learner.handle}` : '—')),
     el('td', {}, entry.classroomName),
     el(
@@ -374,6 +381,7 @@ function studentsBody({
       sort: getSort(),
       classId: getClass(),
       subjectId: getSubject(),
+      resolveName: (entry) => learnerDisplayName(state.val, persona, entry.studentId),
     });
     const summary = rosterSummary(entries);
     summaryWrap.replaceChildren(
@@ -420,7 +428,7 @@ function studentsBody({
     subjectWrap.hidden = !subjects.length;
     tbody.replaceChildren(
       ...(entries.length
-        ? entries.map((entry) => rosterTableRow(app, entry))
+        ? entries.map((entry) => rosterTableRow(app, entry, visiblePrivateName(state.val, persona, entry.studentId)))
         : [
             el(
               'tr',
@@ -464,10 +472,27 @@ function classesBody(state, app, persona) {
   if (!classrooms.length) {
     return [emptyState(t('teaching.emptyClasses'))];
   }
-  return classrooms.map((room) => classCard(state, app, room));
+  return classrooms.map((room) => classCard(state, app, room, persona));
 }
 
-function classCard(state, app, room) {
+// Enrolled learners for a class, named with the authorized private name so the
+// class tab has the same student info as the roster/tab lists.
+function rosterAccordion(state, viewer, students) {
+  const rows = students.map((studentId) =>
+    row([el('span', { class: 'who' }, learnerDisplayName(state, viewer, studentId))]),
+  );
+  if (!rows.length) rows.push(emptyState(t('teaching.emptyLearners')));
+  return el('details', { class: 'acc' }, [
+    el('summary', {}, [
+      el('span', { class: 'who' }, t('teaching.learnersTitle')),
+      el('span', { class: 'spacer' }),
+      el('span', { class: 'muted small' }, t('teaching.learners', { count: students.length })),
+    ]),
+    el('div', { class: 'acc__body' }, el('div', { class: 'rows' }, rows)),
+  ]);
+}
+
+function classCard(state, app, room, viewer) {
   const subject = subjectById(state.subjects ?? [], room.subjectId);
   const homework = homeworkForClassroom(state.homework ?? [], room.id);
   const students = classroomRoster(state, room);
@@ -489,15 +514,16 @@ function classCard(state, app, room) {
       button(t('teaching.inviteLearner'), { small: true, onClick: () => app.openInviteStudent(room.id) }),
       button(t('teaching.shareClassLink'), { small: true, onClick: () => app.openClassLink(room.id) }),
     ]),
+    rosterAccordion(state, viewer, students),
     ...(homework.length
-      ? homework.map((item) => homeworkAccordion(state, app, item, students))
+      ? homework.map((item) => homeworkAccordion(state, app, item, students, viewer))
       : [emptyState(t('teaching.emptyHomework'))]),
-    completionAccordion(state, app, room, homework, students),
+    completionAccordion(state, app, room, homework, students, viewer),
   ]);
 }
 
 // Collapse per-class detail so the class list stays scannable; expand to work.
-function completionAccordion(state, app, room, homework, students) {
+function completionAccordion(state, app, room, homework, students, viewer) {
   const rows = students.map((studentId) => {
     const result = evaluateCompletion({
       policy: room.completion,
@@ -515,7 +541,7 @@ function completionAccordion(state, app, room, homework, students) {
       (entry) => entry.classroomId === room.id && entry.studentId === studentId && entry.status === 'recommended',
     );
     return row([
-      el('span', { class: 'who' }, getPersona(studentId).displayName),
+      el('span', { class: 'who' }, learnerDisplayName(state, viewer, studentId)),
       recommended ? statusBadge(t('teaching.recommended'), 'ok') : statusBadge(badgeLabel, badge.tone),
       el('span', { class: 'spacer' }),
       !recommended && result.eligible
@@ -546,7 +572,7 @@ function completionAccordion(state, app, room, homework, students) {
   ]);
 }
 
-function homeworkAccordion(state, app, item, students) {
+function homeworkAccordion(state, app, item, students, viewer) {
   const status = homeworkStatusBadge(item.status);
   const graded = students.filter(
     (studentId) => submissionFor(state.submissions ?? [], item.id, studentId)?.status === SUBMISSION_STATUS.GRADED,
@@ -554,10 +580,9 @@ function homeworkAccordion(state, app, item, students) {
   const rows = students.map((studentId) => {
     const submission = submissionFor(state.submissions ?? [], item.id, studentId);
     const token = submissionStatusBadge(submission);
-    const learner = getPersona(studentId);
     const isGraded = submission?.status === SUBMISSION_STATUS.GRADED;
     return row([
-      el('span', { class: 'who' }, learner.displayName),
+      el('span', { class: 'who' }, learnerDisplayName(state, viewer, studentId)),
       statusBadge(t(token.key, token.params), token.tone),
       submission?.late ? statusBadge(t('teaching.late'), 'warn') : null,
       submission
@@ -666,12 +691,13 @@ function assessmentBody({ tab, state, app, queue, getQuery, setQuery, getClass, 
   const listWrap = el('div', { class: 'dtable-wrap' }, table);
 
   const draw = () => {
+    const persona = getPersona(state.val.personaId);
     const needle = String(getQuery()).trim().toLowerCase();
     const filtered = base.filter((entry) => {
       if (getClass() !== 'all' && entry.classroom?.id !== getClass()) return false;
       if (!needle) return true;
       const learner = getPersona(entry.submission.studentId);
-      return [learner.displayName, entry.homework?.title, entry.classroom?.name]
+      return [learnerDisplayName(state.val, persona, entry.submission.studentId), learner.displayName, entry.homework?.title, entry.classroom?.name]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(needle));
     });
@@ -696,7 +722,7 @@ function assessmentBody({ tab, state, app, queue, getQuery, setQuery, getClass, 
             const graded = submission.status === SUBMISSION_STATUS.GRADED;
             const submitted = formatDate(submission.submittedEventAt ?? submission.submittedAt);
             return el('tr', {}, [
-              el('td', {}, el('span', { class: 'who' }, getPersona(submission.studentId).displayName)),
+              el('td', {}, el('span', { class: 'who' }, learnerDisplayName(state.val, persona, submission.studentId))),
               el('td', {}, classroom?.name ?? '—'),
               el('td', {}, homework?.title ?? '—'),
               el('td', {}, statusBadge(t(token.key, token.params), token.tone)),
@@ -846,7 +872,7 @@ function gradebookBody({ state, app, persona, getQuery, setQuery }) {
     const visible = needle
       ? students.filter((studentId) => {
           const learner = getPersona(studentId);
-          return [learner.displayName, learner.handle]
+          return [learnerDisplayName(snapshot, persona, studentId), learner.displayName, learner.handle]
             .filter(Boolean)
             .some((value) => String(value).toLowerCase().includes(needle));
         })
@@ -855,7 +881,6 @@ function gradebookBody({ state, app, persona, getQuery, setQuery }) {
     tbody.replaceChildren(
       ...(visible.length
         ? visible.map((studentId) => {
-            const learner = getPersona(studentId);
             const cells = homework.map((item) => {
               const submission = submissionFor(submissions, item.id, studentId);
               const graded = submission?.status === SUBMISSION_STATUS.GRADED;
@@ -889,7 +914,7 @@ function gradebookBody({ state, app, persona, getQuery, setQuery }) {
               homework.map((item) => submissionFor(submissions, item.id, studentId)).filter(Boolean),
             );
             return el('tr', {}, [
-              el('td', {}, el('span', { class: 'who' }, learner.displayName)),
+              el('td', {}, el('span', { class: 'who' }, learnerDisplayName(snapshot, persona, studentId))),
               ...cells,
               el(
                 'td',

@@ -124,4 +124,37 @@ export default {
     duration7: '7 days',
     duration30: '30 days',
   },
+  privateName: {
+    title: 'Full name privacy',
+    subtitle:
+      'Your school-record name is kept private. It is never published to a public relay and stays on this device until the private API is available.',
+    cardTitle: 'Full name privacy',
+    cardHint:
+      'Keep your legal or professional name private. This is separate from the public nickname on your profile.',
+    cardAction: 'Set full name',
+    set: 'name set',
+    notSet: 'not set',
+    save: 'Save privately',
+    required: 'Enter both a first name and a last name.',
+    sectionName: 'Name',
+    genderLabel: 'Gender',
+    givenLabel: 'First name',
+    familyLabel: 'Last name',
+    sectionPrivacy: 'Privacy',
+    visibilityLabel: 'Who can see this name',
+    visibilityTeacherHint:
+      'The recommended default lets students in your classes identify their assigned teacher.',
+    visibilityStudentHint:
+      'Other students never see your private name. Class participants only unlocks the names of your assigned teachers.',
+    note:
+      'Private academy names are excluded from relay publication. Only this device stores what you enter here.',
+    gender: {
+      female: 'Female',
+      male: 'Male',
+    },
+    visibility: {
+      self_and_authorized_staff: 'Only me and authorized staff',
+      class_participants: 'Me, staff, and my class participants',
+    },
+  },
 };

@@ -12,6 +12,7 @@ import {
 } from '../domain/classroom.js';
 import { ROLE } from '../domain/school.js';
 import { renderCreateAcademy } from '../ui/components/academy-dialog.js';
+import { renderPrivateName } from '../ui/components/private-name-dialog.js';
 import {
   renderCompletionPolicy,
   renderCreateClassroom,
@@ -30,6 +31,7 @@ import { renderComposer } from '../ui/components/composer.js';
 import { inviteLinkPanel, renderInviteLink, renderInviteTeacher } from '../ui/components/invite-dialog.js';
 import { noteBox } from '../ui/components/primitives.js';
 import { renderCropper } from '../ui/components/image-cropper.js';
+import { learnerDisplayName } from '../ui/private-name-view.js';
 import { renderShare } from '../ui/components/share-dialog.js';
 import { renderSign } from '../ui/components/sign-drawer.js';
 import { t } from '../services/i18n/index.js';
@@ -89,6 +91,21 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     return openNamed('academy', {
       label: t('actions.createAcademy'),
       content: renderCreateAcademy({ actions, close: closeNamed('academy'), roleNotice }),
+    });
+  }
+
+  function openPrivateName(role) {
+    const state = store.getState();
+    const persona = getPersona(state.personaId);
+    const profile = state.privateNames?.[persona.id] ?? null;
+    return openNamed('private-name', {
+      label: t('credentials.privateName.title'),
+      content: renderPrivateName({
+        profile,
+        role: role ?? persona.role,
+        actions,
+        close: closeNamed('private-name'),
+      }),
     });
   }
 
@@ -258,7 +275,7 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
       content: renderGradeSubmission({
         submission,
         homeworkItem: homeworkItem ?? { title: t('actions.homeworkFallback') },
-        learnerName: getPersona(submission.studentId).displayName,
+        learnerName: learnerDisplayName(state, getPersona(state.personaId), submission.studentId),
         versions: versionsFor(state.submissionVersions ?? [], submission.id),
         revisions: assessmentRevisionsFor(state.assessmentRevisions ?? [], submission.id),
         actions,
@@ -279,7 +296,7 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
         submission,
         homeworkItem: homeworkItem ?? { title: t('actions.homeworkFallback') },
         classroom,
-        learnerName: getPersona(submission.studentId).displayName,
+        learnerName: learnerDisplayName(state, getPersona(state.personaId), submission.studentId),
         versions: versionsFor(state.submissionVersions ?? [], submission.id),
         revisions: assessmentRevisionsFor(state.assessmentRevisions ?? [], submission.id),
         onGrade: () => {
@@ -343,6 +360,7 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     openCreateAcademy,
     openInviteTeacher,
     openInviteLink,
+    openPrivateName,
     openCreateSubject,
     openEditSubject,
     openCreateClassroom,

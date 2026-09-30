@@ -45,6 +45,8 @@ export default {
   rosterSortClass: 'Class',
   rosterSortAverage: 'Average',
   rosterProgress: '{done}/{total} graded',
+  privateName: 'Private name: {name}',
+  learnersTitle: 'Learners',
   rosterEmpty: 'No learners match.',
   versionShort: 'v{version}',
   assessmentHistory: 'Score history',

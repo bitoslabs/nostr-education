@@ -3,6 +3,7 @@ import { bindScreen } from '../../core/reactive.js';
 import { getPersona } from '../../data/personas.js';
 import { credentialProofText, encodeProofFragment } from '../../domain/credential.js';
 import { findAcademyById } from '../../domain/academy.js';
+import { formatPrivateName, hasPrivateName } from '../../domain/private-name.js';
 import { ROLE } from '../../domain/school.js';
 import { t } from '../../services/i18n/index.js';
 import { credentialCard } from '../components/credential-card.js';
@@ -42,6 +43,7 @@ export function renderCredentials({ app, state }) {
       node.replaceChildren(
         pageTitle(t('credentials.title')),
         profile,
+        privateNameCard(persona, snapshot.privateNames?.[persona.id], app),
         memberships.length
           ? el('div', { class: 'grid' }, memberships.map(({ academy, status }) =>
               el('div', { class: 'card' }, [
@@ -73,6 +75,7 @@ export function renderCredentials({ app, state }) {
     node.replaceChildren(
       pageTitle(t('credentials.title')),
       profile,
+      privateNameCard(persona, snapshot.privateNames?.[persona.id], app),
       credentials.length
         ? el(
             'div',
@@ -110,6 +113,37 @@ export function renderCredentials({ app, state }) {
   }
 
   return bindScreen(state, node, render);
+}
+
+function privateNameCard(persona, privateName, app) {
+  const set = hasPrivateName(privateName);
+  return el('div', { class: 'card' }, [
+    el('div', { class: 'dhead' }, [
+      el('h3', {}, t('credentials.privateName.cardTitle')),
+      statusBadge(
+        set ? t('credentials.privateName.set') : t('credentials.privateName.notSet'),
+        set ? 'ok' : 'muted',
+      ),
+    ]),
+    el('p', { class: 'muted small' }, t('credentials.privateName.cardHint')),
+    set
+      ? el('p', {}, [
+          el('strong', {}, formatPrivateName(privateName)),
+          privateName.visibility
+            ? el(
+                'span',
+                { class: 'muted small' },
+                ` · ${t('credentials.privateName.visibility.' + privateName.visibility)}`,
+              )
+            : null,
+        ])
+      : null,
+    button(t('credentials.privateName.cardAction'), {
+      variant: 'gold',
+      small: true,
+      onClick: () => app.openPrivateName(persona.role),
+    }),
+  ]);
 }
 
 function teacherMemberships(state, personaId) {
