@@ -115,17 +115,32 @@ export function localSigner(secretKey) {
 }
 
 export function extensionSigner() {
+  let disconnected = false;
+
+  async function call(method, ...args) {
+    if (disconnected) throw new Error('The Nostr extension is disconnected. Reload or reconnect it.');
+    try {
+      return await method(...args);
+    } catch (error) {
+      const message = String(error?.message ?? error);
+      if (/could not establish connection|receiving end does not exist|extension context invalidated/i.test(message)) {
+        disconnected = true;
+      }
+      throw error;
+    }
+  }
+
   return {
     method: 'extension',
-    getPublicKey: extensionPublicKey,
-    signEvent: extensionSignEvent,
+    getPublicKey: () => call(extensionPublicKey),
+    signEvent: (event) => call(extensionSignEvent, event),
     async nip44Encrypt(pubkey, plaintext) {
       if (!window.nostr?.nip44?.encrypt) throw new Error('This extension does not support NIP-44.');
-      return window.nostr.nip44.encrypt(pubkey, plaintext);
+      return call(window.nostr.nip44.encrypt.bind(window.nostr.nip44), pubkey, plaintext);
     },
     async nip44Decrypt(pubkey, ciphertext) {
       if (!window.nostr?.nip44?.decrypt) throw new Error('This extension does not support NIP-44.');
-      return window.nostr.nip44.decrypt(pubkey, ciphertext);
+      return call(window.nostr.nip44.decrypt.bind(window.nostr.nip44), pubkey, ciphertext);
     },
     async close() {},
   };

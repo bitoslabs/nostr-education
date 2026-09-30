@@ -15,6 +15,7 @@ import {
   buildEvent,
   decodeKey,
   encodeNpub,
+  extensionSigner,
   generateKeyPair,
   localSigner,
   publicKeyFromSecret,
@@ -59,6 +60,30 @@ test('a local signer signs a verifiable event', async () => {
   const signed = await signer.signEvent(buildEvent({ kind: 1, content: 'hello nostr' }));
   assert.equal(signed.pubkey, pair.pubkey);
   assert.equal(verify(signed), true);
+});
+
+test('an extension signer stops calling a disconnected extension bridge', async () => {
+  const previousWindow = globalThis.window;
+  let calls = 0;
+  globalThis.window = {
+    nostr: {
+      signEvent() {},
+      getPublicKey() {
+        calls += 1;
+        throw new Error('Could not establish connection. Receiving end does not exist.');
+      },
+    },
+  };
+
+  try {
+    const signer = extensionSigner();
+    await assert.rejects(() => signer.getPublicKey(), /Receiving end does not exist/);
+    await assert.rejects(() => signer.getPublicKey(), /extension is disconnected/);
+    assert.equal(calls, 1);
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
 });
 
 test('key validators recognise real bech32 keys', () => {

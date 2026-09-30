@@ -24,7 +24,7 @@ import { normalizeBlossomServer, uploadBlob } from '../services/blossom.js';
 import { wrapForRecipient } from '../services/giftwrap.js';
 import { RECORD_TYPES, toPublicRecord } from '../domain/records.js';
 import { CAPABILITY, createCapability } from '../domain/capability.js';
-import { buildScoreSheet, normalizeRubric, rubricMax, scoresComplete, scoresTotal } from '../domain/rubric.js';
+import { normalizeRubric, rubricMax, scoresComplete, scoresTotal } from '../domain/rubric.js';
 import { credentialPayload, credentialProofContent, revocationPayload } from '../domain/credential.js';
 import { ACTION, authorize } from '../domain/authorization.js';
 import { clearState, loadOrgSecret, saveOrgSecret, saveSecretKey } from '../services/storage.js';

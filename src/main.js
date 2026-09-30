@@ -171,7 +171,16 @@ syncDocumentLocale();
 async function restoreSigner() {
   if (!session) return;
   if (session.method === 'extension') {
-    signer.setSigner(extensionSigner());
+    const restored = extensionSigner();
+    try {
+      const pubkey = await restored.getPublicKey();
+      if (pubkey === session.pubkey) signer.setSigner(restored);
+    } catch {
+      // The extension may still have an injected window.nostr facade after its
+      // background process was removed or reloaded. Stay read-only instead of
+      // sending one failed decrypt request for every event received.
+      signer.setSigner(null);
+    }
     return;
   }
   if (session.method === 'bunker' && session.bunkerUri) {
