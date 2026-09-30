@@ -110,10 +110,11 @@ test('teacher-facing labels use the private name only inside assigned classes', 
     classrooms: [{ id: 'c1', teacherId: 'teacher-1', studentIds: ['student-1'] }],
     capabilities: [],
   };
-  const assigned = { id: 'teacher-1', role: ROLE.TEACHER };
+  const assigned = { id: 'teacher-1' };
   const other = { id: 'teacher-2', role: ROLE.TEACHER };
   const owner = { id: 'owner-1', role: ROLE.OWNER };
 
+  // Authorization follows the class relationship, not the viewer role label.
   assert.equal(visiblePrivateName(state, assigned, 'student-1'), 'Alex Sunder');
   assert.equal(learnerDisplayName(state, assigned, 'student-1'), 'Alex Sunder');
   assert.equal(visiblePrivateName(state, other, 'student-1'), null);

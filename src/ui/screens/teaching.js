@@ -24,7 +24,7 @@ import { ROLE } from '../../domain/school.js';
 import { t } from '../../services/i18n/index.js';
 import { button, dateMeta, emptyState, pageTitle, row, tabs, timeStamp } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
-import { learnerDisplayName, visiblePrivateName } from '../private-name-view.js';
+import { learnerDisplayName } from '../private-name-view.js';
 
 export function renderTeaching({ app, state }) {
   const node = el('section', { class: 'screen' });
@@ -226,20 +226,11 @@ function rosterStat(value, label) {
   return el('div', { class: 'stat' }, [el('b', {}, value), el('span', {}, label)]);
 }
 
-function rosterTableRow(app, entry, privateName) {
+function rosterTableRow(app, entry, label) {
   const learner = getPersona(entry.studentId);
   const complete = entry.homeworkCount > 0 && entry.graded === entry.homeworkCount;
   return el('tr', {}, [
-    el('td', {}, [
-      el('span', { class: 'who' }, learner.displayName),
-      privateName
-        ? el(
-            'span',
-            { class: 'muted small', style: { display: 'block' } },
-            t('teaching.privateName', { name: privateName }),
-          )
-        : null,
-    ]),
+    el('td', {}, el('span', { class: 'who' }, label)),
     el('td', {}, el('span', { class: 'muted small' }, learner.handle ? `@${learner.handle}` : '—')),
     el('td', {}, entry.classroomName),
     el(
@@ -428,7 +419,7 @@ function studentsBody({
     subjectWrap.hidden = !subjects.length;
     tbody.replaceChildren(
       ...(entries.length
-        ? entries.map((entry) => rosterTableRow(app, entry, visiblePrivateName(state.val, persona, entry.studentId)))
+        ? entries.map((entry) => rosterTableRow(app, entry, learnerDisplayName(state.val, persona, entry.studentId)))
         : [
             el(
               'tr',

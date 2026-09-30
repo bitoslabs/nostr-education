@@ -1167,7 +1167,9 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       recommendations: [],
       capabilities: [],
       credentials: [],
-      privateNames: {},
+      // Private names are device-local person data, not session data. Keep them
+      // so a teacher signing in on the same device can still read an enrolled
+      // student's name through the authorization check. They are never relayed.
       deliveries: [],
       lastCreated: null,
     });
