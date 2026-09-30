@@ -115,6 +115,22 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
   const state = () => store.getState();
   const update = (patch) => store.setState(patch);
   const toast = (message, tone = 'info') => bus.emit('toast', { message, tone });
+  // Keep encrypted records for the same recipient in publish order. Teachers
+  // may correct a score several times in quick succession; firing every gift
+  // wrap concurrently causes public relays to rate-limit an arbitrary revision,
+  // including the newest one, while the teacher's local state still advances.
+  const recipientPublishQueues = new Map();
+
+  function enqueueRecipientPublish(recipient, publish) {
+    const previous = recipientPublishQueues.get(recipient) ?? Promise.resolve();
+    const queued = previous.catch(() => null).then(publish);
+    recipientPublishQueues.set(recipient, queued);
+    const cleanup = () => {
+      if (recipientPublishQueues.get(recipient) === queued) recipientPublishQueues.delete(recipient);
+    };
+    queued.then(cleanup, cleanup);
+    return queued;
+  }
 
   function navigateTo(route) {
     if (state().route === route) {
@@ -887,9 +903,11 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         }
         let last = null;
         for (const recipient of recipients.filter(Boolean)) {
-          const wrap = await wrapForRecipient({ content: plaintext, recipient, signer: active });
-          if (!wrap) return last;
-          last = await relay.publish(wrap);
+          last = await enqueueRecipientPublish(recipient, async () => {
+            const wrap = await wrapForRecipient({ content: plaintext, recipient, signer: active });
+            if (!wrap) return null;
+            return relay.publish(wrap);
+          });
         }
         if (last) update({ deliveries: [...relaySnapshot(last), ...state().deliveries] });
         return warnIfUnpublished(last);
