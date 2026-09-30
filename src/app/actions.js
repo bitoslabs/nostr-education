@@ -2254,6 +2254,9 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     dueAt = '',
     maxScore = 100,
     rubric = [],
+    link = '',
+    cover = '',
+    files = [],
     publish = true,
   } = {}) {
     const current = state();
@@ -2291,6 +2294,16 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       dueAt: String(dueAt ?? '').trim() || null,
       maxScore: max,
       rubric: criteria,
+      link: normalizeUrl(link),
+      cover: normalizeUrl(cover),
+      files: (Array.isArray(files) ? files : [])
+        .filter((file) => file?.url)
+        .map((file) => ({
+          name: String(file.name ?? 'file'),
+          url: String(file.url),
+          type: file.type ?? null,
+          size: file.size ?? null,
+        })),
       status,
       createdBy: persona.id,
     };
@@ -2568,6 +2581,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
               status: SUBMISSION_STATUS.GRADED,
               gradedAt: 'now',
               gradedBy: persona.id,
+              assessmentVersion: revisionRecord.version,
             }
           : entry,
       ),
@@ -2646,6 +2660,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
               feedback: note,
               gradedAt: null,
               gradedBy: null,
+              assessmentVersion: revisionRecord.version,
             }
           : entry,
       ),

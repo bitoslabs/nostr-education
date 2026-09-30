@@ -426,6 +426,51 @@ export function renderCreateHomework({ classroom, subject, actions, close }) {
   const dueAt = el('input', { type: 'datetime-local', 'aria-label': t('teaching.ariaDueDateTime') });
   const maxScore = el('input', { type: 'number', value: '100', min: '1', 'aria-label': t('teaching.ariaMaxScore') });
   const rubric = rubricEditor();
+  const linkInput = el('input', { type: 'url', placeholder: t('teaching.placeholderLink'), 'aria-label': t('teaching.linkLabel') });
+
+  const cover = { url: '' };
+  const coverPreview = el('span', { class: 'homework-cover__preview' });
+  const renderCover = () =>
+    coverPreview.replaceChildren(
+      cover.url
+        ? el('img', { src: cover.url, alt: '', style: { maxHeight: '72px', borderRadius: '8px' } })
+        : el('span', { 'aria-hidden': 'true' }, '🖼'),
+    );
+  renderCover();
+  const coverFile = el('input', { type: 'file', accept: 'image/*', hidden: true });
+  coverFile.addEventListener('change', async () => {
+    const file = coverFile.files?.[0];
+    coverFile.value = '';
+    if (!file) return;
+    const url = await actions.uploadImage?.(file);
+    if (url) {
+      cover.url = url;
+      renderCover();
+    }
+  });
+
+  const attachments = [];
+  const chipRow = el('div', { class: 'files' });
+  const renderChips = () => chipRow.replaceChildren(...attachments.map((file) => fileChip(file.name)));
+  const fileInput = el('input', { type: 'file', multiple: true, hidden: true });
+  const attachBtn = button(t('teaching.attachFile'), { small: true, onClick: () => fileInput.click() });
+  let busy = false;
+  fileInput.addEventListener('change', async () => {
+    const picked = [...(fileInput.files ?? [])];
+    fileInput.value = '';
+    if (!picked.length || busy) return;
+    busy = true;
+    attachBtn.disabled = true;
+    for (const file of picked) {
+      const uploaded = await actions.uploadAttachment?.(file);
+      if (uploaded) {
+        attachments.push(uploaded);
+        renderChips();
+      }
+    }
+    busy = false;
+    attachBtn.disabled = false;
+  });
 
   const submit = (publish) => {
     if (!String(titleInput.value).trim()) {
@@ -440,6 +485,9 @@ export function renderCreateHomework({ classroom, subject, actions, close }) {
       dueAt: dueAt.value,
       maxScore: maxScore.value,
       rubric: rubric.value(),
+      link: linkInput.value,
+      cover: cover.url,
+      files: attachments,
       publish,
     });
     if (item) close();
@@ -452,6 +500,17 @@ export function renderCreateHomework({ classroom, subject, actions, close }) {
     titleInput,
     el('label', {}, t('teaching.fieldInstructions')),
     instructions,
+    el('label', {}, t('teaching.fieldCover')),
+    el('div', { class: 'arow' }, [
+      coverPreview,
+      button(t('teaching.addCover'), { small: true, onClick: () => coverFile.click() }),
+      coverFile,
+    ]),
+    el('label', {}, t('teaching.linkLabel')),
+    linkInput,
+    el('label', {}, t('teaching.attachments')),
+    el('div', { class: 'arow' }, [attachBtn, fileInput]),
+    chipRow,
     el('label', {}, t('teaching.fieldDue')),
     due,
     el('label', {}, t('teaching.fieldDueDateTime')),

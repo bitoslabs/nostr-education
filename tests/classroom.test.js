@@ -244,6 +244,15 @@ test('assessmentRevisionsFor orders revisions and finds the latest', () => {
   assert.equal(latestAssessmentRevision(revisions, 'missing'), null);
 });
 
+test('a scored submission without a max still reports its value', () => {
+  const partial = submissionStatusBadge({ status: 'graded', score: 12, maxScore: null });
+  assert.equal(partial.key, 'common.badge.scoredNoMax');
+  assert.equal(partial.params.score, 12);
+  const full = submissionStatusBadge({ status: 'graded', score: 12, maxScore: 20 });
+  assert.equal(full.key, 'common.badge.scored');
+  assert.equal(full.params.maxScore, 20);
+});
+
 test('enrolledAccountIds lists active enrollment capability holders for a class', () => {
   const capabilities = [
     { kind: 'enrollment', academyId: 'org1', classroomId: 'cls1', accountId: 'alice', status: 'active' },

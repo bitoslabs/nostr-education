@@ -63,6 +63,7 @@ export default {
     closed: 'closed — no new submissions',
     notSubmitted: 'not submitted',
     scored: '✓ scored {score}/{maxScore}',
+    scoredNoMax: '✓ scored {score}',
     submittedAwaitingScore: 'submitted · awaiting score',
   },
   signer: {

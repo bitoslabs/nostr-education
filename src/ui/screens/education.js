@@ -4,6 +4,7 @@ import { getPersona } from '../../data/personas.js';
 import {
   HOMEWORK_STATUS,
   SUBMISSION_STATUS,
+  assessmentRevisionsFor,
   classroomsForStudent,
   homeworkForClassroom,
   homeworkStatusBadge,
@@ -15,7 +16,7 @@ import {
 import { completionBadge, evaluateCompletion } from '../../domain/completion.js';
 import { MEMBERSHIP, REQUEST_STATUS, membershipBadge } from '../../domain/school.js';
 import { t } from '../../services/i18n/index.js';
-import { button, emptyState, pageTitle } from '../components/primitives.js';
+import { button, emptyState, fileChip, pageTitle } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
 
 const ACADEMY_TYPE_KEYS = Object.freeze({
@@ -238,6 +239,21 @@ function homeworkRow(state, app, persona, item) {
         : null,
     ]),
     item.instructions ? el('p', { class: 'muted small' }, item.instructions) : null,
+    item.cover
+      ? el('img', { src: item.cover, alt: '', style: { maxWidth: '100%', borderRadius: '10px' } })
+      : null,
+    item.link
+      ? el('p', {}, el('a', { href: item.link, target: '_blank', rel: 'noreferrer' }, item.link))
+      : null,
+    item.files?.length
+      ? el(
+          'div',
+          { class: 'files' },
+          item.files.map((file) =>
+            el('a', { href: file.url, target: '_blank', rel: 'noreferrer' }, fileChip(file.name)),
+          ),
+        )
+      : null,
     el('div', { class: 'arow' }, [
       statusBadge(t(token.key, token.params), token.tone),
       submission?.late ? statusBadge(t('education.late'), 'warn') : null,
@@ -249,6 +265,24 @@ function homeworkRow(state, app, persona, item) {
       }),
     ]),
   ];
+
+  // The badge above already shows the current score. If the grade was changed,
+  // list only the earlier scores as compact chips (no version numbers), so the
+  // learner can see the correction without noise or duplication.
+  const scoreHistory = assessmentRevisionsFor(state.assessmentRevisions ?? [], submission?.id).filter(
+    (entry) => entry.status === 'finalized',
+  );
+  const earlierScores = scoreHistory.slice(0, -1);
+  if (earlierScores.length) {
+    const formatScore = (entry) =>
+      Number(entry.maxScore) > 0 ? `${entry.score}/${entry.maxScore}` : String(entry.score);
+    children.push(
+      el('div', { class: 'arow' }, [
+        el('span', { class: 'muted small' }, t('education.scoreHistory')),
+        ...earlierScores.map((entry) => statusBadge(formatScore(entry), 'muted')),
+      ]),
+    );
+  }
 
   if ((graded || revision) && submission.feedback) {
     children.push(el('blockquote', { class: 'quote' }, `"${submission.feedback}"`));

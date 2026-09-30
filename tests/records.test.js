@@ -331,6 +331,74 @@ test('isPublicRecord only accepts catalog record types', () => {
   assert.equal(isPublicRecord(null), false);
 });
 
+test('an older assessment revision arriving late does not overwrite the last score', () => {
+  const base = { ...EMPTY, homework: [{ id: 'hw1', classroomId: 'c1' }] };
+  const first = applyRecord(base, {
+    type: 'assessment-rev',
+    id: 'a1',
+    submissionId: 's1',
+    homeworkId: 'hw1',
+    studentId: 'stu',
+    version: 1,
+    status: 'finalized',
+    score: 60,
+    maxScore: 100,
+  });
+  let state = { ...base, ...first };
+  const second = applyRecord(state, {
+    type: 'assessment-rev',
+    id: 'a2',
+    submissionId: 's1',
+    homeworkId: 'hw1',
+    studentId: 'stu',
+    version: 2,
+    status: 'finalized',
+    score: 90,
+    maxScore: 100,
+  });
+  state = { ...state, ...second };
+  assert.equal(state.submissions.find((entry) => entry.id === 's1').score, 90);
+
+  // The version-1 record is re-delivered after version 2.
+  const late = applyRecord(state, {
+    type: 'assessment-rev',
+    id: 'a1',
+    submissionId: 's1',
+    homeworkId: 'hw1',
+    studentId: 'stu',
+    version: 1,
+    status: 'finalized',
+    score: 60,
+    maxScore: 100,
+  });
+  const after = { ...state, ...late };
+  assert.equal(after.submissions.find((entry) => entry.id === 's1').score, 90);
+});
+
+test('a finalized assessment materializes a submission when it is missing', () => {
+  const patch = applyRecord(
+    { ...EMPTY, homework: [{ id: 'hw1', classroomId: 'c1' }] },
+    {
+      type: 'assessment-rev',
+      id: 'a1',
+      submissionId: 's9',
+      homeworkId: 'hw1',
+      studentId: 'stu1',
+      version: 1,
+      status: 'finalized',
+      score: 42,
+      maxScore: 50,
+      feedback: 'Good',
+    },
+  );
+  const submission = patch.submissions.find((entry) => entry.id === 's9');
+  assert.ok(submission, 'expected a materialized submission');
+  assert.equal(submission.status, 'graded');
+  assert.equal(submission.score, 42);
+  assert.equal(submission.maxScore, 50);
+  assert.equal(submission.classroomId, 'c1');
+});
+
 test('a submission version carries max score, link, and attachments', () => {
   const patch = applyRecord(EMPTY, {
     type: 'submission-ver',

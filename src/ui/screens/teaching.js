@@ -26,15 +26,19 @@ import { statusBadge } from '../components/status-badge.js';
 
 export function renderTeaching({ app, state }) {
   const node = el('section', { class: 'screen' });
+  let studentQuery = '';
+  let studentSort = 'name';
 
   function render(snapshot) {
     const persona = getPersona(snapshot.personaId);
     const queue = reviewQueue(snapshot.submissions ?? [], snapshot.homework ?? [], scopedClassrooms(snapshot, persona));
     const counts = reviewCounts(queue);
+    const roster = scopedRoster(snapshot, persona);
 
     const tabBar = tabs(
       [
         { id: 'classes', label: t('teaching.tabClasses') },
+        { id: 'students', label: t('teaching.tabStudents', { count: roster.length }) },
         { id: 'review', label: t('teaching.tabReview', { count: counts.pending }) },
         { id: 'graded', label: t('teaching.tabGraded', { count: counts.graded }) },
         { id: 'gradebook', label: t('teaching.tabGradebook') },
@@ -46,7 +50,21 @@ export function renderTeaching({ app, state }) {
 
     let body;
     if (snapshot.roleTab === 'classes') body = classesBody(snapshot, app, persona);
-    else if (snapshot.roleTab === 'gradebook') body = gradebookBody(snapshot, app, persona);
+    else if (snapshot.roleTab === 'students') {
+      body = studentsBody({
+        state,
+        app,
+        roster,
+        getQuery: () => studentQuery,
+        setQuery: (value) => {
+          studentQuery = value;
+        },
+        getSort: () => studentSort,
+        setSort: (value) => {
+          studentSort = value;
+        },
+      });
+    } else if (snapshot.roleTab === 'gradebook') body = gradebookBody(snapshot, app, persona);
     else body = assessmentBody(snapshot, app, queue);
 
     const extras =
@@ -79,6 +97,125 @@ function scopedClassrooms(state, persona) {
     return classroomsForAcademy(state.classrooms ?? [], owned.id);
   }
   return classroomsForTeacher(state.classrooms ?? [], persona.id, state.capabilities ?? []);
+}
+
+// One row per learner per class, with their submission progress and average.
+function scopedRoster(state, persona) {
+  const entries = [];
+  for (const room of scopedClassrooms(state, persona)) {
+    const homework = homeworkForClassroom(state.homework ?? [], room.id).filter(
+      (item) => item.status !== HOMEWORK_STATUS.DRAFT,
+    );
+    for (const studentId of classroomRoster(state, room)) {
+      const submissions = homework
+        .map((item) => submissionFor(state.submissions ?? [], item.id, studentId))
+        .filter(Boolean);
+      entries.push({
+        studentId,
+        classroomId: room.id,
+        classroomName: room.name,
+        homeworkCount: homework.length,
+        submitted: submissions.length,
+        graded: submissions.filter((submission) => submission.status === SUBMISSION_STATUS.GRADED).length,
+        average: averagePercent(submissions),
+      });
+    }
+  }
+  return entries;
+}
+
+function rosterName(entry) {
+  return getPersona(entry.studentId).displayName ?? '';
+}
+
+function filterRoster(entries, query, sort) {
+  const needle = String(query ?? '').trim().toLowerCase();
+  const filtered = needle
+    ? entries.filter((entry) => {
+        const learner = getPersona(entry.studentId);
+        return [learner.displayName, learner.handle, entry.classroomName]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(needle));
+      })
+    : [...entries];
+  filtered.sort((left, right) => {
+    if (sort === 'class') {
+      return left.classroomName.localeCompare(right.classroomName) || rosterName(left).localeCompare(rosterName(right));
+    }
+    if (sort === 'average') return (right.average ?? -1) - (left.average ?? -1);
+    return rosterName(left).localeCompare(rosterName(right));
+  });
+  return filtered;
+}
+
+function rosterRow(app, entry) {
+  const learner = getPersona(entry.studentId);
+  return row([
+    el('span', { class: 'who' }, learner.displayName),
+    el(
+      'span',
+      { class: 'muted small' },
+      learner.handle ? `${entry.classroomName} · @${learner.handle}` : entry.classroomName,
+    ),
+    entry.average == null
+      ? statusBadge(t('teaching.noGradesYet'), 'muted')
+      : statusBadge(t('teaching.average', { n: entry.average }), 'ok'),
+    statusBadge(
+      t('teaching.rosterProgress', { done: entry.graded, total: entry.homeworkCount }),
+      entry.homeworkCount > 0 && entry.graded === entry.homeworkCount ? 'ok' : 'info',
+    ),
+    el('span', { class: 'spacer' }),
+    button(t('teaching.tabGradebook'), {
+      small: true,
+      onClick: () => {
+        app.setGradebookClass(entry.classroomId);
+        app.setRoleTab('gradebook');
+      },
+    }),
+  ]);
+}
+
+function studentsBody({ state, app, roster, getQuery, setQuery, getSort, setSort }) {
+  const queryInput = el('input', {
+    type: 'search',
+    placeholder: t('teaching.rosterSearch'),
+    'aria-label': t('teaching.rosterSearch'),
+    value: getQuery(),
+  });
+  const sortSelect = el(
+    'select',
+    { 'aria-label': t('teaching.rosterSort') },
+    [
+      { id: 'name', label: t('teaching.rosterSortName') },
+      { id: 'class', label: t('teaching.rosterSortClass') },
+      { id: 'average', label: t('teaching.rosterSortAverage') },
+    ].map((option) => el('option', { value: option.id, selected: option.id === getSort() }, option.label)),
+  );
+
+  const listWrap = el('div', { class: 'rows' });
+  const drawList = () => {
+    const persona = getPersona(state.val.personaId);
+    const entries = filterRoster(scopedRoster(state.val, persona), getQuery(), getSort());
+    listWrap.replaceChildren(
+      ...(entries.length ? entries.map((entry) => rosterRow(app, entry)) : [emptyState(t('teaching.rosterEmpty'))]),
+    );
+  };
+
+  queryInput.addEventListener('input', () => {
+    setQuery(queryInput.value);
+    drawList();
+  });
+  sortSelect.addEventListener('change', () => {
+    setSort(sortSelect.value);
+    drawList();
+  });
+
+  drawList();
+
+  return [
+    el('div', { class: 'arow' }, [queryInput, sortSelect]),
+    roster.length ? listWrap : emptyState(t('teaching.emptyLearners')),
+  ];
 }
 
 function classesBody(state, app, persona) {

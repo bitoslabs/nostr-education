@@ -224,10 +224,19 @@ export function homeworkStatusBadge(status) {
 export function submissionStatusBadge(submission) {
   if (!submission) return { key: 'common.badge.notSubmitted', label: 'not submitted', tone: 'warn' };
   if (submission.status === SUBMISSION_STATUS.GRADED) {
+    // Older submissions may not carry a max score; still surface the value.
+    if (Number(submission.maxScore) > 0) {
+      return {
+        key: 'common.badge.scored',
+        params: { score: submission.score, maxScore: submission.maxScore },
+        label: `✓ scored ${submission.score}/${submission.maxScore}`,
+        tone: 'ok',
+      };
+    }
     return {
-      key: 'common.badge.scored',
-      params: { score: submission.score, maxScore: submission.maxScore },
-      label: `✓ scored ${submission.score}/${submission.maxScore}`,
+      key: 'common.badge.scoredNoMax',
+      params: { score: submission.score },
+      label: `✓ scored ${submission.score}`,
       tone: 'ok',
     };
   }

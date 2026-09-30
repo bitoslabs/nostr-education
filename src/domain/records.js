@@ -151,29 +151,85 @@ export function applyRecord(state, record) {
     case RECORD_TYPES.ASSESSMENT_REVISION: {
       if (!record.submissionId) return null;
       const assessmentRevisions = upsert(state.assessmentRevisions ?? [], record);
-      const submissions = (state.submissions ?? []).map((submission) => {
+      // Revisions are append-only and can arrive out of order (relay replay, a
+      // refetch, or a late delivery). Drive the submission from the highest
+      // revision version so the learner always sees the *last* score, not
+      // whichever record happened to arrive last.
+      const related = assessmentRevisions.filter((entry) => entry.submissionId === record.submissionId);
+      const latest = related.reduce(
+        (best, entry) => ((Number(entry.version) || 0) >= (Number(best.version) || 0) ? entry : best),
+        related[0] ?? record,
+      );
+      const latestVersion = Number(latest.version) || 0;
+      const list = state.submissions ?? [];
+      const index = list.findIndex((submission) => submission.id === record.submissionId);
+
+      // A grade can arrive on a device that never had the submission (a fresh
+      // browser, or a late refetch). Materialize a submission so the score is
+      // still visible instead of being dropped.
+      if (index === -1) {
+        const classroomId =
+          (state.homework ?? []).find((item) => item.id === (latest.homeworkId ?? record.homeworkId))
+            ?.classroomId ?? null;
+        const revision = latest.status === 'revision';
+        return {
+          assessmentRevisions,
+          submissions: [
+            {
+              id: record.submissionId,
+              homeworkId: latest.homeworkId ?? record.homeworkId ?? null,
+              classroomId,
+              studentId: latest.studentId ?? record.studentId ?? null,
+              text: '',
+              link: null,
+              files: [],
+              version: latestVersion || 1,
+              status: revision ? 'revision' : 'graded',
+              score: revision ? null : latest.score ?? null,
+              scores: revision ? null : latest.scores ?? null,
+              maxScore: latest.maxScore ?? null,
+              feedback: latest.feedback ?? '',
+              late: false,
+              submittedAt: null,
+              gradedAt: latest.gradedAt ?? null,
+              gradedBy: latest.gradedBy ?? null,
+              assessmentVersion: latestVersion,
+            },
+            ...list,
+          ],
+        };
+      }
+
+      const current = list[index];
+      if (latestVersion < (Number(current.assessmentVersion) || 0)) {
+        // An older revision arrived after a newer one; keep the newer result.
+        return { assessmentRevisions };
+      }
+      const submissions = list.map((submission) => {
         if (submission.id !== record.submissionId) return submission;
-        if (record.status === 'revision') {
+        if (latest.status === 'revision') {
           return {
             ...submission,
             status: 'revision',
             score: null,
             scores: null,
-            feedback: record.feedback ?? submission.feedback,
+            feedback: latest.feedback ?? submission.feedback,
             gradedAt: null,
             gradedBy: null,
+            assessmentVersion: latestVersion,
           };
         }
-        if (record.status === 'finalized') {
+        if (latest.status === 'finalized') {
           return {
             ...submission,
-            score: record.score,
-            scores: record.scores ?? submission.scores,
-            maxScore: record.maxScore ?? submission.maxScore,
-            feedback: record.feedback ?? submission.feedback,
+            score: latest.score,
+            scores: latest.scores ?? submission.scores,
+            maxScore: latest.maxScore ?? submission.maxScore,
+            feedback: latest.feedback ?? submission.feedback,
             status: 'graded',
-            gradedAt: record.gradedAt ?? submission.gradedAt,
-            gradedBy: record.gradedBy ?? submission.gradedBy,
+            gradedAt: latest.gradedAt ?? submission.gradedAt,
+            gradedBy: latest.gradedBy ?? submission.gradedBy,
+            assessmentVersion: latestVersion,
           };
         }
         return submission;

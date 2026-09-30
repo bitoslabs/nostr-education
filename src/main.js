@@ -259,10 +259,10 @@ function syncRecords() {
 
 // Re-query relays for this account's records so a student can recover homework
 // (or any record) that a live subscription missed.
-function refreshRecords({ timeoutMs = 8000 } = {}) {
+function refreshRecords({ timeoutMs = 8000, silent = false } = {}) {
   const me = store.getState().accountId;
   if (!me) return Promise.resolve(0);
-  bus.emit('toast', { message: t('actions.refreshingRecords'), tone: 'info' });
+  if (!silent) bus.emit('toast', { message: t('actions.refreshingRecords'), tone: 'info' });
   return new Promise((resolve) => {
     const seen = new Set();
     let count = 0;
@@ -277,7 +277,7 @@ function refreshRecords({ timeoutMs = 8000 } = {}) {
       } catch {
         /* the subscription may already be closed */
       }
-      bus.emit('toast', { message: t('actions.recordsRefreshed', { count }), tone: 'ok' });
+      if (!silent) bus.emit('toast', { message: t('actions.recordsRefreshed', { count }), tone: 'ok' });
       resolve(count);
     };
     const timer = setTimeout(finish, timeoutMs);
@@ -476,6 +476,9 @@ restoreSigner().finally(() => {
   syncCredentials();
   if (store.getState().authed) {
     relayService.check().then(() => store.setState({ relays: relayService.statuses() }));
+    // Pull grades, homework, or other records that arrived while away, so
+    // reopening the app later surfaces them without a manual refresh.
+    setTimeout(() => refreshRecords({ silent: true }), 1500);
   }
 });
 
