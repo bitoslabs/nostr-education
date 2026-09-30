@@ -337,5 +337,6 @@ export default {
   postHomeworkNamed: 'Post homework · {name}',
   submitNamed: 'Submit · {name}',
   scoreNamed: 'Score · {name}',
+  viewNamed: 'Submission · {name}',
   cropImage: 'Crop image',
 };

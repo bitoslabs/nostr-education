@@ -22,6 +22,7 @@ import {
   renderInviteStudent,
   renderManageClassroom,
   renderManageHomework,
+  renderSubmissionView,
   renderSubmitHomework,
 } from '../ui/components/classroom-dialogs.js';
 import { renderComposer } from '../ui/components/composer.js';
@@ -262,6 +263,30 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     });
   }
 
+  function openViewSubmission(submissionId) {
+    const state = store.getState();
+    const submission = (state.submissions ?? []).find((entry) => entry.id === submissionId);
+    if (!submission) return null;
+    const homeworkItem = (state.homework ?? []).find((entry) => entry.id === submission.homeworkId);
+    const classroom = classroomById(state.classrooms ?? [], submission.classroomId);
+    return openNamed('view-submission', {
+      label: t('actions.viewNamed', { name: submission.id }),
+      content: renderSubmissionView({
+        submission,
+        homeworkItem: homeworkItem ?? { title: t('actions.homeworkFallback') },
+        classroom,
+        learnerName: getPersona(submission.studentId).displayName,
+        versions: versionsFor(state.submissionVersions ?? [], submission.id),
+        revisions: assessmentRevisionsFor(state.assessmentRevisions ?? [], submission.id),
+        onGrade: () => {
+          closeNamed('view-submission')();
+          openGradeSubmission(submissionId);
+        },
+        close: closeNamed('view-submission'),
+      }),
+    });
+  }
+
   function cropImage({ file, aspect = 1, title, outputWidth = 512 }) {
     const url = URL.createObjectURL(file);
     return new Promise((resolve) => {
@@ -326,5 +351,6 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     openManageHomework,
     openSubmitHomework,
     openGradeSubmission,
+    openViewSubmission,
   };
 }

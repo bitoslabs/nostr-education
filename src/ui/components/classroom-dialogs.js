@@ -6,6 +6,7 @@ import {
   classStatusBadge,
   homeworkStatusBadge,
   normalizeLatePolicy,
+  submissionStatusBadge,
 } from '../../domain/classroom.js';
 import { normalizePolicy } from '../../domain/completion.js';
 import { buildScoreSheet, normalizeRubric, rubricMax, scoresTotal } from '../../domain/rubric.js';
@@ -690,6 +691,64 @@ export function renderSubmitHomework({ homeworkItem, submission, versions = [], 
           else error.textContent = t('teaching.errAnswerOrAttachment');
         },
       }),
+    ]),
+  ]);
+}
+
+export function renderSubmissionView({
+  submission,
+  homeworkItem,
+  classroom,
+  learnerName,
+  versions = [],
+  revisions = [],
+  onGrade,
+  close,
+}) {
+  const token = submissionStatusBadge(submission);
+  const finalized = revisions.filter((entry) => entry.status === 'finalized');
+  const meta = [
+    learnerName,
+    classroom?.name,
+    t('teaching.versionShort', { version: submission.version }),
+    submission.late ? t('teaching.late') : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  return el('div', {}, [
+    el('h2', {}, homeworkItem.title),
+    el('p', { class: 'muted small' }, meta),
+    el('div', { class: 'arow' }, [statusBadge(t(token.key, token.params), token.tone)]),
+    el('h3', {}, t('teaching.submissionHeading')),
+    el('blockquote', { class: 'quote' }, submission.text || t('teaching.noText')),
+    submission.link
+      ? el('p', {}, el('a', { href: submission.link, target: '_blank', rel: 'noreferrer' }, submission.link))
+      : null,
+    submission.files?.length
+      ? el(
+          'div',
+          { class: 'files' },
+          submission.files.map((file) =>
+            el('a', { href: file.url, target: '_blank', rel: 'noreferrer' }, fileChip(file.name)),
+          ),
+        )
+      : null,
+    finalized.length ? el('h3', {}, t('teaching.assessmentHistory')) : null,
+    ...finalized.map((entry) =>
+      el(
+        'p',
+        { class: 'muted small' },
+        Number(entry.maxScore) > 0
+          ? t('teaching.assessmentEntry', { version: entry.version, score: entry.score, max: entry.maxScore })
+          : t('teaching.assessmentEntryNoMax', { version: entry.version, score: entry.score }),
+      ),
+    ),
+    submission.feedback ? el('blockquote', { class: 'quote' }, `"${submission.feedback}"`) : null,
+    historyBlock(versions),
+    el('div', { class: 'dlg-foot' }, [
+      button(t('common.actions.close'), { onClick: close }),
+      onGrade ? button(t('teaching.setScore'), { variant: 'gold', onClick: () => onGrade() }) : null,
     ]),
   ]);
 }

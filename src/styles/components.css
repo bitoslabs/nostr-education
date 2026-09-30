@@ -2531,3 +2531,156 @@ textarea:focus {
     justify-content: flex-start;
   }
 }
+
+/* ---------- data table (students roster) ---------- */
+.dtable-wrap {
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-inner);
+}
+
+.dtable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.dtable th,
+.dtable td {
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.dtable th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.dtable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.dtable tbody tr:hover td {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.dtable td.num {
+  text-align: right;
+}
+
+.dtable .who {
+  font-weight: 600;
+}
+
+/* Clickable gradebook cell rendered as a chip-button. */
+button.chip {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+
+button.chip:hover {
+  color: var(--accent);
+}
+
+/* ---------- filter toolbar ---------- */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+/* Global input/select rules force width:100%, which stacks the toolbar. */
+.toolbar input,
+.toolbar select {
+  width: auto;
+  min-height: 36px;
+  padding: 6px 10px;
+}
+
+.toolbar input[type='search'] {
+  flex: 1 1 200px;
+  min-width: 140px;
+}
+
+.toolbar select {
+  flex: 0 1 auto;
+  max-width: 48%;
+}
+
+@media (max-width: 560px) {
+  .toolbar input[type='search'] {
+    flex-basis: 100%;
+  }
+
+  .toolbar select {
+    flex: 1 1 45%;
+    max-width: none;
+  }
+}
+
+.field-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.field-inline__label {
+  color: var(--muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+/* ---------- accordion (collapsible class sections) ---------- */
+.acc {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-inner);
+  padding: 0 12px;
+  margin-bottom: 8px;
+}
+
+.acc > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.acc > summary::-webkit-details-marker {
+  display: none;
+}
+
+.acc > summary::before {
+  content: '▸';
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.acc[open] > summary::before {
+  content: '▾';
+}
+
+.acc[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.acc__body {
+  padding: 10px 0;
+}
