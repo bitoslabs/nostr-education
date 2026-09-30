@@ -8,6 +8,7 @@ import {
   assignmentBadge,
   enrollmentBadge,
   enrollmentStateFor,
+  normalizeRole,
   roleSpaceLabel,
   roleSpaceShort,
 } from '../src/domain/school.js';
@@ -17,6 +18,15 @@ test('role spaces map per role', () => {
   assert.equal(roleSpaceLabel(ROLE.TEACHER), 'Teaching');
   assert.equal(roleSpaceLabel(ROLE.OWNER), 'Organization');
   assert.equal(roleSpaceShort(ROLE.TEACHER), 'Teach');
+});
+
+test('normalizeRole falls back to the learner workspace', () => {
+  assert.equal(normalizeRole(ROLE.TEACHER), ROLE.TEACHER);
+  assert.equal(normalizeRole(ROLE.OWNER), ROLE.OWNER);
+  assert.equal(normalizeRole(ROLE.STUDENT), ROLE.STUDENT);
+  assert.equal(normalizeRole(null), ROLE.STUDENT);
+  assert.equal(normalizeRole(undefined), ROLE.STUDENT);
+  assert.equal(normalizeRole('principal'), ROLE.STUDENT);
 });
 
 test('enrollmentBadge reflects state', () => {

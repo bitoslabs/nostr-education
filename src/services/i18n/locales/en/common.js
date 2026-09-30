@@ -96,6 +96,12 @@ export default {
     owner: 'Org',
     fallback: 'Space',
   },
+  workspace: {
+    createTitle: 'Create your own academy',
+    createBody: 'Own an organization: add teachers and classes, then issue credentials.',
+    createAction: 'Create an academy',
+    joinWithLink: 'Open an invite link',
+  },
   credentialStatus: {
     active: 'Active',
     revoked: 'Revoked',

@@ -4,6 +4,15 @@ export const ROLE = Object.freeze({
   OWNER: 'owner',
 });
 
+const ROLE_VALUES = new Set(Object.values(ROLE));
+
+// Role is display state that can be missing (for example an extension sign-in
+// that has not picked a workspace yet). Default to the learner workspace so
+// every role-driven label, icon, and screen resolves to something valid.
+export function normalizeRole(role) {
+  return ROLE_VALUES.has(role) ? role : ROLE.STUDENT;
+}
+
 const ROLE_SPACE = Object.freeze({
   [ROLE.STUDENT]: 'Education',
   [ROLE.TEACHER]: 'Teaching',

@@ -17,6 +17,7 @@ import {
   encodeNpub,
   extensionSigner,
   generateKeyPair,
+  hasExtension,
   localSigner,
   publicKeyFromSecret,
   verify,
@@ -80,6 +81,30 @@ test('an extension signer stops calling a disconnected extension bridge', async 
     await assert.rejects(() => signer.getPublicKey(), /Receiving end does not exist/);
     await assert.rejects(() => signer.getPublicKey(), /extension is disconnected/);
     assert.equal(calls, 1);
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
+});
+
+test('the extension can be disabled with a query parameter for diagnostics', async () => {
+  const previousWindow = globalThis.window;
+  let calls = 0;
+  globalThis.window = {
+    location: { search: '?disableNostrExtension=1' },
+    nostr: {
+      signEvent() {},
+      getPublicKey() {
+        calls += 1;
+        return 'pubkey';
+      },
+    },
+  };
+
+  try {
+    assert.equal(hasExtension(), false);
+    await assert.rejects(() => extensionSigner().getPublicKey(), /No Nostr extension/);
+    assert.equal(calls, 0);
   } finally {
     if (previousWindow === undefined) delete globalThis.window;
     else globalThis.window = previousWindow;

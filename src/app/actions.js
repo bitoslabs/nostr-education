@@ -257,6 +257,8 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         invites,
         classrooms,
         pendingInviteCode: null,
+        profiles: { ...current.profiles, [persona.id]: getPersona(persona.id) },
+        session: current.session ? { ...current.session, role: ROLE.TEACHER } : current.session,
         membership: MEMBERSHIP.ACTIVE,
         memberships: { ...current.memberships, [persona.id]: MEMBERSHIP.ACTIVE },
         academyMemberships: academyMembership(MEMBERSHIP.ACTIVE),
@@ -761,7 +763,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       about: profile.about ?? '',
       picture: profile.picture ?? null,
       handle: profile.handle ?? null,
-      role: profile.role ?? null,
+      role: profile.role ?? getPersona(pubkey).role ?? null,
     });
     const session = {
       method,
@@ -968,10 +970,13 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     }
 
     const name = String(displayName ?? '').trim();
+    // Keep a role this device already knows (owner/teacher) instead of
+    // resetting a returning owner back to the learner workspace.
+    const knownRole = getPersona(decoded.pubkey).role;
     applySession({
       method,
       pubkey: decoded.pubkey,
-      profile: { displayName: name || undefined, role },
+      profile: { displayName: name || undefined, role: knownRole ?? role },
       activeSigner,
     });
 
@@ -1065,7 +1070,12 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     await publishOrgProfile(academy);
     update({
       academies: { ...current.academies, [persona.id]: academy },
-      profiles: { ...current.profiles, [academy.orgPubkey]: getPersona(academy.orgPubkey) },
+      profiles: {
+        ...current.profiles,
+        [academy.orgPubkey]: getPersona(academy.orgPubkey),
+        [persona.id]: getPersona(persona.id),
+      },
+      session: current.session ? { ...current.session, role: ROLE.OWNER } : current.session,
       membership: MEMBERSHIP.ACTIVE,
       memberships: { ...current.memberships, [persona.id]: MEMBERSHIP.ACTIVE },
       deliveries: [...relaySnapshot(signed.published), ...current.deliveries],
@@ -2656,44 +2666,56 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     return true;
   }
 
-  function requestMembership() {
-    const persona = getPersona(state().personaId);
-    if (membershipOf(state(), persona.id) === MEMBERSHIP.ACTIVE) {
+  function requestMembership({ academyId = null } = {}) {
+    const current = state();
+    const persona = getPersona(current.personaId);
+    if (membershipOf(current, persona.id) === MEMBERSHIP.ACTIVE) {
       toast(t('actions.alreadyMember'), 'info');
-      return;
+      return null;
     }
-    const id = nextId('jr');
+    const academy = academyId ? academyById(current, academyId) : null;
+    const academyName = academy?.name ?? t('actions.academyFallback');
+    const existing = (current.joinRequests ?? []).find(
+      (entry) =>
+        entry.accountId === persona.id &&
+        entry.status === REQUEST_STATUS.PENDING &&
+        (academyId ? entry.academyId === academyId : !entry.academyId),
+    );
+    if (existing) {
+      toast(t('actions.membershipRequestPending'), 'info');
+      return existing;
+    }
+    const request = {
+      id: nextId('jr'),
+      academyId: academy?.id ?? null,
+      accountId: persona.id,
+      displayName: persona.displayName,
+      handle: persona.handle,
+      academy: academyName,
+      role: persona.role,
+      time: 'now',
+      status: REQUEST_STATUS.PENDING,
+    };
     update({
       membership: MEMBERSHIP.PENDING,
-      memberships: { ...state().memberships, [persona.id]: MEMBERSHIP.PENDING },
-      joinRequests: [
-        {
-          id,
-          accountId: persona.id,
-          displayName: persona.displayName,
-          handle: persona.handle,
-          academy: 'BitOS Academy',
-          role: persona.role,
-          time: 'now',
-          status: REQUEST_STATUS.PENDING,
-        },
-        ...state().joinRequests,
-      ],
+      memberships: { ...current.memberships, [persona.id]: MEMBERSHIP.PENDING },
+      joinRequests: [request, ...(current.joinRequests ?? [])],
       events: [
         {
           id: nextId('e'),
           type: 'joinreq',
           author: persona.id,
           time: 'now',
-          context: 'BitOS Academy',
-          audience: ['nadia'],
-          requestId: id,
-          text: t('actions.requestedToJoinBitOSAcademy'),
+          context: academyName,
+          audience: academy?.ownerId ? [academy.ownerId] : [],
+          requestId: request.id,
+          text: t('actions.requestedToJoinAcademy', { name: academyName }),
         },
-        ...state().events,
+        ...current.events,
       ],
     });
     toast(t('actions.joinRequestSent'), 'info');
+    return request;
   }
 
   function acceptJoin(requestId) {

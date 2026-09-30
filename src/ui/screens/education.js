@@ -57,6 +57,8 @@ export function renderEducation({ app, state }) {
       ]),
     );
 
+    if (!snapshot.academies?.[persona.id]) children.push(createAcademyCard(app));
+
     node.replaceChildren(...children);
   }
 
@@ -148,7 +150,15 @@ function joinCard(membership, app) {
     el('p', { class: 'muted small' }, t('education.joinAcademyBody')),
     membership === MEMBERSHIP.PENDING
       ? el('p', { class: 'muted small' }, t('education.waitingApproval'))
-      : button(t('education.requestJoin'), { variant: 'gold', onClick: () => app.requestMembership() }),
+      : button(t('common.workspace.joinWithLink'), { variant: 'gold', onClick: () => app.navigate('/join') }),
+  ]);
+}
+
+function createAcademyCard(app) {
+  return el('div', { class: 'card' }, [
+    el('h3', {}, t('common.workspace.createTitle')),
+    el('p', { class: 'muted small' }, t('common.workspace.createBody')),
+    button(t('common.workspace.createAction'), { small: true, onClick: () => app.openCreateAcademy() }),
   ]);
 }
 

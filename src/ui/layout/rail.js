@@ -7,7 +7,7 @@ import {
   classroomsForTeacher,
   homeworkForStudent,
 } from '../../domain/classroom.js';
-import { pendingRequestCount, ROLE } from '../../domain/school.js';
+import { pendingRequestCount, ROLE, normalizeRole } from '../../domain/school.js';
 import { t } from '../../services/i18n/index.js';
 import { button, widget } from '../components/primitives.js';
 
@@ -18,9 +18,10 @@ function healthyRelays(relays) {
 
 export function renderRail({ state, app }) {
   const persona = getPersona(state.personaId);
+  const role = normalizeRole(persona.role);
   const relays = el('p', {}, healthyRelays(state.relays));
 
-  if (persona.role === ROLE.TEACHER) {
+  if (role === ROLE.TEACHER) {
     const classes = classroomsForTeacher(state.classrooms ?? [], persona.id, state.capabilities ?? []);
     const ids = new Set(classes.map((room) => room.id));
     const toGrade = (state.submissions ?? []).filter(
@@ -42,7 +43,7 @@ export function renderRail({ state, app }) {
     ]);
   }
 
-  if (persona.role === ROLE.OWNER) {
+  if (role === ROLE.OWNER) {
     const academy = state.academies?.[persona.id];
     const classes = academy ? classroomsForAcademy(state.classrooms ?? [], academy.id) : [];
     const requests = pendingRequestCount(state.joinRequests, state.enrollRequests);

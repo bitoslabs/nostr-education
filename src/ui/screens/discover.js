@@ -10,6 +10,7 @@ import {
   MEMBERSHIP,
   membershipBadge,
   ROLE,
+  normalizeRole,
 } from '../../domain/school.js';
 import { t } from '../../services/i18n/index.js';
 import { button, emptyState, pageTitle } from '../components/primitives.js';
@@ -20,7 +21,8 @@ export function renderDiscover({ app, state }) {
 
   function render(snapshot) {
     const persona = getPersona(snapshot.personaId);
-    const learner = persona.role === ROLE.STUDENT;
+    const role = normalizeRole(persona.role);
+    const learner = role === ROLE.STUDENT;
     const membership = snapshot.memberships?.[persona.id] ?? MEMBERSHIP.NONE;
     const classrooms = publishedClassrooms(snapshot.classrooms ?? []).filter(isEnrollable);
 
@@ -55,7 +57,7 @@ function membershipNotice(membership, app) {
     el('p', { class: 'muted small' }, t('discover.membershipExplainer')),
     membership === MEMBERSHIP.PENDING
       ? el('p', { class: 'muted small' }, t('discover.requestWaiting'))
-      : button(t('discover.requestJoin'), { variant: 'gold', small: true, onClick: () => app.requestMembership() }),
+      : button(t('common.workspace.joinWithLink'), { variant: 'gold', small: true, onClick: () => app.navigate('/join') }),
   ]);
 }
 
@@ -71,7 +73,7 @@ function courseCard(room, { state, app, learner, persona, membership, requests }
   if (!learner) {
     action = button(t('discover.openWorkspace'), {
       small: true,
-      onClick: () => app.navigate(persona.role === ROLE.TEACHER ? '/teaching' : '/role'),
+      onClick: () => app.navigate('/role'),
     });
   } else if (membership !== MEMBERSHIP.ACTIVE) {
     action = el('span', {}, statusBadge(t('discover.membershipRequired'), 'muted'));

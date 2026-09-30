@@ -48,10 +48,20 @@ export function renderTeaching({ app, state }) {
     else if (snapshot.roleTab === 'gradebook') body = gradebookBody(snapshot, app, persona);
     else body = assessmentBody(snapshot, app, queue);
 
-    node.replaceChildren(pageTitle(t('teaching.title')), tabBar, ...body);
+    const extras =
+      snapshot.roleTab === 'classes' && !snapshot.academies?.[persona.id] ? [createAcademyCard(app)] : [];
+    node.replaceChildren(pageTitle(t('teaching.title')), tabBar, ...body, ...extras);
   }
 
   return bindScreen(state, node, render);
+}
+
+function createAcademyCard(app) {
+  return el('div', { class: 'card' }, [
+    el('h3', {}, t('common.workspace.createTitle')),
+    el('p', { class: 'muted small' }, t('common.workspace.createBody')),
+    button(t('common.workspace.createAction'), { small: true, onClick: () => app.openCreateAcademy() }),
+  ]);
 }
 
 function scopedClassrooms(state, persona) {

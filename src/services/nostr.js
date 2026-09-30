@@ -72,8 +72,13 @@ export function decodeKey(value) {
   }
 }
 
+export function isExtensionDisabled() {
+  if (typeof window === 'undefined') return false;
+  return new URLSearchParams(window.location?.search ?? '').get('disableNostrExtension') === '1';
+}
+
 export function hasExtension() {
-  return typeof window !== 'undefined' && Boolean(window.nostr?.signEvent);
+  return !isExtensionDisabled() && typeof window !== 'undefined' && Boolean(window.nostr?.signEvent);
 }
 
 export async function extensionPublicKey() {
@@ -135,10 +140,12 @@ export function extensionSigner() {
     getPublicKey: () => call(extensionPublicKey),
     signEvent: (event) => call(extensionSignEvent, event),
     async nip44Encrypt(pubkey, plaintext) {
+      if (isExtensionDisabled()) throw new Error('The Nostr extension is disabled for this page.');
       if (!window.nostr?.nip44?.encrypt) throw new Error('This extension does not support NIP-44.');
       return call(window.nostr.nip44.encrypt.bind(window.nostr.nip44), pubkey, plaintext);
     },
     async nip44Decrypt(pubkey, ciphertext) {
+      if (isExtensionDisabled()) throw new Error('The Nostr extension is disabled for this page.');
       if (!window.nostr?.nip44?.decrypt) throw new Error('This extension does not support NIP-44.');
       return call(window.nostr.nip44.decrypt.bind(window.nostr.nip44), pubkey, ciphertext);
     },

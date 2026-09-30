@@ -1,15 +1,17 @@
 import { el } from '../../core/dom.js';
 import { getPersona } from '../../data/personas.js';
+import { normalizeRole } from '../../domain/school.js';
 import { t } from '../../services/i18n/index.js';
 import { icon } from '../components/icon.js';
 import { badgeCount } from './nav.js';
 
 export function renderBottomTabs({ state, app }) {
   const persona = getPersona(state.personaId);
+  const role = normalizeRole(persona.role);
   const badge = badgeCount(state);
   const items = [
     { route: '/home', label: t('nav.home'), icon: 'lucide:house', fallback: '◉' },
-    { route: '/role', label: t('common.roleSpaceShort.' + persona.role), icon: 'lucide:layout-grid', fallback: '▣', badge },
+    { route: '/role', label: t('common.roleSpaceShort.' + role), icon: 'lucide:layout-grid', fallback: '▣', badge },
     { route: '/credentials', label: t('nav.creds'), icon: 'lucide:id-card', fallback: '◎' },
     { route: '/discover', label: t('nav.discover'), icon: 'lucide:search', fallback: '⌕' },
     { route: '/settings', label: t('nav.profile'), icon: 'lucide:user', fallback: '○' },
@@ -17,7 +19,7 @@ export function renderBottomTabs({ state, app }) {
 
   return items.map((item) => {
     const active = state.route === item.route;
-    const title = item.route === '/role' ? t('common.roleSpace.' + persona.role) : item.label;
+    const title = item.route === '/role' ? t('common.roleSpace.' + role) : item.label;
     return el(
       'button',
       {

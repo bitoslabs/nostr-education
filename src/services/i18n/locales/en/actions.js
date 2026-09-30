@@ -230,6 +230,7 @@ export default {
   handleYours: '@{handle} is yours — published in your profile.',
   alreadyMember: 'You are already a member.',
   requestedToJoinBitOSAcademy: 'requested to join BitOS Academy.',
+  requestedToJoinAcademy: 'requested to join {name}.',
   joinRequestSent: 'Join request sent — awaiting academy approval.',
   onlyOwnerApproveMemberships: 'Only the academy owner can approve memberships.',
   approvedMembershipWelcome: 'Approved your BitOS Academy membership — welcome.',

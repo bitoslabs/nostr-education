@@ -3,7 +3,7 @@ import { getPersona } from '../../data/personas.js';
 import { SUBMISSION_STATUS, classroomsForTeacher } from '../../domain/classroom.js';
 import { isActionNeededFor } from '../../domain/feed.js';
 import { identitySecondary } from '../../domain/identity.js';
-import { ROLE } from '../../domain/school.js';
+import { ROLE, normalizeRole } from '../../domain/school.js';
 import { t } from '../../services/i18n/index.js';
 import { icon } from '../components/icon.js';
 import { avatar, button } from '../components/primitives.js';
@@ -16,7 +16,8 @@ const ROLE_ICON = Object.freeze({
 
 export function badgeCount(state) {
   const persona = getPersona(state.personaId);
-  if (persona.role === ROLE.TEACHER) {
+  const role = normalizeRole(persona.role);
+  if (role === ROLE.TEACHER) {
     const scope = new Set(
       classroomsForTeacher(state.classrooms ?? [], persona.id, state.capabilities ?? []).map((room) => room.id),
     );
@@ -24,7 +25,7 @@ export function badgeCount(state) {
       (submission) => submission.status === SUBMISSION_STATUS.SUBMITTED && scope.has(submission.classroomId),
     ).length;
   }
-  if (persona.role === ROLE.OWNER) {
+  if (role === ROLE.OWNER) {
     return state.signQueue.filter((entry) => entry.status === 'pending').length;
   }
   return state.events.filter((event) => isActionNeededFor(event, state.personaId)).length;
@@ -32,14 +33,15 @@ export function badgeCount(state) {
 
 export function renderNav({ state, app }) {
   const persona = getPersona(state.personaId);
+  const role = normalizeRole(persona.role);
   const badge = badgeCount(state);
 
   const items = [
     { route: '/home', label: t('nav.home'), icon: 'lucide:house', fallback: '◉' },
     {
       route: '/role',
-      label: t('common.roleSpace.' + persona.role),
-      icon: ROLE_ICON[persona.role] ?? 'lucide:layout-grid',
+      label: t('common.roleSpace.' + role),
+      icon: ROLE_ICON[role] ?? 'lucide:layout-grid',
       fallback: '▣',
       badge,
     },
