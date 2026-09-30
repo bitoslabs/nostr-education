@@ -1,7 +1,8 @@
 import { en } from './locales/en/index.js';
+import { lo } from './locales/lo/index.js';
 
 // Add future locale dictionaries here, for example `fr` from './locales/fr/index.js'.
-const DICTIONARIES = Object.freeze({ en });
+const DICTIONARIES = Object.freeze({ en, lo });
 
 export const FALLBACK_LOCALE = 'en';
 

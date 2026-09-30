@@ -1,0 +1,17 @@
+export default {
+  title: 'ຄົ້ນຫາ',
+  empty: 'ຍັງບໍ່ມີຫ້ອງຮຽນເປີດ. ສະຖາບັນຕ່າງໆເຜີຍແຜ່ຫ້ອງຮຽນຂອງພວກເຂົາຢູ່ນີ້.',
+  joinAcademy: 'ເຂົ້າຮ່ວມສະຖາບັນເພື່ອລົງທະບຽນ',
+  membershipExplainer: 'ເຈົ້າຂອງສະຖາບັນອະນຸມັດສະມາຊິກພາບ. ການລົງທະບຽນຈະເປີດເມື່ອທ່ານເປັນສະມາຊິກແລ້ວ.',
+  requestWaiting: 'ຄຳຮ້ອງຂອງທ່ານກຳລັງລໍຖ້າເຈົ້າຂອງ.',
+  requestJoin: 'ຂໍເຂົ້າຮ່ວມ',
+  membershipRequired: 'ຕ້ອງເປັນສະມາຊິກ',
+  openWorkspace: 'ເປີດພື້ນທີ່ເຮັດວຽກ',
+  requestEnroll: 'ຂໍລົງທະບຽນ',
+  academyVerified: '{name} ✓',
+  academyFallback: 'ສະຖາບັນ',
+  teacherVerified: 'ຄູ {name} ✓',
+  noTeacher: 'ຍັງບໍ່ມີຄູ',
+  learnerOne: '{count} ຜູ້ຮຽນ',
+  learnerMany: '{count} ຜູ້ຮຽນ',
+};

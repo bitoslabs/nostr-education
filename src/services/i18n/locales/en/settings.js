@@ -30,6 +30,7 @@ export default {
   },
   locales: {
     en: 'English',
+    lo: 'Lao',
   },
   identity: {
     handleVerified: '✓ handle verified',
