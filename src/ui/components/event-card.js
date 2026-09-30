@@ -35,7 +35,7 @@ export function eventCard(event, { persona, actions, enrollments = [] } = {}) {
   const badge = badgeFor(event, persona);
   if (badge) children.push(el('p', {}, statusBadge(t(badge.key, badge.params), badge.tone)));
 
-  children.push(el('p', { class: 'cbody' }, event.text));
+  children.push(el('p', { class: 'cbody' }, eventText(event)));
 
   if (event.quote) children.push(el('blockquote', { class: 'quote' }, `"${event.quote}"`));
   if (event.files?.length) {
@@ -51,7 +51,21 @@ export function eventCard(event, { persona, actions, enrollments = [] } = {}) {
   return el('article', { class: 'card' }, children);
 }
 
+function eventText(event) {
+  if (event.type === 'member' && !event.text) {
+    return event.memberStatus === 'none'
+      ? t('home.memberDeclinedBody')
+      : t('home.memberApprovedBody');
+  }
+  return event.text;
+}
+
 function badgeFor(event, persona) {
+  if (event.type === 'member') {
+    return event.memberStatus === 'none'
+      ? { key: 'home.badgeMembershipDeclined', tone: 'warn' }
+      : BADGES.member;
+  }
   const token = BADGES[event.type];
   if (!token) return null;
   if (event.type === 'revision') {

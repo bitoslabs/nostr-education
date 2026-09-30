@@ -109,7 +109,16 @@ export function inviteLinkPanel({ invite, copyText, actions, close }) {
         variant: 'gold',
         small: true,
         className: 'input-group__btn',
-        onClick: () => copyText(invite.url, t('organization.invite.copied')),
+        // Publishing and copying must happen together: sharing a class link
+        // that was never announced to the relays leaves the learner with a
+        // code no other device can resolve.
+        onClick: async () => {
+          if (actions?.copyInviteLink) {
+            await actions.copyInviteLink(invite.id);
+            return;
+          }
+          await copyText(invite.url, t('organization.invite.copied'));
+        },
       }),
     ]),
     shareBox,

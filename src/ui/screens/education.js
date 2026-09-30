@@ -53,7 +53,11 @@ export function renderEducation({ app, state }) {
       el('div', { class: 'card' }, [
         el('h3', {}, t('education.findCourse')),
         el('p', { class: 'muted small' }, t('education.browseCatalog')),
-        button(t('education.goToDiscover'), { onClick: () => app.navigate('/discover') }),
+        el('div', { class: 'arow' }, [
+          button(t('education.goToDiscover'), { onClick: () => app.navigate('/discover') }),
+          button(t('common.workspace.joinWithLink'), { variant: 'gold', onClick: () => app.navigate('/join') }),
+          button(t('education.refresh'), { small: true, onClick: () => app.refreshRecords?.() }),
+        ]),
       ]),
     );
 

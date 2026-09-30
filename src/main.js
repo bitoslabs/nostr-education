@@ -36,7 +36,7 @@ import { createRelayService } from './services/relay.js';
 import { createSignerService } from './services/signer.js';
 import { loadSecretKey, loadState, saveState } from './services/storage.js';
 import { createThemeService } from './services/theme.js';
-import { applyStaticTranslations, getLocale, setLocale } from './services/i18n/index.js';
+import { applyStaticTranslations, getLocale, setLocale, t } from './services/i18n/index.js';
 import { createConfirmHost } from './ui/components/confirm-dialog.js';
 import { setIconLoader } from './ui/components/icon.js';
 import { createOverlayHost } from './ui/components/overlay.js';
@@ -150,6 +150,7 @@ store.setState({ relays: relayService.statuses() });
 const actions = createActions({ store, bus, signer, confirm, relay: relayService });
 const dialogs = createDialogs({ overlay, store, actions });
 const app = { ...actions, ...dialogs };
+app.refreshRecords = refreshRecords;
 
 let syncedAccount = null;
 store.subscribe((state) => {
@@ -199,6 +200,50 @@ async function restoreSigner() {
   if (secretKey) signer.setSigner(localSigner(secretKey));
 }
 
+function recordFilters(me) {
+  return [
+    { kinds: [KIND.APP_DATA, KIND.APP_DATA_HISTORY], '#t': [APP_TAG], authors: [me] },
+    { kinds: [KIND.APP_DATA, KIND.APP_DATA_HISTORY], '#t': [APP_TAG], '#p': [me] },
+    { kinds: [GIFT_WRAP_KIND], '#p': [me] },
+  ];
+}
+
+async function applyIncomingRecord(event, seen) {
+  if (seen.has(event.id)) return;
+  seen.add(event.id);
+  const me = store.getState().accountId;
+  const active = signer.getSigner();
+
+  if (event.kind === GIFT_WRAP_KIND) {
+    const unwrapped = await unwrapGiftWrap({ wrap: event, signer: active });
+    if (!unwrapped) return;
+    const record = decodeRecord(unwrapped.content, []);
+    if (!record) return;
+    const patch = applyRecord(store.getState(), record);
+    if (patch) store.setState(patch);
+    if (record.type === RECORD_TYPES.CAPABILITY) actions.backfillHomeworkForEnrollment?.(record);
+    return;
+  }
+
+  const addressed = event.tags.some((tag) => tag[0] === 'p' && tag[1] === me);
+  let content = event.content;
+  if (addressed && event.pubkey !== me) {
+    if (typeof active?.nip44Decrypt !== 'function') return;
+    try {
+      content = await active.nip44Decrypt(event.pubkey, event.content);
+    } catch {
+      return;
+    }
+  } else if (event.pubkey !== me) {
+    return;
+  }
+  const record = decodeRecord(content, event.tags);
+  if (!record) return;
+  const patch = applyRecord(store.getState(), record);
+  if (patch) store.setState(patch);
+  if (record.type === RECORD_TYPES.CAPABILITY) actions.backfillHomeworkForEnrollment?.(record);
+}
+
 let recordSub = null;
 function syncRecords() {
   const me = store.getState().accountId;
@@ -206,46 +251,44 @@ function syncRecords() {
   recordSub = null;
   if (!me) return;
 
-  const filters = [
-    { kinds: [KIND.APP_DATA, KIND.APP_DATA_HISTORY], '#t': [APP_TAG], authors: [me] },
-    { kinds: [KIND.APP_DATA, KIND.APP_DATA_HISTORY], '#t': [APP_TAG], '#p': [me] },
-    { kinds: [GIFT_WRAP_KIND], '#p': [me] },
-  ];
   const seen = new Set();
+  recordSub = relayService.subscribe(recordFilters(me), {
+    onEvent: (event) => applyIncomingRecord(event, seen),
+  });
+}
 
-  recordSub = relayService.subscribe(filters, {
-    onEvent: async (event) => {
-      if (seen.has(event.id)) return;
-      seen.add(event.id);
-      const active = signer.getSigner();
-
-      if (event.kind === GIFT_WRAP_KIND) {
-        const unwrapped = await unwrapGiftWrap({ wrap: event, signer: active });
-        if (!unwrapped) return;
-        const record = decodeRecord(unwrapped.content, []);
-        if (!record) return;
-        const patch = applyRecord(store.getState(), record);
-        if (patch) store.setState(patch);
-        return;
+// Re-query relays for this account's records so a student can recover homework
+// (or any record) that a live subscription missed.
+function refreshRecords({ timeoutMs = 8000 } = {}) {
+  const me = store.getState().accountId;
+  if (!me) return Promise.resolve(0);
+  bus.emit('toast', { message: t('actions.refreshingRecords'), tone: 'info' });
+  return new Promise((resolve) => {
+    const seen = new Set();
+    let count = 0;
+    let settled = false;
+    let sub = null;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        sub?.close?.();
+      } catch {
+        /* the subscription may already be closed */
       }
-
-      const addressed = event.tags.some((tag) => tag[0] === 'p' && tag[1] === me);
-      let content = event.content;
-      if (addressed && event.pubkey !== me) {
-        if (typeof active?.nip44Decrypt !== 'function') return;
-        try {
-          content = await active.nip44Decrypt(event.pubkey, event.content);
-        } catch {
-          return;
-        }
-      } else if (event.pubkey !== me) {
-        return;
-      }
-      const record = decodeRecord(content, event.tags);
-      if (!record) return;
-      const patch = applyRecord(store.getState(), record);
-      if (patch) store.setState(patch);
-    },
+      bus.emit('toast', { message: t('actions.recordsRefreshed', { count }), tone: 'ok' });
+      resolve(count);
+    };
+    const timer = setTimeout(finish, timeoutMs);
+    sub = relayService.subscribe(recordFilters(me), {
+      onEvent: async (event) => {
+        const before = seen.size;
+        await applyIncomingRecord(event, seen);
+        if (seen.size > before) count += 1;
+      },
+      onEose: finish,
+    });
   });
 }
 
@@ -327,6 +370,11 @@ function catalogAuthorization(record, pubkey) {
   const academy = findAcademyById(store.getState().academies ?? {}, record.academyId);
   if (!academy) return null;
   if (academy.ownerId === pubkey) return true;
+  // A class teacher may publish the class they were assigned to (it carries
+  // their own teacherId), which is how an accepted invitation reaches students.
+  if (record.type === RECORD_TYPES.CLASSROOM) {
+    return record.academyId === academy.id && record.teacherId === pubkey;
+  }
   if (record.type === RECORD_TYPES.JOIN_LINK && record.classroomId) {
     const classroom = classroomById(store.getState().classrooms ?? [], record.classroomId);
     if (!classroom) return null;

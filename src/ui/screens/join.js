@@ -4,6 +4,7 @@ import { getPersona } from '../../data/personas.js';
 import {
   INVITE_STATUS,
   findInviteByCode,
+  isOpenInvite,
   parseInviteReference,
 } from '../../domain/academy.js';
 import { REQUEST_STATUS, ROLE } from '../../domain/school.js';
@@ -30,6 +31,7 @@ export function renderJoin({ app, scope, state }) {
   const node = el('section', { class: 'screen screen--auth' });
   const checks = new Map();
   const gaveUp = new Set();
+  const looked = new Set();
 
   scope.add(() => {
     for (const timer of checks.values()) clearTimeout(timer);
@@ -45,6 +47,11 @@ export function renderJoin({ app, scope, state }) {
       : null;
 
     if (code && !invite) {
+      // Ask relays directly for this code instead of waiting for the catalog.
+      if (!looked.has(code)) {
+        looked.add(code);
+        app.lookupInvite?.(code);
+      }
       if (!gaveUp.has(code) && !checks.has(code)) {
         checks.set(
           code,
@@ -178,6 +185,7 @@ function inviteView({ state, app, invite, academy, code }) {
   const place = classroom ? `${classroom.name} · ${academyName}` : academyName;
   const roleLabel = t(INVITE_ROLE_KEYS[invite.role] ?? 'education.inviteRole.learner');
   const isTeacher = invite.role === ROLE.TEACHER;
+  const isClassInvite = Boolean(invite.classroomId);
   const academyKind = t(ACADEMY_TYPE_KEYS[academy?.type] ?? 'education.academyTypes.school');
 
   const children = [
@@ -224,14 +232,21 @@ function inviteView({ state, app, invite, academy, code }) {
         ? noteBox(t('education.join.alreadyMember'))
         : null,
       el('div', { class: 'auth-actions' }, [
-        button(classroom || isTeacher ? t('education.join.accept') : t('education.join.requestMembership'), {
-          variant: 'gold',
-          className: 'auth-action',
-          onClick: async () => {
-            const ok = await app.acceptInvite(code);
-            if (ok) app.navigate('/role');
+        button(
+          isClassInvite || isTeacher
+            ? classroom
+              ? t('education.join.joinClass', { name: classroom.name })
+              : t('education.join.accept')
+            : t('education.join.requestMembership'),
+          {
+            variant: 'gold',
+            className: 'auth-action',
+            onClick: async () => {
+              const ok = await app.acceptInvite(code);
+              if (ok) app.navigate('/role');
+            },
           },
-        }),
+        ),
         button(t('education.join.differentLink'), {
           variant: 'ghost',
           className: 'auth-action',
@@ -276,6 +291,9 @@ function inviteView({ state, app, invite, academy, code }) {
 function view({ state, app, invite, academy, code }) {
   if (!code) return pasteView(app);
   if (!invite) return invalidView(app, code);
-  if (invite.status !== INVITE_STATUS.PENDING) return invalidView(app, code);
+  // An open link stays valid even if a prior accept marked it used, so it can
+  // still be shared and re-opened.
+  const reusable = isOpenInvite(invite) && invite.status === INVITE_STATUS.ACCEPTED;
+  if (invite.status !== INVITE_STATUS.PENDING && !reusable) return invalidView(app, code);
   return inviteView({ state, app, invite, academy, code });
 }

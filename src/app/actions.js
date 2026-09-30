@@ -22,7 +22,7 @@ import {
 } from '../services/records.js';
 import { normalizeBlossomServer, uploadBlob } from '../services/blossom.js';
 import { wrapForRecipient } from '../services/giftwrap.js';
-import { RECORD_TYPES, toPublicRecord } from '../domain/records.js';
+import { RECORD_TYPES, applyRecord, toPublicRecord } from '../domain/records.js';
 import { CAPABILITY, createCapability } from '../domain/capability.js';
 import { normalizeRubric, rubricMax, scoresComplete, scoresTotal } from '../domain/rubric.js';
 import { credentialPayload, credentialProofContent, revocationPayload } from '../domain/credential.js';
@@ -45,6 +45,7 @@ import {
   canSubmitLate,
   classroomActivity,
   classroomById,
+  enrolledAccountIds,
   homeworkForClassroom,
   isEnrollable,
   isHomeworkOpen,
@@ -222,8 +223,18 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const current = state();
     const persona = getPersona(current.personaId);
     const academy = academyById(current, invite.academyId);
+    // Targeted invites are single-use. Open links (academy or class links with
+    // no target) are meant to be shared with many learners, so accepting one
+    // must not burn it — otherwise a learner who retries sees "no longer valid".
+    const consume = Boolean(invite.target);
     const invites = current.invites.map((entry) =>
-      entry.id === invite.id ? { ...entry, status: INVITE_STATUS.ACCEPTED, acceptedBy: persona.id } : entry,
+      entry.id === invite.id
+        ? {
+            ...entry,
+            status: consume ? INVITE_STATUS.ACCEPTED : entry.status,
+            acceptedBy: consume ? persona.id : entry.acceptedBy,
+          }
+        : entry,
     );
     const list = current.classrooms ?? [];
     const classroom = invite.classroomId ? classroomById(list, invite.classroomId) : null;
@@ -247,18 +258,34 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
             return { ...room, teacherId: persona.id, status: CLASS_STATUS.PUBLISHED };
           }
           const students = room.studentIds ?? [];
-          return students.includes(persona.id) ? room : { ...room, studentIds: [...students, persona.id] };
+          const next = students.includes(persona.id) ? room : { ...room, studentIds: [...students, persona.id] };
+          // The learner accepted a real invite, so show the class even if the
+          // owner's public record has not caught up to published yet.
+          return next.status === CLASS_STATUS.ARCHIVED ? next : { ...next, status: CLASS_STATUS.PUBLISHED };
         })
       : list;
 
     if (invite.role === ROLE.TEACHER) {
       registerPersona({ ...persona, role: ROLE.TEACHER });
+      // A public classroom record still carries the owner's original
+      // `teacherId: null`, so re-syncing it on refresh would wipe the local
+      // assignment. Persist a signed-style assignment capability instead: it is
+      // the documented roster source and survives a catalog re-apply.
+      const capability = createCapability({
+        kind: CAPABILITY.TEACHER_ASSIGNMENT,
+        academyId: invite.academyId,
+        accountId: persona.id,
+        classroomId: classroom?.id ?? null,
+        role: ROLE.TEACHER,
+        issuedBy: current.personaId,
+      });
       update({
         invites,
         classrooms,
         pendingInviteCode: null,
         profiles: { ...current.profiles, [persona.id]: getPersona(persona.id) },
         session: current.session ? { ...current.session, role: ROLE.TEACHER } : current.session,
+        capabilities: upsertCapability(current.capabilities, capability),
         membership: MEMBERSHIP.ACTIVE,
         memberships: { ...current.memberships, [persona.id]: MEMBERSHIP.ACTIVE },
         academyMemberships: academyMembership(MEMBERSHIP.ACTIVE),
@@ -277,6 +304,27 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           ...current.events,
         ],
       });
+      // Publish the assignment so the class becomes staffed and published for
+      // everyone (owner, students, relays) instead of only on this device.
+      const assigned = classroom
+        ? { ...classroom, teacherId: persona.id, status: CLASS_STATUS.PUBLISHED }
+        : null;
+      if (assigned && canPublish()) {
+        publishRecord({
+          type: RECORD_TYPES.CLASSROOM,
+          id: assigned.id,
+          payload: toPublicRecord(assigned),
+          title: t('actions.assignTeacher'),
+          action: el(
+            'span',
+            {},
+            t('actions.publishClassroomNamed', {
+              name: assigned.name,
+              subject: subjectById(current.subjects ?? [], assigned.subjectId)?.name ?? assigned.name,
+            }),
+          ),
+        });
+      }
       toast(
         classroom
           ? t('actions.youTeachClass', { name: classroom.name })
@@ -286,11 +334,34 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       return true;
     }
 
+    // A valid signed class invite authorizes enrollment. The class may still be
+    // an unpublished draft on the network, so enroll and publish it locally
+    // rather than turning the learner away.
+    if (invite.classroomId && !classroom) {
+      toast(t('actions.classNotReadyYet'), 'warn');
+      return false;
+    }
+    if (invite.classroomId && classroom.status === CLASS_STATUS.ARCHIVED) {
+      toast(t('actions.classNotOpenEnrollment'), 'warn');
+      return false;
+    }
+
     if (classroom) {
+      // A self-enrollment via link must leave a signed capability so the roster
+      // survives on another device and the teacher can address homework to it.
+      const enrollment = createCapability({
+        kind: CAPABILITY.ENROLLMENT,
+        academyId: classroom.academyId,
+        accountId: persona.id,
+        classroomId: classroom.id,
+        role: ROLE.STUDENT,
+        issuedBy: invite.createdBy ?? persona.id,
+      });
       update({
         invites,
         classrooms,
         pendingInviteCode: null,
+        capabilities: upsertCapability(current.capabilities, enrollment),
         membership: MEMBERSHIP.ACTIVE,
         memberships: { ...current.memberships, [persona.id]: MEMBERSHIP.ACTIVE },
         academyMemberships: academyMembership(MEMBERSHIP.ACTIVE),
@@ -307,6 +378,18 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           ...current.events,
         ],
       });
+      const roster = [classroom.teacherId, academy?.ownerId].filter(Boolean);
+      if (enrollment && roster.length && canPublish()) {
+        publishRecord({
+          type: RECORD_TYPES.CAPABILITY,
+          id: enrollment.id,
+          payload: enrollment,
+          recipients: roster,
+          encrypted: true,
+          title: t('actions.shareEnrollment'),
+          action: el('span', {}, t('actions.enrolledCapability', { name: classroom.name })),
+        });
+      }
       toast(t('actions.youAreEnrolled', { name: classroom.name }), 'ok');
       return true;
     }
@@ -1307,6 +1390,46 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     });
   }
 
+  // A shared invite code is public data. Look it up directly by its `code` tag
+  // so a learner can join even when the bounded catalog query missed the record
+  // (some relays return an early EOSE for the broad catalog subscription).
+  function lookupInvite(reference, { timeoutMs = 6000 } = {}) {
+    const code = parseInviteReference(reference) ?? reference;
+    const current = state();
+    const local = findInviteByCode(current.invites ?? [], code);
+    if (local) return Promise.resolve(local);
+    if (!code || typeof relay?.subscribe !== 'function') return Promise.resolve(null);
+
+    return new Promise((resolve) => {
+      let settled = false;
+      let sub = null;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        try {
+          sub?.close?.();
+        } catch {
+          /* the subscription may already be closed */
+        }
+        resolve(value);
+      };
+      const timer = setTimeout(() => finish(null), timeoutMs);
+      // Filter by the indexed `#t` app tag; `code` is a multi-letter tag many
+      // relays do not index for filters, so match it on the client instead.
+      sub = relay.subscribe([{ kinds: [KIND.APP_DATA], '#t': [APP_TAG], limit: 200 }], {
+        onEvent: (event) => {
+          const record = decodeRecord(event.content, event.tags);
+          if (record?.type !== RECORD_TYPES.JOIN_LINK) return;
+          if (String(record.code ?? '').toLowerCase() !== code) return;
+          const patch = applyRecord(state(), record);
+          if (patch) update(patch);
+          finish(record);
+        },
+      });
+    });
+  }
+
   function createInviteLink(role = ROLE.STUDENT) {
     const current = state();
     const academy = ownedAcademy(current, current.personaId);
@@ -2039,6 +2162,28 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       toast(t('actions.pickClassroomFirst'), 'warn');
       return null;
     }
+    // Sharing a class link implies the class is open: publish it so the learner
+    // who opens the link can actually join.
+    if (classroom.status !== CLASS_STATUS.PUBLISHED && canManageClassroom(current, classroom)) {
+      const published = { ...classroom, status: CLASS_STATUS.PUBLISHED, teacherId: classroom.teacherId ?? current.personaId };
+      update({
+        classrooms: (current.classrooms ?? []).map((entry) => (entry.id === published.id ? published : entry)),
+      });
+      publishRecord({
+        type: RECORD_TYPES.CLASSROOM,
+        id: published.id,
+        payload: toPublicRecord(published),
+        title: t('actions.publishClassroom'),
+        action: el(
+          'span',
+          {},
+          t('actions.publishClassroomNamed', {
+            name: published.name,
+            subject: subjectById(current.subjects ?? [], published.subjectId)?.name ?? published.name,
+          }),
+        ),
+      });
+    }
     const existing = (current.invites ?? []).find(
       (invite) =>
         invite.classroomId === classroomId &&
@@ -2133,11 +2278,21 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       ],
     });
     if (publish) {
+      // Address every enrolled account, including learners who self-enrolled
+      // through a link (their enrollment arrives as a capability, not a synced
+      // studentIds entry).
+      const recipients = [
+        ...new Set([
+          classroom.teacherId,
+          ...(classroom.studentIds ?? []),
+          ...enrolledAccountIds(current.capabilities ?? [], classroom.id),
+        ].filter(Boolean)),
+      ];
       publishRecord({
         type: 'homework',
         id: item.id,
         payload: item,
-        recipients: [classroom.teacherId, ...(classroom.studentIds ?? [])],
+        recipients,
         encrypted: true,
         title: t('actions.publishHomework'),
         action: el('span', {}, t('actions.sendHomeworkToClass', { title: homeworkTitle })),
@@ -2147,6 +2302,40 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       toast(t('actions.homeworkSavedDraft', { title: homeworkTitle }), 'info');
     }
     return item;
+  }
+
+  const backfilledEnrollments = new Set();
+
+  // A learner who enrolled after homework was posted never received those
+  // encrypted records. When we (teacher/owner) learn of their enrollment,
+  // re-send the class's published homework to them.
+  function backfillHomeworkForEnrollment(record) {
+    if (!record || record.kind !== CAPABILITY.ENROLLMENT || !record.classroomId || !record.accountId) {
+      return false;
+    }
+    const key = `${record.classroomId}:${record.accountId}`;
+    if (backfilledEnrollments.has(key)) return false;
+    const current = state();
+    if (record.accountId === current.personaId) return false;
+    const classroom = classroomById(current.classrooms ?? [], record.classroomId);
+    if (!classroom || !canManageClassroom(current, classroom)) return false;
+    if (!canPublish()) return false;
+    backfilledEnrollments.add(key);
+    const homework = (current.homework ?? []).filter(
+      (item) => item.classroomId === classroom.id && item.status !== HOMEWORK_STATUS.DRAFT,
+    );
+    for (const item of homework) {
+      publishRecord({
+        type: 'homework',
+        id: item.id,
+        payload: item,
+        recipients: [record.accountId],
+        encrypted: true,
+        title: t('actions.publishHomework'),
+        action: el('span', {}, t('actions.sendHomeworkToClass', { title: item.title })),
+      });
+    }
+    return homework.length > 0;
   }
 
   function publishHomework(homeworkId) {
@@ -2752,19 +2941,19 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'member',
           author: 'academy',
           time: 'now',
-          context: 'BitOS Academy',
+          context: request.academy ?? t('actions.academyFallback'),
           audience: [request.accountId],
           text: t('actions.approvedMembershipWelcome'),
         },
         ...state().events,
       ],
     });
-    if (request.academyId && request.accountId) {
+    if (request.accountId && canPublish()) {
       publishRecord({
         type: RECORD_TYPES.MEMBER,
-        id: `member:${request.academyId}:${request.accountId}`,
+        id: `member:${request.academyId ?? request.academy}:${request.accountId}`,
         payload: {
-          academyId: request.academyId,
+          academyId: request.academyId ?? null,
           memberId: request.accountId,
           role,
           status: MEMBERSHIP.ACTIVE,
@@ -2774,7 +2963,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         title: t('actions.approveAcademyMembership'),
         action: el('span', {}, t('actions.approveMemberFor', { name: request.displayName, academy: request.academy })),
       });
-      if (capability && canPublish()) {
+      if (request.academyId && capability && canPublish()) {
         publishRecord({
           type: RECORD_TYPES.CAPABILITY,
           id: capability.id,
@@ -2806,12 +2995,12 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       membership:
         request.accountId === state().personaId ? MEMBERSHIP.NONE : state().membership,
     });
-    if (request.academyId && request.accountId) {
+    if (request.accountId && canPublish()) {
       publishRecord({
         type: RECORD_TYPES.MEMBER,
-        id: `member:${request.academyId}:${request.accountId}`,
+        id: `member:${request.academyId ?? request.academy}:${request.accountId}`,
         payload: {
-          academyId: request.academyId,
+          academyId: request.academyId ?? null,
           memberId: request.accountId,
           role: request.role ?? ROLE.STUDENT,
           status: MEMBERSHIP.NONE,
@@ -3415,6 +3604,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     copyInviteLink,
     publishJoinLinkToRelays,
     checkJoinLink,
+    lookupInvite,
     revokeInvite,
     rememberInvite,
     acceptInvite,
@@ -3434,6 +3624,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     inviteClassTeacher,
     createClassLink,
     createHomework,
+    backfillHomeworkForEnrollment,
     updateHomework,
     publishHomework,
     closeHomework,

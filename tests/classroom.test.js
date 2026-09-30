@@ -19,6 +19,7 @@ import {
   classroomsForStudent,
   classroomsForSubject,
   classroomsForTeacher,
+  enrolledAccountIds,
   gradingProgress,
   homeworkForStudent,
   homeworkStatusBadge,
@@ -241,4 +242,16 @@ test('assessmentRevisionsFor orders revisions and finds the latest', () => {
   assert.deepEqual(assessmentRevisionsFor(revisions, 's1').map((entry) => entry.id), ['a1', 'a2']);
   assert.equal(latestAssessmentRevision(revisions, 's1').id, 'a2');
   assert.equal(latestAssessmentRevision(revisions, 'missing'), null);
+});
+
+test('enrolledAccountIds lists active enrollment capability holders for a class', () => {
+  const capabilities = [
+    { kind: 'enrollment', academyId: 'org1', classroomId: 'cls1', accountId: 'alice', status: 'active' },
+    { kind: 'enrollment', academyId: 'org1', classroomId: 'cls1', accountId: 'bob', status: 'revoked' },
+    { kind: 'enrollment', academyId: 'org1', classroomId: 'cls2', accountId: 'carol', status: 'active' },
+    { kind: 'teacher-assignment', academyId: 'org1', classroomId: 'cls1', accountId: 'dave', status: 'active' },
+  ];
+  assert.deepEqual(enrolledAccountIds(capabilities, 'cls1'), ['alice']);
+  assert.deepEqual(enrolledAccountIds(capabilities, 'cls2'), ['carol']);
+  assert.deepEqual(enrolledAccountIds([], 'cls1'), []);
 });

@@ -1,4 +1,5 @@
-import { MEMBERSHIP } from './school.js';
+import { CLASS_STATUS } from './classroom.js';
+import { MEMBERSHIP, REQUEST_STATUS } from './school.js';
 
 export const RECORD_TYPES = Object.freeze({
   ACADEMY: 'academy',
@@ -52,6 +53,19 @@ export const PRIVATE_RECORD_TYPES = Object.freeze([
   RECORD_TYPES.MEMBER,
 ]);
 
+// The owner's original draft and the teacher's published assignment share an
+// id but are authored by different keys, so both can arrive. Never let a stale
+// draft downgrade a class that is already published/staffed.
+function mergeClassroom(existing, incoming) {
+  if (!existing) return incoming;
+  const next = { ...existing, ...incoming };
+  if (existing.status !== CLASS_STATUS.DRAFT && incoming.status === CLASS_STATUS.DRAFT) {
+    next.status = existing.status;
+  }
+  if (!incoming.teacherId && existing.teacherId) next.teacherId = existing.teacherId;
+  return next;
+}
+
 function upsert(list = [], item) {
   const index = list.findIndex((entry) => entry.id === item.id);
   if (index < 0) return [item, ...list];
@@ -82,9 +96,11 @@ export function applyRecord(state, record) {
     case RECORD_TYPES.SUBJECT:
       if (record.deleted) return { subjects: removeById(state.subjects ?? [], record.id) };
       return { subjects: upsert(state.subjects ?? [], record) };
-    case RECORD_TYPES.CLASSROOM:
+    case RECORD_TYPES.CLASSROOM: {
       if (record.deleted) return { classrooms: removeById(state.classrooms ?? [], record.id) };
-      return { classrooms: upsert(state.classrooms ?? [], record) };
+      const existing = (state.classrooms ?? []).find((entry) => entry.id === record.id);
+      return { classrooms: upsert(state.classrooms ?? [], mergeClassroom(existing, record)) };
+    }
     case RECORD_TYPES.HOMEWORK:
       if (record.deleted) return { homework: removeById(state.homework ?? [], record.id) };
       return { homework: upsert(state.homework ?? [], record) };
@@ -204,6 +220,16 @@ export function applyRecord(state, record) {
       return { joinRequests: upsert(state.joinRequests ?? [], record) };
     case RECORD_TYPES.MEMBER: {
       if (!record.memberId) return null;
+      const status = record.status ?? MEMBERSHIP.ACTIVE;
+      const previous = state.memberships?.[record.memberId] ?? MEMBERSHIP.NONE;
+      const matchesAcademy = (entry) =>
+        !(record.academyId && entry.academyId) || entry.academyId === record.academyId;
+      const pendingMatch = (state.joinRequests ?? []).some(
+        (entry) =>
+          entry.accountId === record.memberId &&
+          entry.status === REQUEST_STATUS.PENDING &&
+          matchesAcademy(entry),
+      );
       const academyMemberships = record.academyId
         ? [
             ...(state.academyMemberships ?? []).filter(
@@ -213,13 +239,46 @@ export function applyRecord(state, record) {
               academyId: record.academyId,
               accountId: record.memberId,
               role: record.role ?? 'student',
-              status: record.status ?? MEMBERSHIP.ACTIVE,
+              status,
             },
           ]
         : state.academyMemberships ?? [];
+      // The owner's decision arrives as a private member record. Resolve the
+      // matching pending request on the same event that grants membership, so
+      // the learner stops seeing "waiting for approval".
+      const joinRequests = (state.joinRequests ?? []).map((entry) => {
+        if (entry.accountId !== record.memberId || entry.status !== REQUEST_STATUS.PENDING) return entry;
+        if (!matchesAcademy(entry)) return entry;
+        return {
+          ...entry,
+          status: status === MEMBERSHIP.ACTIVE ? REQUEST_STATUS.APPROVED : REQUEST_STATUS.DECLINED,
+        };
+      });
+      const events = state.events ?? [];
+      const eventId = `member-${record.academyId ?? record.memberId}-${status}`;
+      const notify = (previous !== status || pendingMatch) && !events.some((entry) => entry.id === eventId);
+      const academy = record.academyId
+        ? Object.values(state.academies ?? {}).find((entry) => entry.id === record.academyId)
+        : null;
       return {
-        memberships: { ...state.memberships, [record.memberId]: record.status ?? MEMBERSHIP.ACTIVE },
+        memberships: { ...state.memberships, [record.memberId]: status },
         academyMemberships,
+        joinRequests,
+        events: notify
+          ? [
+              {
+                id: eventId,
+                type: 'member',
+                author: 'academy',
+                time: 'now',
+                context: academy?.name ?? '',
+                audience: [record.memberId],
+                memberStatus: status,
+                text: '',
+              },
+              ...events,
+            ]
+          : events,
       };
     }
     case RECORD_TYPES.RECOMMENDATION: {

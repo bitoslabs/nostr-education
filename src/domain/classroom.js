@@ -118,6 +118,22 @@ export function classroomsForStudent(classrooms = [], studentId, capabilities = 
   );
 }
 
+// Account ids holding an active enrollment capability for a classroom. This is
+// the roster a teacher can address homework to even when it self-enrolled via a
+// link and the class `studentIds` never synced to the teacher's device.
+export function enrolledAccountIds(capabilities = [], classroomId) {
+  return (capabilities ?? [])
+    .filter(
+      (capability) =>
+        capability &&
+        capability.kind === CAPABILITY.ENROLLMENT &&
+        capability.classroomId === classroomId &&
+        capability.accountId &&
+        isCapabilityActive(capability),
+    )
+    .map((capability) => capability.accountId);
+}
+
 export function subjectInUse(classrooms = [], subjectId) {
   return classrooms.some((classroom) => classroom.subjectId === subjectId);
 }

@@ -146,6 +146,42 @@ test('applyRecord records membership and rejects malformed records', () => {
   assert.equal(applyRecord(EMPTY, null), null);
 });
 
+test('a member record resolves the learner pending request and adds a receipt', () => {
+  const base = {
+    ...EMPTY,
+    events: [],
+    academies: { owner1: { id: 'org1', ownerId: 'owner1', name: 'Northgate' } },
+    joinRequests: [
+      { id: 'jr1', accountId: 'pk1', academyId: 'org1', academy: 'Northgate', status: 'pending' },
+      { id: 'jr2', accountId: 'pk2', academyId: 'org1', academy: 'Northgate', status: 'pending' },
+    ],
+  };
+  const patch = applyRecord(base, {
+    type: 'member',
+    id: 'm1',
+    academyId: 'org1',
+    memberId: 'pk1',
+    role: 'student',
+    status: 'active',
+  });
+  const statuses = Object.fromEntries(patch.joinRequests.map((entry) => [entry.id, entry.status]));
+  assert.equal(statuses.jr1, 'approved');
+  assert.equal(statuses.jr2, 'pending');
+  assert.equal(patch.events.length, 1);
+  assert.equal(patch.events[0].type, 'member');
+  assert.deepEqual(patch.events[0].audience, ['pk1']);
+  assert.equal(patch.events[0].context, 'Northgate');
+
+  const delivered = applyRecord({ ...base, ...patch }, {
+    type: 'member',
+    id: 'm1',
+    academyId: 'org1',
+    memberId: 'pk1',
+    status: 'active',
+  });
+  assert.equal(delivered.events.filter((entry) => entry.type === 'member').length, 1);
+});
+
 test('applyRecord tombstones remove subjects and classrooms', () => {
   const base = {
     ...EMPTY,
