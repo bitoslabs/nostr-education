@@ -130,6 +130,7 @@ function runHomework({ store, actor, body, context }) {
     rubric: Array.isArray(body.rubric) ? body.rubric : [],
     status: 'published',
     createdBy: actor,
+    createdAt: new Date().toISOString(),
   };
   store.upsert('homework', item);
   return { status: 201, body: { homework: item } };

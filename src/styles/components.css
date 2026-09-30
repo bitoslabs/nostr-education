@@ -2319,6 +2319,18 @@ textarea:focus {
   color: var(--dim);
 }
 
+.form-section--danger {
+  margin-top: 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--err);
+  border-radius: var(--r-inner);
+  background: var(--err-bg);
+}
+
+.form-section--danger .form-section__title {
+  color: var(--err);
+}
+
 .field-hint {
   margin: 4px 0 0;
   font-size: 0.78rem;
@@ -2611,43 +2623,86 @@ button.chip:hover {
 }
 
 .toolbar input[type='search'] {
-  flex: 1 1 200px;
-  min-width: 140px;
+  flex: 1 1 180px;
+  min-width: 120px;
 }
 
-.toolbar select {
-  flex: 0 1 auto;
-  max-width: 48%;
+.toolbar > select {
+  flex: 0 0 auto;
+}
+
+/* Keep the controls on one line once there is room for them. */
+@media (min-width: 720px) {
+  .toolbar {
+    flex-wrap: nowrap;
+  }
 }
 
 @media (max-width: 560px) {
   .toolbar input[type='search'] {
     flex-basis: 100%;
   }
-
-  .toolbar select {
-    flex: 1 1 45%;
-    max-width: none;
-  }
 }
 
-.field-inline {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
+/* Sub-section heading used above grouped tables. */
+.section-title {
+  margin: 14px 0 8px;
 }
 
-.field-inline__label {
-  color: var(--muted);
-  font-size: 0.78rem;
-  white-space: nowrap;
+/* Give a toolbar breathing room when it follows a table/section. */
+.dtable-wrap + .toolbar,
+.section-title + .dtable-wrap + .toolbar {
+  margin-top: 14px;
 }
 
 .points {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   white-space: nowrap;
+}
+
+/* Gradebook matrix: keep the learner column visible while scrolling homework. */
+.dtable--matrix td:first-child,
+.dtable--matrix th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+  box-shadow: inset -1px 0 0 var(--border);
+}
+
+.dtable--matrix thead th:first-child {
+  z-index: 2;
+}
+
+.dtable--matrix .cell-score {
+  text-align: center;
+}
+
+.dtable--matrix .cell-score .chip {
+  justify-content: center;
+  min-width: 2.25rem;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  margin: 0 0 10px;
+}
+
+.legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.legend__item .chip {
+  justify-content: center;
+  min-width: 1.6rem;
 }
 
 /* Live rubric total in the grading dialog. */
@@ -2703,4 +2758,81 @@ button.chip:hover {
 
 .acc__body {
   padding: 10px 0;
+}
+
+/* ---------- homework assignment block ---------- */
+.hw {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-inner);
+  padding: 12px 14px;
+}
+
+.hw + .hw {
+  margin-top: 10px;
+}
+
+.hw__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hw__title {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.hw__spacer {
+  flex: 1 1 auto;
+}
+
+.hw__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.hw__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.hw__grid--media {
+  grid-template-columns: 76px 1fr;
+  align-items: start;
+}
+
+.hw__thumb {
+  width: 76px;
+  height: 76px;
+  object-fit: cover;
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.hw__text > :first-child {
+  margin-top: 0;
+}
+
+.hw__text > :last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 520px) {
+  .hw__grid--media {
+    grid-template-columns: 1fr;
+  }
+
+  .hw__thumb {
+    width: 100%;
+    height: 140px;
+  }
 }

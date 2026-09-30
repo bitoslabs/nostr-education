@@ -1,10 +1,12 @@
 import { el } from '../../core/dom.js';
+import { formatDate } from '../../core/time.js';
 import {
   CLASS_STATUS,
   HOMEWORK_STATUS,
   LATE_POLICY,
   classStatusBadge,
   homeworkStatusBadge,
+  isHomeworkOpen,
   normalizeLatePolicy,
   submissionStatusBadge,
 } from '../../domain/classroom.js';
@@ -12,7 +14,7 @@ import { normalizePolicy } from '../../domain/completion.js';
 import { buildScoreSheet, normalizeRubric, rubricMax, scoresTotal } from '../../domain/rubric.js';
 import { t } from '../../services/i18n/index.js';
 import { button, fileChip, noteBox } from './primitives.js';
-import { formFoot, formSection } from './form-fields.js';
+import { dangerSection, formFoot, formSection } from './form-fields.js';
 import { inviteLinkPanel } from './invite-dialog.js';
 import { statusBadge } from './status-badge.js';
 
@@ -41,7 +43,10 @@ function historyBlock(versions = []) {
           el(
             'span',
             { class: 'muted small' },
-            t('teaching.versionMeta', { version: entry.version, date: entry.submittedAt ?? t('teaching.saved') }),
+            t('teaching.versionMeta', {
+              version: entry.version,
+              date: formatDate(entry.eventCreatedAt ?? entry.submittedAt) ?? t('teaching.saved'),
+            }),
           ),
           el('span', { class: 'quote' }, preview(entry.text) || t('teaching.noText')),
         ]),
@@ -347,7 +352,7 @@ export function renderManageClassroom({ classroom, subjects = [], teachers = [],
           el('p', { class: 'field-hint' }, t('teaching.classroomTeacherHint')),
         ]),
         error,
-        formSection(t('teaching.sectionDanger'), [
+        dangerSection(t('teaching.sectionDanger'), [
           el('p', { class: 'muted small' }, t('teaching.dangerBlurb')),
           el('div', { class: 'arow' }, [
             archived
@@ -555,68 +560,110 @@ export function renderManageHomework({ homeworkItem, actions, close }) {
   });
   const rubric = rubricEditor(homeworkItem.rubric);
 
+  const cancel = button(t('common.actions.cancel'), { onClick: close });
+  const submit = button(t('teaching.saveChanges'), { variant: 'gold', type: 'submit' });
+
+  const run = () => {
+    if (!String(titleInput.value).trim()) {
+      error.textContent = t('teaching.errHomeworkTitle');
+      titleInput.focus();
+      return;
+    }
+    const ok = actions.updateHomework({
+      homeworkId: homeworkItem.id,
+      title: titleInput.value,
+      instructions: instructions.value,
+      due: due.value,
+      dueAt: dueAt.value,
+      maxScore: maxScore.value,
+      rubric: rubric.value(),
+    });
+    if (ok) close();
+  };
+
+  // The lifecycle action is one contextual control with a hint that spells out
+  // its consequence, rather than three always-visible buttons.
+  const lifecycle = isDraft
+    ? {
+        hint: t('teaching.hintPublishHomework'),
+        control: button(t('teaching.publishToLearners'), {
+          variant: 'gold',
+          small: true,
+          onClick: () => { actions.publishHomework(homeworkItem.id); close(); },
+        }),
+      }
+    : closed
+      ? {
+          hint: t('teaching.hintReopenSubmissions'),
+          control: button(t('teaching.reopenSubmissions'), {
+            variant: 'gold',
+            small: true,
+            onClick: () => { actions.reopenHomework(homeworkItem.id); close(); },
+          }),
+        }
+      : {
+          hint: t('teaching.hintCloseSubmissions'),
+          control: button(t('teaching.closeSubmissions'), {
+            small: true,
+            onClick: () => { actions.closeHomework(homeworkItem.id); close(); },
+          }),
+        };
+
   return el('div', {}, [
     el('h2', {}, t('teaching.manageTitle', { name: homeworkItem.title })),
     badge ? el('p', {}, statusBadge(t(badge.key, badge.params), badge.tone)) : null,
-    el('label', {}, t('teaching.fieldTitle')),
-    titleInput,
-    el('label', {}, t('teaching.fieldInstructions')),
-    instructions,
-    el('label', {}, t('teaching.fieldDue')),
-    due,
-    el('label', {}, t('teaching.fieldDueDateTime')),
-    dueAt,
-    el('label', {}, t('teaching.fieldMaxScore')),
-    maxScore,
-    el('label', {}, t('teaching.fieldRubricOptional')),
-    rubric.node,
-    error,
-    el('div', { class: 'dlg-foot' }, [
-      button(t('common.actions.cancel'), { onClick: close }),
-      button(t('teaching.saveChanges'), {
-        variant: 'gold',
-        onClick: () => {
-          if (!String(titleInput.value).trim()) {
-            error.textContent = t('teaching.errHomeworkTitle');
-            return;
-          }
-          const ok = actions.updateHomework({
-            homeworkId: homeworkItem.id,
-            title: titleInput.value,
-            instructions: instructions.value,
-            due: due.value,
-            dueAt: dueAt.value,
-            maxScore: maxScore.value,
-            rubric: rubric.value(),
-          });
-          if (ok) close();
+    el(
+      'form',
+      {
+        onSubmit: (event) => {
+          event.preventDefault();
+          run();
         },
-      }),
-    ]),
-    el('div', { class: 'arow' }, [
-      isDraft
-        ? button(t('teaching.publishToLearners'), {
-            variant: 'gold',
-            small: true,
-            onClick: () => { actions.publishHomework(homeworkItem.id); close(); },
-          })
-        : closed
-          ? button(t('teaching.reopenSubmissions'), { small: true, onClick: () => { actions.reopenHomework(homeworkItem.id); close(); } })
-          : button(t('teaching.closeSubmissions'), { small: true, onClick: () => { actions.closeHomework(homeworkItem.id); close(); } }),
-      button(t('teaching.deleteHomework'), {
-        variant: 'ghost',
-        small: true,
-        onClick: async () => {
-          const ok = await actions.deleteHomework(homeworkItem.id);
-          if (ok) close();
-        },
-      }),
-    ]),
+      },
+      [
+        formSection(t('teaching.sectionHomework'), [
+          el('label', {}, t('teaching.fieldTitle')),
+          titleInput,
+          el('label', {}, t('teaching.fieldInstructions')),
+          instructions,
+          el('label', {}, t('teaching.fieldDue')),
+          due,
+          el('label', {}, t('teaching.fieldDueDateTime')),
+          dueAt,
+        ]),
+        formSection(t('teaching.sectionGrading'), [
+          el('label', {}, t('teaching.fieldMaxScore')),
+          maxScore,
+          el('label', {}, t('teaching.fieldRubricOptional')),
+          rubric.node,
+        ]),
+        error,
+        formSection(t('teaching.sectionSubmissions'), [
+          el('p', { class: 'field-hint' }, lifecycle.hint),
+          el('div', { class: 'arow' }, [lifecycle.control]),
+        ]),
+        dangerSection(t('teaching.sectionDanger'), [
+          el('p', { class: 'muted small' }, t('teaching.homeworkDangerBlurb')),
+          el('div', { class: 'arow' }, [
+            button(t('teaching.deleteHomework'), {
+              variant: 'danger',
+              small: true,
+              onClick: async () => {
+                const ok = await actions.deleteHomework(homeworkItem.id);
+                if (ok) close();
+              },
+            }),
+          ]),
+        ]),
+        formFoot([cancel, submit]),
+      ],
+    ),
   ]);
 }
 
 export function renderSubmitHomework({ homeworkItem, submission, versions = [], actions, close }) {
   const error = errorLine();
+  const open = isHomeworkOpen(homeworkItem);
   const body = el('textarea', {
     rows: '6',
     placeholder: t('teaching.placeholderAnswer'),
@@ -660,6 +707,7 @@ export function renderSubmitHomework({ homeworkItem, submission, versions = [], 
     el('h2', {}, homeworkItem.title),
     el('p', { class: 'muted small' }, t('teaching.submitDueMeta', { due: homeworkItem.due, maxScore: homeworkItem.maxScore })),
     homeworkItem.instructions ? el('p', {}, homeworkItem.instructions) : null,
+    !open ? noteBox(t('actions.homeworkClosed'), 'warn') : null,
     submission
       ? noteBox(
           t('teaching.submitVersionNote', {
@@ -680,7 +728,9 @@ export function renderSubmitHomework({ homeworkItem, submission, versions = [], 
       button(t('common.actions.cancel'), { onClick: close }),
       button(submission ? t('teaching.submitNewVersion') : t('teaching.submitHomework'), {
         variant: 'gold',
+        disabled: !open,
         onClick: () => {
+          if (!open) return;
           const ok = actions.submitHomework({
             homeworkId: homeworkItem.id,
             text: body.value,
@@ -707,10 +757,12 @@ export function renderSubmissionView({
 }) {
   const token = submissionStatusBadge(submission);
   const finalized = revisions.filter((entry) => entry.status === 'finalized');
+  const submitted = formatDate(submission.submittedEventAt ?? submission.submittedAt);
   const meta = [
     learnerName,
     classroom?.name,
     t('teaching.versionShort', { version: submission.version }),
+    submitted ? t('teaching.submittedAt', { date: submitted }) : null,
     submission.late ? t('teaching.late') : null,
   ]
     .filter(Boolean)

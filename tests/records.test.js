@@ -93,6 +93,51 @@ test('decodeRecord repairs legacy envelope fields from signed tags', () => {
   });
 });
 
+test('decodeRecord carries the raw event created_at as eventCreatedAt', () => {
+  const encoded = encodeRecord('homework', 'hw1', { title: 'Vectors' });
+  const withTime = decodeRecord(encoded, [['type', 'homework']], 1_752_000_000);
+  assert.equal(withTime.eventCreatedAt, 1_752_000_000);
+  assert.equal(withTime.title, 'Vectors');
+
+  // No raw time (a locally decoded payload) leaves the field absent.
+  assert.equal('eventCreatedAt' in decodeRecord(encoded), false);
+  assert.equal('eventCreatedAt' in decodeRecord(encoded, [], 0), false);
+});
+
+test('applyRecord keeps the earliest event time as created and the latest as updated', () => {
+  let state = { ...EMPTY, homework: [] };
+  const first = applyRecord(state, {
+    type: 'homework',
+    id: 'hw1',
+    title: 'Vectors',
+    eventCreatedAt: 1_700_000_000,
+  });
+  state = { ...state, ...first };
+  assert.equal(state.homework[0].eventCreatedAt, 1_700_000_000);
+  assert.equal(state.homework[0].eventUpdatedAt, 1_700_000_000);
+
+  const edited = applyRecord(state, {
+    type: 'homework',
+    id: 'hw1',
+    title: 'Vectors v2',
+    eventCreatedAt: 1_700_600_000,
+  });
+  state = { ...state, ...edited };
+  assert.equal(state.homework[0].eventCreatedAt, 1_700_000_000);
+  assert.equal(state.homework[0].eventUpdatedAt, 1_700_600_000);
+
+  // A stale replay of the original event must not move the created time forward.
+  const replay = applyRecord(state, {
+    type: 'homework',
+    id: 'hw1',
+    title: 'Vectors',
+    eventCreatedAt: 1_700_000_000,
+  });
+  state = { ...state, ...replay };
+  assert.equal(state.homework[0].eventCreatedAt, 1_700_000_000);
+  assert.equal(state.homework[0].eventUpdatedAt, 1_700_600_000);
+});
+
 test('applyRecord upserts subjects and classrooms without duplicates', () => {
   let state = applyRecord(EMPTY, { type: 'subject', id: 'sub1', name: 'Maths' });
   state = { ...EMPTY, ...state };
@@ -447,6 +492,23 @@ test('applyRecord appends submission versions and keeps every version', () => {
   assert.equal(v2.submissions[0].text, 'second answer');
   assert.equal(v2.submissions[0].version, 2);
   assert.equal(v2.submissionVersions.find((entry) => entry.id === 'ver1').text, 'first answer');
+});
+
+test('a submission version carries the raw event created_at as submittedEventAt', () => {
+  const patch = applyRecord(EMPTY, {
+    type: RECORD_TYPES.SUBMISSION_VERSION,
+    id: 'ver1',
+    submissionId: 'sub1',
+    homeworkId: 'hw1',
+    classroomId: 'c1',
+    studentId: 'stu',
+    version: 1,
+    text: 'answer',
+    eventCreatedAt: 1_700_000_000,
+  });
+  const submission = patch.submissions[0];
+  assert.equal(submission.submittedEventAt, 1_700_000_000);
+  assert.equal(patch.submissionVersions[0].eventCreatedAt, 1_700_000_000);
 });
 
 test('applyRecord keeps finalized assessment revisions and a correction', () => {

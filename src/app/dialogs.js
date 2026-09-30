@@ -4,6 +4,7 @@ import { SEED_CONTACTS } from '../data/seed.js';
 import {
   assessmentRevisionsFor,
   classroomById,
+  isHomeworkOpen,
   subjectById,
   submissionFor,
   subjectsForAcademy,
@@ -216,6 +217,9 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     const state = store.getState();
     const homeworkItem = (state.homework ?? []).find((entry) => entry.id === homeworkId);
     if (!homeworkItem) return null;
+    // A closed (or draft) homework must never open the submit form, even if a
+    // stale button or deep link calls in; the action re-checks on submit too.
+    if (!isHomeworkOpen(homeworkItem)) return null;
     const submission = submissionFor(state.submissions ?? [], homeworkId, state.personaId);
     const versions = versionsFor(state.submissionVersions ?? [], submission?.id);
     return openNamed('submit-homework', {

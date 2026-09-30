@@ -101,9 +101,20 @@ export function applyRecord(state, record) {
       const existing = (state.classrooms ?? []).find((entry) => entry.id === record.id);
       return { classrooms: upsert(state.classrooms ?? [], mergeClassroom(existing, record)) };
     }
-    case RECORD_TYPES.HOMEWORK:
+    case RECORD_TYPES.HOMEWORK: {
       if (record.deleted) return { homework: removeById(state.homework ?? [], record.id) };
-      return { homework: upsert(state.homework ?? [], record) };
+      const existing = (state.homework ?? []).find((entry) => entry.id === record.id);
+      // The record is republished on every edit, so the earliest raw event time
+      // is its creation and the latest is its last update. Keep both across
+      // out-of-order relay replays.
+      const times = [existing?.eventCreatedAt, existing?.eventUpdatedAt, record.eventCreatedAt]
+        .map(Number)
+        .filter((value) => Number.isFinite(value) && value > 0);
+      const incoming = times.length
+        ? { ...record, eventCreatedAt: Math.min(...times), eventUpdatedAt: Math.max(...times) }
+        : record;
+      return { homework: upsert(state.homework ?? [], incoming) };
+    }
     case RECORD_TYPES.SUBMISSION:
       return { submissions: upsert(state.submissions ?? [], record) };
     case RECORD_TYPES.SUBMISSION_VERSION: {
@@ -123,6 +134,8 @@ export function applyRecord(state, record) {
               link: record.link ?? submission.link ?? null,
               files: record.files ?? submission.files ?? [],
               submittedAt: record.submittedAt ?? submission.submittedAt,
+              // Raw Nostr created_at of the latest submission version.
+              submittedEventAt: record.eventCreatedAt ?? submission.submittedEventAt,
             };
           })
         : [
@@ -141,6 +154,7 @@ export function applyRecord(state, record) {
               maxScore: record.maxScore ?? null,
               feedback: '',
               submittedAt: record.submittedAt ?? null,
+              submittedEventAt: record.eventCreatedAt ?? null,
               gradedAt: null,
               gradedBy: null,
             },

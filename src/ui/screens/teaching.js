@@ -1,5 +1,6 @@
 import { el } from '../../core/dom.js';
 import { bindScreen } from '../../core/reactive.js';
+import { formatDate } from '../../core/time.js';
 import { getPersona } from '../../data/personas.js';
 import {
   HOMEWORK_STATUS,
@@ -21,7 +22,7 @@ import {
 import { completionBadge, evaluateCompletion } from '../../domain/completion.js';
 import { ROLE } from '../../domain/school.js';
 import { t } from '../../services/i18n/index.js';
-import { button, emptyState, pageTitle, row, tabs } from '../components/primitives.js';
+import { button, dateMeta, emptyState, pageTitle, row, tabs, timeStamp } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
 
 export function renderTeaching({ app, state }) {
@@ -227,14 +228,6 @@ function rosterStat(value, label) {
   return el('div', { class: 'stat' }, [el('b', {}, value), el('span', {}, label)]);
 }
 
-// Inline label + control for the filter toolbars.
-function toolbarField(labelText, control) {
-  return el('label', { class: 'field-inline' }, [
-    el('span', { class: 'field-inline__label' }, labelText),
-    control,
-  ]);
-}
-
 function rosterTableRow(app, entry) {
   const learner = getPersona(entry.studentId);
   const complete = entry.homeworkCount > 0 && entry.graded === entry.homeworkCount;
@@ -350,7 +343,7 @@ function studentsBody({
       subjectTbody,
     ]),
   );
-  const subjectHeading = el('h3', { class: 'muted small' }, t('teaching.bySubject'));
+  const subjectHeading = el('h3', { class: 'muted small section-title' }, t('teaching.bySubject'));
   const tbody = el('tbody');
   const table = el('table', { class: 'dtable' }, [
     el(
@@ -457,15 +450,11 @@ function studentsBody({
   if (!roster.length) return [emptyState(t('teaching.emptyLearners'))];
 
   return [
-    el('div', { class: 'toolbar' }, [
-      toolbarField(t('teaching.filterLabel'), classFilter),
-      toolbarField(t('teaching.filterSubject'), subjectFilter),
-      queryInput,
-      toolbarField(t('teaching.sortLabel'), sortSelect),
-    ]),
     summaryWrap,
     subjectHeading,
     subjectWrap,
+    // Filter/search/sort sit directly on top of the roster table they control.
+    el('div', { class: 'toolbar' }, [classFilter, subjectFilter, queryInput, sortSelect]),
     listWrap,
   ];
 }
@@ -571,6 +560,9 @@ function homeworkAccordion(state, app, item, students) {
       el('span', { class: 'who' }, learner.displayName),
       statusBadge(t(token.key, token.params), token.tone),
       submission?.late ? statusBadge(t('teaching.late'), 'warn') : null,
+      submission
+        ? timeStamp('teaching.submittedAt', submission.submittedEventAt ?? submission.submittedAt)
+        : null,
       el('span', { class: 'spacer' }),
       submission
         ? el('span', { class: 'inline-actions' }, [
@@ -594,6 +586,8 @@ function homeworkAccordion(state, app, item, students) {
       el('span', { class: 'who' }, item.title),
       statusBadge(status ? t(status.key, status.params) : t('common.badge.published'), status?.tone ?? 'ok'),
       el('span', { class: 'muted small' }, t('teaching.rosterProgress', { done: graded, total: students.length })),
+      el('span', { class: 'muted small' }, t('teaching.submitDueMeta', { due: item.due, maxScore: item.maxScore })),
+      dateMeta(item.eventCreatedAt ?? item.createdAt, item.eventUpdatedAt ?? item.updatedAt),
       el('span', { class: 'spacer' }),
       button(t('teaching.manage'), {
         small: true,
@@ -605,7 +599,18 @@ function homeworkAccordion(state, app, item, students) {
       }),
     ]),
     el('div', { class: 'acc__body' }, [
-      item.instructions ? el('p', { class: 'muted small' }, item.instructions) : null,
+      item.cover || item.instructions
+        ? el(
+            'div',
+            { class: item.cover && item.instructions ? 'hw__grid hw__grid--media' : 'hw__grid' },
+            [
+              item.cover ? el('img', { class: 'hw__thumb', src: item.cover, alt: '', loading: 'lazy' }) : null,
+              item.instructions
+                ? el('div', { class: 'hw__text' }, el('p', { class: 'muted small' }, item.instructions))
+                : null,
+            ],
+          )
+        : null,
       el('div', { class: 'rows' }, rows),
     ]),
   ]);
@@ -689,6 +694,7 @@ function assessmentBody({ tab, state, app, queue, getQuery, setQuery, getClass, 
         ? filtered.map(({ submission, homework, classroom }) => {
             const token = submissionStatusBadge(submission);
             const graded = submission.status === SUBMISSION_STATUS.GRADED;
+            const submitted = formatDate(submission.submittedEventAt ?? submission.submittedAt);
             return el('tr', {}, [
               el('td', {}, el('span', { class: 'who' }, getPersona(submission.studentId).displayName)),
               el('td', {}, classroom?.name ?? '—'),
@@ -697,8 +703,13 @@ function assessmentBody({ tab, state, app, queue, getQuery, setQuery, getClass, 
               el(
                 'td',
                 {},
-                t('teaching.versionShort', { version: submission.version }) +
-                  (submission.late ? ` · ${t('teaching.late')}` : ''),
+                [
+                  t('teaching.versionShort', { version: submission.version }),
+                  submission.late ? t('teaching.late') : null,
+                  submitted,
+                ]
+                  .filter(Boolean)
+                  .join(' · '),
               ),
               el(
                 'td',
@@ -744,7 +755,7 @@ function assessmentBody({ tab, state, app, queue, getQuery, setQuery, getClass, 
 
   return [
     summaryWrap,
-    el('div', { class: 'toolbar' }, [toolbarField(t('teaching.filterLabel'), classSelect), search]),
+    el('div', { class: 'toolbar' }, [classSelect, search]),
     listWrap,
   ];
 }
@@ -774,18 +785,12 @@ function gradebookBody({ state, app, persona, getQuery, setQuery }) {
             el('option', { value: entry.id, selected: entry.id === selectedId }, entry.name),
           ),
         )
-      : el('p', { class: 'muted small' }, room.name);
+      : el('span', { class: 'who' }, room.name);
 
-  const header = el('div', { class: 'crow' }, [
-    el('span', { class: 'who' }, room.name),
-    el('span', { class: 'spacer' }),
-    classAverage == null
-      ? statusBadge(t('teaching.noGradesYet'), 'muted')
-      : statusBadge(t('teaching.classAverage', { n: classAverage }), 'ok'),
-  ]);
+  const toolbar = el('div', { class: 'toolbar' }, [picker]);
 
-  if (!homework.length) return [picker, header, emptyState(t('teaching.emptyPublishedHomework'))];
-  if (!students.length) return [picker, header, emptyState(t('teaching.emptyClassLearners'))];
+  if (!homework.length) return [toolbar, emptyState(t('teaching.emptyPublishedHomework'))];
+  if (!students.length) return [toolbar, emptyState(t('teaching.emptyClassLearners'))];
 
   const queryInput = el('input', {
     type: 'search',
@@ -793,8 +798,32 @@ function gradebookBody({ state, app, persona, getQuery, setQuery }) {
     'aria-label': t('teaching.rosterSearch'),
     value: getQuery(),
   });
+  toolbar.append(queryInput);
+
+  const gradedCells = students.reduce(
+    (count, studentId) =>
+      count +
+      homework.filter(
+        (item) => submissionFor(submissions, item.id, studentId)?.status === SUBMISSION_STATUS.GRADED,
+      ).length,
+    0,
+  );
+  const totalCells = students.length * homework.length;
+  const summaryWrap = el('div', { class: 'statgrid' }, [
+    rosterStat(String(students.length), t('teaching.statLearners')),
+    rosterStat(String(homework.length), t('teaching.statHomework')),
+    rosterStat(classAverage == null ? '—' : `${classAverage}%`, t('teaching.statAverage')),
+    rosterStat(`${gradedCells}/${totalCells}`, t('teaching.statGraded')),
+  ]);
+
+  const legend = el('div', { class: 'legend' }, [
+    el('span', { class: 'legend__item' }, [el('span', { class: 'chip is-on' }, '10'), t('teaching.legendGraded')]),
+    el('span', { class: 'legend__item' }, [el('span', { class: 'chip' }, '•'), t('teaching.legendSubmitted')]),
+    el('span', { class: 'legend__item' }, [el('span', { class: 'chip' }, '—'), t('teaching.legendMissing')]),
+  ]);
+
   const tbody = el('tbody');
-  const table = el('table', { class: 'dtable' }, [
+  const table = el('table', { class: 'dtable dtable--matrix' }, [
     el(
       'thead',
       {},
@@ -829,21 +858,32 @@ function gradebookBody({ state, app, persona, getQuery, setQuery }) {
             const learner = getPersona(studentId);
             const cells = homework.map((item) => {
               const submission = submissionFor(submissions, item.id, studentId);
-              const percent = scorePercent(submission);
-              const label = submission ? (percent == null ? t('teaching.submitted') : `${percent}%`) : '—';
-              const cell = submission
-                ? el(
-                    'button',
-                    {
-                      class: `chip${percent != null ? ' is-on' : ''}`,
-                      type: 'button',
-                      title: t('teaching.viewSubmission'),
-                      onClick: () => app.openViewSubmission(submission.id),
-                    },
-                    label,
-                  )
-                : el('span', { class: 'chip', title: item.title }, label);
-              return el('td', {}, cell);
+              const graded = submission?.status === SUBMISSION_STATUS.GRADED;
+              const tooltip = `${item.title} · ${
+                submission ? `${submission.score ?? '—'}/${submission.maxScore ?? '—'}` : t('common.badge.notSubmitted')
+              }`;
+              let cell;
+              if (graded) {
+                cell = el(
+                  'button',
+                  {
+                    class: 'chip is-on',
+                    type: 'button',
+                    title: tooltip,
+                    onClick: () => app.openViewSubmission(submission.id),
+                  },
+                  String(submission.score ?? '—'),
+                );
+              } else if (submission) {
+                cell = el(
+                  'button',
+                  { class: 'chip', type: 'button', title: tooltip, onClick: () => app.openViewSubmission(submission.id) },
+                  '•',
+                );
+              } else {
+                cell = el('span', { class: 'chip', title: tooltip }, '—');
+              }
+              return el('td', { class: 'cell-score' }, cell);
             });
             const average = averagePercent(
               homework.map((item) => submissionFor(submissions, item.id, studentId)).filter(Boolean),
@@ -868,5 +908,5 @@ function gradebookBody({ state, app, persona, getQuery, setQuery }) {
   });
   draw();
 
-  return [picker, header, el('div', { class: 'toolbar' }, [queryInput]), listWrap];
+  return [toolbar, summaryWrap, legend, listWrap];
 }

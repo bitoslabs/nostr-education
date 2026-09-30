@@ -1,4 +1,5 @@
 import { el } from '../../core/dom.js';
+import { formatDate } from '../../core/time.js';
 import { t } from '../../services/i18n/index.js';
 import { icon } from './icon.js';
 
@@ -117,6 +118,26 @@ export function emptyState(message) {
 
 export function pageTitle(text) {
   return el('h1', {}, text);
+}
+
+// A single labelled timestamp, e.g. "Submitted Sep 30, 2026". Accepts ISO
+// strings and raw Nostr `created_at` seconds; renders nothing without a time.
+export function timeStamp(key, value, { className = 'muted small' } = {}) {
+  const date = formatDate(value);
+  if (!date) return null;
+  return el('span', { class: className }, t(key, { date }));
+}
+
+// "Created {date} · Updated {date}"; the updated half is omitted when the
+// record was never edited, so a fresh item shows only its creation date.
+export function dateMeta(createdAt, updatedAt, { className = 'muted small' } = {}) {
+  const created = formatDate(createdAt);
+  const updated = formatDate(updatedAt);
+  const parts = [];
+  if (created) parts.push(t('common.time.created', { date: created }));
+  if (updated && updated !== created) parts.push(t('common.time.updated', { date: updated }));
+  if (!parts.length) return null;
+  return el('span', { class: className }, parts.join(' · '));
 }
 
 export function segmented(items, activeId, onSelect, { label = t('common.a11y.options'), columns } = {}) {

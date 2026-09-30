@@ -39,6 +39,9 @@ export default {
   submitNewVersion: 'Submit new version',
   submitHomework: 'Submit homework',
   homeworkMeta: '{title} · due {due} · out of {maxScore}',
+  dueMeta: 'Due {due}',
+  maxMeta: 'Out of {maxScore}',
+  submittedAt: 'Submitted {date}',
   late: 'late',
   join: {
     backToWelcome: 'Back to welcome',

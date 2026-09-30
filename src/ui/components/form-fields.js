@@ -10,6 +10,14 @@ export function formSection(title, children) {
   ]);
 }
 
+// A visually separated, red-tinted variant of formSection for irreversible
+// actions (archive, close, delete), so they never sit flush with save/cancel.
+export function dangerSection(title, children) {
+  const node = formSection(title, children);
+  node.classList.add('form-section--danger');
+  return node;
+}
+
 export function fieldHead(labelText, htmlFor, counter) {
   return el('div', { class: 'field-head' }, [
     el('label', { for: htmlFor }, labelText),

@@ -2306,6 +2306,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         })),
       status,
       createdBy: persona.id,
+      createdAt: new Date().toISOString(),
     };
     update({
       homework: [item, ...(current.homework ?? [])],
@@ -2453,7 +2454,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       maxScore: item.maxScore,
       feedback: '',
       late,
-      submittedAt: 'now',
+      submittedAt: new Date().toISOString(),
       gradedAt: null,
       gradedBy: null,
     };
@@ -2471,7 +2472,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       files: attachments,
       maxScore: item.maxScore,
       late,
-      submittedAt: 'now',
+      submittedAt: submission.submittedAt,
     };
     update({
       submissions: existing
@@ -2726,6 +2727,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       dueAt: dueAt === undefined ? item.dueAt ?? null : String(dueAt ?? '').trim() || null,
       maxScore: max,
       rubric: criteria,
+      updatedAt: new Date().toISOString(),
     };
     update({
       homework: (current.homework ?? []).map((entry) => (entry.id === homeworkId ? updated : entry)),
@@ -2764,7 +2766,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       toast(t('actions.onlyTeacherOrOwnerChangeHomework'), 'warn');
       return false;
     }
-    const updated = { ...item, status };
+    const updated = { ...item, status, updatedAt: new Date().toISOString() };
     update({
       homework: (current.homework ?? []).map((entry) => (entry.id === homeworkId ? updated : entry)),
       events: [

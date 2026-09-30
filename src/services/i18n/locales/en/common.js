@@ -43,6 +43,10 @@ export default {
   spinner: {
     working: 'Working…',
   },
+  time: {
+    created: 'Created {date}',
+    updated: 'Updated {date}',
+  },
   badge: {
     enrollmentPending: 'enrollment pending',
     enrolled: 'enrolled ✓',

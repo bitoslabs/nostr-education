@@ -217,7 +217,7 @@ async function applyIncomingRecord(event, seen) {
   if (event.kind === GIFT_WRAP_KIND) {
     const unwrapped = await unwrapGiftWrap({ wrap: event, signer: active });
     if (!unwrapped) return;
-    const record = decodeRecord(unwrapped.content, []);
+    const record = decodeRecord(unwrapped.content, [], unwrapped.createdAt ?? event.created_at);
     if (!record) return;
     const patch = applyRecord(store.getState(), record);
     if (patch) store.setState(patch);
@@ -237,7 +237,7 @@ async function applyIncomingRecord(event, seen) {
   } else if (event.pubkey !== me) {
     return;
   }
-  const record = decodeRecord(content, event.tags);
+  const record = decodeRecord(content, event.tags, event.created_at);
   if (!record) return;
   const patch = applyRecord(store.getState(), record);
   if (patch) store.setState(patch);

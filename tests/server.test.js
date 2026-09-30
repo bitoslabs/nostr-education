@@ -25,8 +25,8 @@ function seedStore() {
   });
 }
 
-async function withServer(run) {
-  const server = createApiServer({ store: seedStore() });
+async function withServer(run, store = seedStore()) {
+  const server = createApiServer({ store });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const { port } = server.address();
@@ -210,6 +210,31 @@ test('only an enrolled learner can submit and resubmit; versions are kept', asyn
     });
     assert.equal(teacherDenied.status, 403);
   });
+});
+
+test('a closed homework rejects new submissions and resubmissions', async () => {
+  const closed = createStore({
+    academies: [{ id: 'org1', ownerId: owner, name: 'Northgate' }],
+    classrooms: [{ id: 'cls1', academyId: 'org1', teacherId: teacher, subjectId: 'sub1' }],
+    homework: [{ id: 'hw1', classroomId: 'cls1', status: 'closed', maxScore: 100 }],
+    submissions: [{ id: 'sub1', classroomId: 'cls1', homeworkId: 'hw1', studentId: learner, maxScore: 100 }],
+    enrollments: [{ id: 'enr1', classroomId: 'cls1', learnerId: learner, status: 'approved' }],
+  });
+  await withServer(async (base) => {
+    const fresh = await call(base, '/api/homework/hw1/submissions', {
+      key: learnerKey,
+      body: { text: 'too late' },
+    });
+    assert.equal(fresh.status, 422);
+    assert.equal(fresh.json.error, 'homework_closed');
+
+    const resubmit = await call(base, '/api/submissions/sub1/versions', {
+      key: learnerKey,
+      body: { text: 'still trying' },
+    });
+    assert.equal(resubmit.status, 422);
+    assert.equal(resubmit.json.error, 'homework_closed');
+  }, closed);
 });
 
 test('finalize and correction append assessment revisions', async () => {

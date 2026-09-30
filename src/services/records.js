@@ -27,7 +27,7 @@ export function encodeRecord(type, id, payload = {}) {
   return JSON.stringify({ ...body, v: 1, type, id });
 }
 
-export function decodeRecord(content, tags = []) {
+export function decodeRecord(content, tags = [], createdAt = null) {
   try {
     const parsed = JSON.parse(content);
     if (!parsed || typeof parsed !== 'object') return null;
@@ -46,6 +46,11 @@ export function decodeRecord(content, tags = []) {
       ...(taggedType ? { type: taggedType } : {}),
       ...(taggedId ? { id: taggedId } : {}),
     };
+    // The raw event's `created_at` (unix seconds) is the authoritative publish
+    // time; keep it alongside the payload so the UI can show when the record
+    // was actually sent, not when a client happened to write the field.
+    const eventTime = Number(createdAt);
+    if (Number.isFinite(eventTime) && eventTime > 0) record.eventCreatedAt = eventTime;
     return record.type && record.id ? record : null;
   } catch {
     return null;

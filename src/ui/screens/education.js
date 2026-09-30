@@ -16,7 +16,7 @@ import {
 import { completionBadge, evaluateCompletion } from '../../domain/completion.js';
 import { MEMBERSHIP, REQUEST_STATUS, membershipBadge } from '../../domain/school.js';
 import { t } from '../../services/i18n/index.js';
-import { button, emptyState, fileChip, pageTitle } from '../components/primitives.js';
+import { button, dateMeta, emptyState, fileChip, pageTitle, timeStamp } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
 
 const ACADEMY_TYPE_KEYS = Object.freeze({
@@ -231,17 +231,22 @@ function homeworkRow(state, app, persona, item) {
           ? t('education.submitNewVersion')
           : t('education.submitHomework');
 
-  const children = [
-    el('div', { class: 'crow' }, [
-      el('span', { class: 'who' }, t('education.homeworkMeta', { title: item.title, due: item.due, maxScore: item.maxScore })),
-      !open
-        ? statusBadge(status ? t(status.key, status.params) : t('common.badge.closed'), status?.tone ?? 'muted')
-        : null,
-    ]),
-    item.instructions ? el('p', { class: 'muted small' }, item.instructions) : null,
-    item.cover
-      ? el('img', { src: item.cover, alt: '', style: { maxWidth: '100%', borderRadius: '10px' } })
+  const head = el('div', { class: 'hw__head' }, [
+    el('span', { class: 'hw__title' }, item.title),
+    el('span', { class: 'hw__spacer' }),
+    !open
+      ? statusBadge(status ? t(status.key, status.params) : t('common.badge.closed'), status?.tone ?? 'muted')
       : null,
+  ]);
+
+  const meta = el('div', { class: 'hw__meta' }, [
+    el('span', {}, t('education.dueMeta', { due: item.due })),
+    Number(item.maxScore) > 0 ? el('span', {}, t('education.maxMeta', { maxScore: item.maxScore })) : null,
+    dateMeta(item.eventCreatedAt ?? item.createdAt, item.eventUpdatedAt ?? item.updatedAt, { className: '' }),
+  ]);
+
+  const details = [
+    item.instructions ? el('p', { class: 'muted small' }, item.instructions) : null,
     item.link
       ? el('p', {}, el('a', { href: item.link, target: '_blank', rel: 'noreferrer' }, item.link))
       : null,
@@ -254,9 +259,30 @@ function homeworkRow(state, app, persona, item) {
           ),
         )
       : null,
+  ].filter(Boolean);
+
+  const body =
+    item.cover || details.length
+      ? el(
+          'div',
+          { class: item.cover && details.length ? 'hw__grid hw__grid--media' : 'hw__grid' },
+          [
+            item.cover ? el('img', { class: 'hw__thumb', src: item.cover, alt: '', loading: 'lazy' }) : null,
+            details.length ? el('div', { class: 'hw__text' }, details) : null,
+          ],
+        )
+      : null;
+
+  const children = [
+    head,
+    meta,
+    body,
     el('div', { class: 'arow' }, [
       statusBadge(t(token.key, token.params), token.tone),
       submission?.late ? statusBadge(t('education.late'), 'warn') : null,
+      submission
+        ? timeStamp('education.submittedAt', submission.submittedEventAt ?? submission.submittedAt)
+        : null,
       button(label, {
         variant: graded ? 'default' : 'gold',
         small: true,
@@ -287,5 +313,5 @@ function homeworkRow(state, app, persona, item) {
   if ((graded || revision) && submission.feedback) {
     children.push(el('blockquote', { class: 'quote' }, `"${submission.feedback}"`));
   }
-  return el('div', {}, children);
+  return el('div', { class: 'hw' }, children);
 }
