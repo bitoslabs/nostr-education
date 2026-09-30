@@ -120,6 +120,8 @@ export function applyRecord(state, record) {
               ...submission,
               version: incoming,
               text: record.text ?? submission.text,
+              link: record.link ?? submission.link ?? null,
+              files: record.files ?? submission.files ?? [],
               submittedAt: record.submittedAt ?? submission.submittedAt,
             };
           })
@@ -130,6 +132,8 @@ export function applyRecord(state, record) {
               classroomId: record.classroomId ?? null,
               studentId: record.studentId ?? null,
               text: record.text ?? '',
+              link: record.link ?? null,
+              files: record.files ?? [],
               version: Number(record.version) || 1,
               status: 'submitted',
               score: null,

@@ -663,6 +663,40 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     }
   }
 
+  async function uploadAttachment(file, { server } = {}) {
+    if (!file) return null;
+    if (!signer.canSign()) {
+      toast(t('actions.connectSignerToUpload'), 'warn');
+      return null;
+    }
+    const target = normalizeBlossomServer(server ?? state().blossomServer);
+    try {
+      toast(t('actions.uploadingFile'), 'info');
+      const result = await uploadBlob({
+        blob: file,
+        server: target,
+        signer,
+        title: t('actions.uploadFile'),
+        action: el('span', {}, [
+          el('strong', {}, t('actions.uploadToBlossom')),
+          el('br'),
+          `${String(file.name ?? 'file')} · ${Math.max(1, Math.round((file.size ?? 0) / 1024))} KB`,
+        ]),
+      });
+      if (!result) return null;
+      toast(t('actions.fileUploaded'), 'ok');
+      return {
+        name: String(file.name ?? 'file'),
+        url: result.url,
+        type: file.type ?? null,
+        size: file.size ?? null,
+      };
+    } catch (error) {
+      toast(error?.message ?? t('actions.fileUploadFailed'), 'warn');
+      return null;
+    }
+  }
+
   function setBlossomServer(server) {
     update({ blossomServer: normalizeBlossomServer(server) });
   }
@@ -2356,7 +2390,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     );
   }
 
-  function submitHomework({ homeworkId, text } = {}) {
+  function submitHomework({ homeworkId, text, link = '', files = [] } = {}) {
     const current = state();
     const item = (current.homework ?? []).find((entry) => entry.id === homeworkId);
     if (!item) return false;
@@ -2376,8 +2410,17 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     }
     const persona = getPersona(current.personaId);
     const body = String(text ?? '').trim();
-    if (!body) {
-      toast(t('actions.writeAnswerFirst'), 'warn');
+    const linkUrl = normalizeUrl(link);
+    const attachments = (Array.isArray(files) ? files : [])
+      .filter((file) => file?.url)
+      .map((file) => ({
+        name: String(file.name ?? 'file'),
+        url: String(file.url),
+        type: file.type ?? null,
+        size: file.size ?? null,
+      }));
+    if (!body && !linkUrl && !attachments.length) {
+      toast(t('actions.writeAnswerOrAttach'), 'warn');
       return false;
     }
     const existing = submissionFor(current.submissions ?? [], homeworkId, persona.id);
@@ -2388,6 +2431,8 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       classroomId: item.classroomId,
       studentId: persona.id,
       text: body,
+      link: linkUrl,
+      files: attachments,
       version,
       status: SUBMISSION_STATUS.SUBMITTED,
       score: null,
@@ -2409,6 +2454,9 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       studentId: persona.id,
       version,
       text: body,
+      link: linkUrl,
+      files: attachments,
+      maxScore: item.maxScore,
       late,
       submittedAt: 'now',
     };
@@ -2473,7 +2521,9 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const rubric = normalizeRubric(homeworkItem?.rubric);
     let sheet = null;
     let numeric = Number(score);
-    let maxScore = submission.maxScore;
+    // Older submission versions did not carry maxScore; fall back to the
+    // homework's max so grading never rejects every value.
+    let maxScore = submission.maxScore ?? homeworkItem?.maxScore ?? 100;
     if (rubric.length) {
       sheet = Array.isArray(scores) ? scores : [];
       if (!scoresComplete(sheet, rubric)) {
@@ -2482,8 +2532,8 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       }
       numeric = scoresTotal(sheet);
       maxScore = rubricMax(rubric);
-    } else if (!isValidScore(score, submission.maxScore)) {
-      toast(t('actions.enterScoreBetween', { max: submission.maxScore }), 'warn');
+    } else if (!isValidScore(score, maxScore)) {
+      toast(t('actions.enterScoreBetween', { max: maxScore }), 'warn');
       return false;
     }
     const persona = getPersona(current.personaId);
@@ -3636,6 +3686,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     claimHandle,
     updateProfile,
     uploadImage,
+    uploadAttachment,
     setBlossomServer,
     setMode,
     setLocale,

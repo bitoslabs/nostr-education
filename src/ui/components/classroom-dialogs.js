@@ -10,7 +10,7 @@ import {
 import { normalizePolicy } from '../../domain/completion.js';
 import { buildScoreSheet, normalizeRubric, rubricMax, scoresTotal } from '../../domain/rubric.js';
 import { t } from '../../services/i18n/index.js';
-import { button, noteBox } from './primitives.js';
+import { button, fileChip, noteBox } from './primitives.js';
 import { formFoot, formSection } from './form-fields.js';
 import { inviteLinkPanel } from './invite-dialog.js';
 import { statusBadge } from './status-badge.js';
@@ -564,6 +564,38 @@ export function renderSubmitHomework({ homeworkItem, submission, versions = [], 
   });
   if (submission?.text) body.value = submission.text;
 
+  const linkInput = el('input', {
+    type: 'url',
+    placeholder: t('teaching.placeholderLink'),
+    'aria-label': t('teaching.linkLabel'),
+  });
+  if (submission?.link) linkInput.value = submission.link;
+
+  const attachments = Array.isArray(submission?.files) ? [...submission.files] : [];
+  const chipRow = el('div', { class: 'files' });
+  const renderChips = () => chipRow.replaceChildren(...attachments.map((file) => fileChip(file.name)));
+  renderChips();
+
+  const fileInput = el('input', { type: 'file', multiple: true, hidden: true });
+  const attachBtn = button(t('teaching.attachFile'), { small: true, onClick: () => fileInput.click() });
+  let busy = false;
+  fileInput.addEventListener('change', async () => {
+    const picked = [...(fileInput.files ?? [])];
+    fileInput.value = '';
+    if (!picked.length || busy) return;
+    busy = true;
+    attachBtn.disabled = true;
+    for (const file of picked) {
+      const uploaded = await actions.uploadAttachment?.(file);
+      if (uploaded) {
+        attachments.push(uploaded);
+        renderChips();
+      }
+    }
+    busy = false;
+    attachBtn.disabled = false;
+  });
+
   return el('div', {}, [
     el('h2', {}, homeworkItem.title),
     el('p', { class: 'muted small' }, t('teaching.submitDueMeta', { due: homeworkItem.due, maxScore: homeworkItem.maxScore })),
@@ -579,15 +611,24 @@ export function renderSubmitHomework({ homeworkItem, submission, versions = [], 
     historyBlock(versions),
     el('label', {}, t('teaching.yourAnswer')),
     body,
+    el('label', {}, t('teaching.linkLabel')),
+    linkInput,
+    el('div', { class: 'arow' }, [attachBtn, fileInput]),
+    chipRow,
     error,
     el('div', { class: 'dlg-foot' }, [
       button(t('common.actions.cancel'), { onClick: close }),
       button(submission ? t('teaching.submitNewVersion') : t('teaching.submitHomework'), {
         variant: 'gold',
         onClick: () => {
-          const ok = actions.submitHomework({ homeworkId: homeworkItem.id, text: body.value });
+          const ok = actions.submitHomework({
+            homeworkId: homeworkItem.id,
+            text: body.value,
+            link: linkInput.value,
+            files: attachments,
+          });
           if (ok) close();
-          else error.textContent = t('teaching.errAnswerRequired');
+          else error.textContent = t('teaching.errAnswerOrAttachment');
         },
       }),
     ]),
@@ -606,6 +647,7 @@ export function renderGradeSubmission({
   const error = errorLine();
   const criteria = normalizeRubric(homeworkItem.rubric);
   const usesRubric = criteria.length > 0;
+  const maxScore = homeworkItem.maxScore ?? submission.maxScore ?? 100;
   const rubricInputs = criteria.map((criterion, index) => {
     const existing = (submission.scores ?? [])[index];
     return el('input', {
@@ -619,7 +661,7 @@ export function renderGradeSubmission({
   const score = el('input', {
     type: 'number',
     min: '0',
-    max: String(submission.maxScore),
+    max: String(maxScore),
     value: submission.score == null ? '' : String(submission.score),
     'aria-label': t('teaching.ariaScore'),
   });
@@ -639,7 +681,7 @@ export function renderGradeSubmission({
           rubricInputs[index],
         ]),
       )
-    : el('div', {}, [el('label', {}, t('teaching.scoreRange', { max: submission.maxScore })), score]);
+    : el('div', {}, [el('label', {}, t('teaching.scoreRange', { max: maxScore })), score]);
 
   const saveScore = () => {
     if (usesRubric) {
@@ -664,7 +706,7 @@ export function renderGradeSubmission({
       feedback: feedback.value,
     });
     if (ok) close();
-    else error.textContent = t('teaching.errScoreRange', { max: submission.maxScore });
+    else error.textContent = t('teaching.errScoreRange', { max: maxScore });
   };
 
   const requestRevision = () => {
@@ -680,10 +722,22 @@ export function renderGradeSubmission({
       { class: 'muted small' },
       usesRubric
         ? t('teaching.rubricOutOf', { title: homeworkItem.title, max: rubricMax(criteria) })
-        : t('teaching.outOf', { title: homeworkItem.title, max: submission.maxScore }),
+        : t('teaching.outOf', { title: homeworkItem.title, max: maxScore }),
     ),
     el('h3', {}, t('teaching.submissionHeading')),
     el('blockquote', { class: 'quote' }, submission.text || t('teaching.noText')),
+    submission.link
+      ? el(
+          'p',
+          {},
+          el('a', { href: submission.link, target: '_blank', rel: 'noreferrer' }, submission.link),
+        )
+      : null,
+    submission.files?.length
+      ? el('div', { class: 'files' }, submission.files.map((file) =>
+          el('a', { href: file.url, target: '_blank', rel: 'noreferrer' }, fileChip(file.name)),
+        ))
+      : null,
     versions.length > 1
       ? el(
           'p',

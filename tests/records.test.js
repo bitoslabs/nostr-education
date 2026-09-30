@@ -331,6 +331,26 @@ test('isPublicRecord only accepts catalog record types', () => {
   assert.equal(isPublicRecord(null), false);
 });
 
+test('a submission version carries max score, link, and attachments', () => {
+  const patch = applyRecord(EMPTY, {
+    type: 'submission-ver',
+    id: 'v1',
+    submissionId: 's1',
+    homeworkId: 'hw1',
+    classroomId: 'c1',
+    studentId: 'stu1',
+    version: 1,
+    text: '',
+    link: 'https://example.com/answer',
+    files: [{ name: 'answer.pdf', url: 'https://cdn/answer.pdf' }],
+    maxScore: 80,
+  });
+  const submission = patch.submissions[0];
+  assert.equal(submission.maxScore, 80);
+  assert.equal(submission.link, 'https://example.com/answer');
+  assert.equal(submission.files[0].name, 'answer.pdf');
+});
+
 test('applyRecord appends submission versions and keeps every version', () => {
   const base = { ...EMPTY, submissions: [], submissionVersions: [] };
   const v1 = applyRecord(base, {

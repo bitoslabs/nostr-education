@@ -7,6 +7,7 @@ import {
   averagePercent,
   classroomsForAcademy,
   classroomsForTeacher,
+  enrolledAccountIds,
   homeworkForClassroom,
   homeworkStatusBadge,
   reviewCounts,
@@ -64,6 +65,14 @@ function createAcademyCard(app) {
   ]);
 }
 
+// The roster a teacher can act on: on-device studentIds plus learners who
+// self-enrolled with a capability (their ids never sync into the class record).
+function classroomRoster(state, room) {
+  return [
+    ...new Set([...(room.studentIds ?? []), ...enrolledAccountIds(state.capabilities ?? [], room.id)]),
+  ];
+}
+
 function scopedClassrooms(state, persona) {
   const owned = state.academies?.[persona.id];
   if (persona.role === ROLE.OWNER && owned) {
@@ -83,7 +92,7 @@ function classesBody(state, app, persona) {
 function classCard(state, app, room) {
   const subject = subjectById(state.subjects ?? [], room.subjectId);
   const homework = homeworkForClassroom(state.homework ?? [], room.id);
-  const students = room.studentIds ?? [];
+  const students = classroomRoster(state, room);
 
   return el('div', { class: 'card card--accent' }, [
     el('div', { class: 'crow' }, [
@@ -229,7 +238,7 @@ function gradebookBody(state, app, persona) {
   const homework = homeworkForClassroom(state.homework ?? [], room.id).filter(
     (item) => item.status !== HOMEWORK_STATUS.DRAFT,
   );
-  const students = room.studentIds ?? [];
+  const students = classroomRoster(state, room);
   const submissions = state.submissions ?? [];
   const classAverage = averagePercent(submissionsForClassroom(submissions, room.id));
 
