@@ -2644,6 +2644,26 @@ button.chip:hover {
   white-space: nowrap;
 }
 
+.points {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Live rubric total in the grading dialog. */
+.rubric-total {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.rubric-total b {
+  font-size: 1.2rem;
+}
+
 /* ---------- accordion (collapsible class sections) ---------- */
 .acc {
   background: var(--surface);

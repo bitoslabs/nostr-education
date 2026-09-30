@@ -790,15 +790,31 @@ export function renderGradeSubmission({
   });
   if (submission.feedback) feedback.value = submission.feedback;
 
+  // Live total: the sum is otherwise only computed on save, so without this the
+  // teacher cannot see the running score while filling in rubric criteria.
+  const rubricTotalValue = el('b', {}, '0');
+  const rubricTotal = el('p', { class: 'rubric-total' }, [
+    el('span', { class: 'muted small' }, t('teaching.rubricTotalLabel')),
+    rubricTotalValue,
+    el('span', { class: 'muted small' }, ` / ${rubricMax(criteria)}`),
+  ]);
+  const updateRubricTotal = () => {
+    const sum = rubricInputs.reduce((total, input) => total + (Number(input.value) || 0), 0);
+    rubricTotalValue.textContent = String(Math.round(sum * 100) / 100);
+  };
+  if (usesRubric) {
+    for (const input of rubricInputs) input.addEventListener('input', updateRubricTotal);
+    updateRubricTotal();
+  }
+
   const scoringBlock = usesRubric
-    ? el(
-        'div',
-        {},
-        criteria.map((criterion, index) => [
+    ? el('div', {}, [
+        ...criteria.flatMap((criterion, index) => [
           el('label', {}, t('teaching.criterionRange', { label: criterion.label, max: criterion.max })),
           rubricInputs[index],
         ]),
-      )
+        rubricTotal,
+      ])
     : el('div', {}, [el('label', {}, t('teaching.scoreRange', { max: maxScore })), score]);
 
   const saveScore = () => {

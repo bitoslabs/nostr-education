@@ -29,6 +29,7 @@ export function renderTeaching({ app, state }) {
   let studentQuery = '';
   let studentSort = 'name';
   let studentClass = 'all';
+  let studentSubject = 'all';
   let assessQuery = '';
   let assessClass = 'all';
   let gradebookQuery = '';
@@ -70,6 +71,10 @@ export function renderTeaching({ app, state }) {
         getClass: () => studentClass,
         setClass: (value) => {
           studentClass = value;
+        },
+        getSubject: () => studentSubject,
+        setSubject: (value) => {
+          studentSubject = value;
         },
       });
     } else if (snapshot.roleTab === 'gradebook') {
@@ -139,17 +144,23 @@ function scopedRoster(state, persona) {
     const homework = homeworkForClassroom(state.homework ?? [], room.id).filter(
       (item) => item.status !== HOMEWORK_STATUS.DRAFT,
     );
+    const subject = subjectById(state.subjects ?? [], room.subjectId);
     for (const studentId of classroomRoster(state, room)) {
       const submissions = homework
         .map((item) => submissionFor(state.submissions ?? [], item.id, studentId))
         .filter(Boolean);
+      const graded = submissions.filter((submission) => submission.status === SUBMISSION_STATUS.GRADED);
       entries.push({
         studentId,
         classroomId: room.id,
         classroomName: room.name,
+        subjectId: room.subjectId ?? null,
+        subjectName: subject?.name ?? null,
         homeworkCount: homework.length,
         submitted: submissions.length,
-        graded: submissions.filter((submission) => submission.status === SUBMISSION_STATUS.GRADED).length,
+        graded: graded.length,
+        score: graded.reduce((sum, submission) => sum + (Number(submission.score) || 0), 0),
+        max: graded.reduce((sum, submission) => sum + (Number(submission.maxScore) || 0), 0),
         average: averagePercent(submissions),
       });
     }
@@ -161,11 +172,14 @@ function rosterName(entry) {
   return getPersona(entry.studentId).displayName ?? '';
 }
 
-function filterRoster(entries, { query = '', sort = 'name', classId = 'all' } = {}) {
+function filterRoster(entries, { query = '', sort = 'name', classId = 'all', subjectId = 'all' } = {}) {
   const needle = String(query).trim().toLowerCase();
   let list = classId && classId !== 'all'
     ? entries.filter((entry) => entry.classroomId === classId)
     : [...entries];
+  if (subjectId && subjectId !== 'all') {
+    list = list.filter((entry) => (entry.subjectId ?? 'none') === subjectId);
+  }
   if (needle) {
     list = list.filter((entry) => {
       const learner = getPersona(entry.studentId);
@@ -192,7 +206,21 @@ function rosterSummary(entries) {
     average: averages.length ? Math.round(averages.reduce((sum, value) => sum + value, 0) / averages.length) : null,
     graded: entries.reduce((sum, entry) => sum + entry.graded, 0),
     total: entries.reduce((sum, entry) => sum + entry.homeworkCount, 0),
+    score: entries.reduce((sum, entry) => sum + (entry.score ?? 0), 0),
+    max: entries.reduce((sum, entry) => sum + (entry.max ?? 0), 0),
   };
+}
+
+// Per-subject rollup of the currently filtered roster.
+function subjectSummaries(entries) {
+  const groups = new Map();
+  for (const entry of entries) {
+    const key = entry.subjectId ?? 'none';
+    const group = groups.get(key) ?? { id: key, name: entry.subjectName ?? t('teaching.noSubject'), rows: [] };
+    group.rows.push(entry);
+    groups.set(key, group);
+  }
+  return [...groups.values()].map((group) => ({ id: group.id, name: group.name, ...rosterSummary(group.rows) }));
 }
 
 function rosterStat(value, label) {
@@ -224,6 +252,13 @@ function rosterTableRow(app, entry) {
     el(
       'td',
       {},
+      entry.max > 0
+        ? el('span', { class: 'points' }, t('teaching.pointsOf', { score: entry.score, max: entry.max }))
+        : el('span', {}, '—'),
+    ),
+    el(
+      'td',
+      {},
       statusBadge(t('teaching.rosterProgress', { done: entry.graded, total: entry.homeworkCount }), complete ? 'ok' : 'info'),
     ),
     el(
@@ -240,7 +275,19 @@ function rosterTableRow(app, entry) {
   ]);
 }
 
-function studentsBody({ state, app, roster, getQuery, setQuery, getSort, setSort, getClass, setClass }) {
+function studentsBody({
+  state,
+  app,
+  roster,
+  getQuery,
+  setQuery,
+  getSort,
+  setSort,
+  getClass,
+  setClass,
+  getSubject,
+  setSubject,
+}) {
   const classFilter = el(
     'select',
     { 'aria-label': t('teaching.filterClass') },
@@ -250,6 +297,16 @@ function studentsBody({ state, app, roster, getQuery, setQuery, getSort, setSort
         ([id, name]) => ({ id, label: name }),
       ),
     ].map((option) => el('option', { value: option.id, selected: option.id === getClass() }, option.label)),
+  );
+  const subjectFilter = el(
+    'select',
+    { 'aria-label': t('teaching.filterSubject') },
+    [
+      { id: 'all', label: t('teaching.allSubjects') },
+      ...[...new Map(roster.map((entry) => [entry.subjectId ?? 'none', entry.subjectName ?? t('teaching.noSubject')])).entries()].map(
+        ([id, name]) => ({ id, label: name }),
+      ),
+    ].map((option) => el('option', { value: option.id, selected: option.id === getSubject() }, option.label)),
   );
   const queryInput = el('input', {
     type: 'search',
@@ -268,6 +325,32 @@ function studentsBody({ state, app, roster, getQuery, setQuery, getSort, setSort
   );
 
   const summaryWrap = el('div', { class: 'statgrid' });
+  const subjectTbody = el('tbody');
+  const subjectWrap = el(
+    'div',
+    { class: 'dtable-wrap' },
+    el('table', { class: 'dtable' }, [
+      el(
+        'thead',
+        {},
+        el(
+          'tr',
+          {},
+          [
+            t('teaching.colSubject'),
+            t('teaching.colLearners'),
+            t('teaching.colAverage'),
+            t('teaching.colPoints'),
+            t('teaching.colProgress'),
+          ].map(
+            (label) => el('th', {}, label),
+          ),
+        ),
+      ),
+      subjectTbody,
+    ]),
+  );
+  const subjectHeading = el('h3', { class: 'muted small' }, t('teaching.bySubject'));
   const tbody = el('tbody');
   const table = el('table', { class: 'dtable' }, [
     el(
@@ -281,6 +364,7 @@ function studentsBody({ state, app, roster, getQuery, setQuery, getSort, setSort
           t('teaching.colHandle'),
           t('teaching.colClass'),
           t('teaching.colAverage'),
+          t('teaching.colScore'),
           t('teaching.colProgress'),
           '',
         ].map((label) => el('th', {}, label)),
@@ -296,6 +380,7 @@ function studentsBody({ state, app, roster, getQuery, setQuery, getSort, setSort
       query: getQuery(),
       sort: getSort(),
       classId: getClass(),
+      subjectId: getSubject(),
     });
     const summary = rosterSummary(entries);
     summaryWrap.replaceChildren(
@@ -304,6 +389,42 @@ function studentsBody({ state, app, roster, getQuery, setQuery, getSort, setSort
       rosterStat(summary.average == null ? '—' : `${summary.average}%`, t('teaching.statAverage')),
       rosterStat(`${summary.graded}/${summary.total}`, t('teaching.statGraded')),
     );
+
+    const subjects = subjectSummaries(entries);
+    subjectTbody.replaceChildren(
+      ...(subjects.length
+        ? subjects.map((group) =>
+            el('tr', {}, [
+              el('td', {}, el('span', { class: 'who' }, group.name)),
+              el('td', {}, String(group.learners)),
+              el(
+                'td',
+                {},
+                group.average == null
+                  ? el('span', {}, '—')
+                  : statusBadge(t('teaching.average', { n: group.average }), 'ok'),
+              ),
+              el(
+                'td',
+                {},
+                group.max > 0
+                  ? el('span', { class: 'points' }, t('teaching.pointsOf', { score: group.score, max: group.max }))
+                  : el('span', {}, '—'),
+              ),
+              el(
+                'td',
+                {},
+                statusBadge(
+                  t('teaching.rosterProgress', { done: group.graded, total: group.total }),
+                  group.total > 0 && group.graded === group.total ? 'ok' : 'info',
+                ),
+              ),
+            ]),
+          )
+        : [el('tr', {}, el('td', { colspan: '5', class: 'muted small' }, t('teaching.rosterEmpty')))]),
+    );
+    subjectHeading.hidden = !subjects.length;
+    subjectWrap.hidden = !subjects.length;
     tbody.replaceChildren(
       ...(entries.length
         ? entries.map((entry) => rosterTableRow(app, entry))
@@ -311,15 +432,16 @@ function studentsBody({ state, app, roster, getQuery, setQuery, getSort, setSort
             el(
               'tr',
               {},
-              el('td', { colspan: '6', class: 'muted small' }, t('teaching.rosterEmpty')),
+              el('td', { colspan: '7', class: 'muted small' }, t('teaching.rosterEmpty')),
             ),
           ]),
     );
   };
 
-  for (const control of [classFilter, queryInput, sortSelect]) {
+  for (const control of [classFilter, subjectFilter, queryInput, sortSelect]) {
     control.addEventListener('change', () => {
       setClass(classFilter.value);
+      setSubject(subjectFilter.value);
       setQuery(queryInput.value);
       setSort(sortSelect.value);
       draw();
@@ -335,12 +457,15 @@ function studentsBody({ state, app, roster, getQuery, setQuery, getSort, setSort
   if (!roster.length) return [emptyState(t('teaching.emptyLearners'))];
 
   return [
-    summaryWrap,
     el('div', { class: 'toolbar' }, [
       toolbarField(t('teaching.filterLabel'), classFilter),
+      toolbarField(t('teaching.filterSubject'), subjectFilter),
       queryInput,
       toolbarField(t('teaching.sortLabel'), sortSelect),
     ]),
+    summaryWrap,
+    subjectHeading,
+    subjectWrap,
     listWrap,
   ];
 }
