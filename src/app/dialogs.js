@@ -30,6 +30,7 @@ import { noteBox } from '../ui/components/primitives.js';
 import { renderCropper } from '../ui/components/image-cropper.js';
 import { renderShare } from '../ui/components/share-dialog.js';
 import { renderSign } from '../ui/components/sign-drawer.js';
+import { t } from '../services/i18n/index.js';
 
 export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACTS }) {
   const handles = {};
@@ -53,7 +54,7 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     if (!item) return null;
     return openNamed('sign', {
       kind: 'drawer',
-      label: 'Review and sign',
+      label: t('actions.reviewAndSign'),
       content: renderSign({ item, actions, close: closeNamed('sign') }),
     });
   }
@@ -63,7 +64,7 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     const credential = state.credentials.find((entry) => entry.id === credentialId) ?? state.credentials[0];
     if (!credential) return null;
     return openNamed('share', {
-      label: 'Share access',
+      label: t('actions.shareAccess'),
       content: renderShare({
         credential,
         contacts,
@@ -79,19 +80,19 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     const roleNotice =
       persona.role === ROLE.TEACHER
         ? noteBox(
-            'Creating an academy makes you its owner and switches your workspace from Teaching to Organization. Classes assigned to you stay assigned.',
+            t('actions.creatingAcademyNotice'),
             'warn',
           )
         : null;
     return openNamed('academy', {
-      label: 'Create academy',
+      label: t('actions.createAcademy'),
       content: renderCreateAcademy({ actions, close: closeNamed('academy'), roleNotice }),
     });
   }
 
   function openInviteTeacher() {
     return openNamed('invite-teacher', {
-      label: 'Invite teacher',
+      label: t('actions.inviteTeacherTitle'),
       content: renderInviteTeacher({ actions, close: closeNamed('invite-teacher') }),
     });
   }
@@ -100,14 +101,14 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     const invite = actions.createInviteLink(role);
     if (!invite) return null;
     return openNamed('invite-link', {
-      label: 'Join link',
+      label: t('actions.joinLink'),
       content: renderInviteLink({ invite, actions, close: closeNamed('invite-link') }),
     });
   }
 
   function openCreateSubject() {
     return openNamed('subject', {
-      label: 'New subject',
+      label: t('actions.newSubject'),
       content: renderCreateSubject({ actions, close: closeNamed('subject') }),
     });
   }
@@ -116,7 +117,7 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     const subject = subjectById(store.getState().subjects ?? [], subjectId);
     if (!subject) return null;
     return openNamed('edit-subject', {
-      label: `Edit · ${subject.name}`,
+      label: t('actions.editNamed', { name: subject.name }),
       content: renderEditSubject({ subject, actions, close: closeNamed('edit-subject') }),
     });
   }
@@ -128,7 +129,7 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
       .map(getPersona)
       .filter((persona) => persona.role === ROLE.TEACHER);
     return openNamed('classroom', {
-      label: 'New classroom',
+      label: t('actions.newClassroom'),
       content: renderCreateClassroom({
         actions,
         close: closeNamed('classroom'),
@@ -147,7 +148,7 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
       .map(getPersona)
       .filter((persona) => persona.role === ROLE.TEACHER);
     return openNamed('manage-classroom', {
-      label: `Manage · ${classroom.name}`,
+      label: t('actions.manageNamed', { name: classroom.name }),
       content: renderManageClassroom({
         classroom,
         subjects: subjectsForAcademy(state.subjects ?? [], academy.id),
@@ -162,7 +163,7 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     const classroom = classroomById(store.getState().classrooms ?? [], classroomId);
     if (!classroom) return null;
     return openNamed('completion-policy', {
-      label: `Completion rules · ${classroom.name}`,
+      label: t('actions.completionRulesNamed', { name: classroom.name }),
       content: renderCompletionPolicy({ classroom, actions, close: closeNamed('completion-policy') }),
     });
   }
@@ -171,7 +172,7 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     const classroom = classroomById(store.getState().classrooms ?? [], classroomId);
     if (!classroom) return null;
     return openNamed('invite-student', {
-      label: `Invite learner · ${classroom.name}`,
+      label: t('actions.inviteLearnerNamed', { name: classroom.name }),
       content: renderInviteStudent({ classroom, actions, close: closeNamed('invite-student') }),
     });
   }
@@ -180,7 +181,7 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     const classroom = classroomById(store.getState().classrooms ?? [], classroomId);
     if (!classroom) return null;
     return openNamed('invite-class-teacher', {
-      label: `Invite teacher · ${classroom.name}`,
+      label: t('actions.inviteTeacherNamed', { name: classroom.name }),
       content: renderInviteClassTeacher({ classroom, actions, close: closeNamed('invite-class-teacher') }),
     });
   }
@@ -189,7 +190,7 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     const invite = actions.createClassLink(classroomId);
     if (!invite) return null;
     return openNamed('class-link', {
-      label: 'Class join link',
+      label: t('actions.classJoinLink'),
       content: el('div', {}, inviteLinkPanel({ invite, copyText: actions.copyText, actions, close: closeNamed('class-link') })),
     });
   }
@@ -200,7 +201,7 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     if (!classroom) return null;
     const subject = subjectById(state.subjects ?? [], classroom.subjectId);
     return openNamed('homework', {
-      label: `Post homework · ${classroom.name}`,
+      label: t('actions.postHomeworkNamed', { name: classroom.name }),
       content: renderCreateHomework({
         classroom,
         subject,
@@ -217,7 +218,7 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     const submission = submissionFor(state.submissions ?? [], homeworkId, state.personaId);
     const versions = versionsFor(state.submissionVersions ?? [], submission?.id);
     return openNamed('submit-homework', {
-      label: `Submit · ${homeworkItem.title}`,
+      label: t('actions.submitNamed', { name: homeworkItem.title }),
       content: renderSubmitHomework({
         homeworkItem,
         submission,
@@ -233,7 +234,7 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     const homeworkItem = (state.homework ?? []).find((entry) => entry.id === homeworkId);
     if (!homeworkItem) return null;
     return openNamed('manage-homework', {
-      label: `Manage · ${homeworkItem.title}`,
+      label: t('actions.manageNamed', { name: homeworkItem.title }),
       content: renderManageHomework({
         homeworkItem,
         actions,
@@ -248,10 +249,10 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     if (!submission) return null;
     const homeworkItem = (state.homework ?? []).find((entry) => entry.id === submission.homeworkId);
     return openNamed('grade', {
-      label: `Score · ${submission.id}`,
+      label: t('actions.scoreNamed', { name: submission.id }),
       content: renderGradeSubmission({
         submission,
-        homeworkItem: homeworkItem ?? { title: 'Homework' },
+        homeworkItem: homeworkItem ?? { title: t('actions.homeworkFallback') },
         learnerName: getPersona(submission.studentId).displayName,
         versions: versionsFor(state.submissionVersions ?? [], submission.id),
         revisions: assessmentRevisionsFor(state.assessmentRevisions ?? [], submission.id),
@@ -272,7 +273,7 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
         resolve(value);
       };
       const handle = overlay.open({
-        label: title ?? 'Crop image',
+        label: title ?? t('actions.cropImage'),
         content: renderCropper({
           imageUrl: url,
           aspect,
@@ -294,7 +295,7 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
 
   function openComposer() {
     return openNamed('composer', {
-      label: 'New post',
+      label: t('common.a11y.newPost'),
       content: renderComposer({
         close: closeNamed('composer'),
         onPost: (text, close) => {

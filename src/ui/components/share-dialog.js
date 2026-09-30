@@ -1,9 +1,16 @@
 import { el } from '../../core/dom.js';
 import { truncateNpub } from '../../domain/identity.js';
 import { resolveRecipient } from '../../domain/handle.js';
+import { t } from '../../services/i18n/index.js';
 import { button, noteBox } from './primitives.js';
 
 const DURATIONS = Object.freeze(['1 day', '7 days', '30 days']);
+
+const DURATION_KEYS = Object.freeze({
+  '1 day': 'credentials.share.duration1',
+  '7 days': 'credentials.share.duration7',
+  '30 days': 'credentials.share.duration30',
+});
 
 export function renderShare({ credential, contacts, actions, close }) {
   let resolved = null;
@@ -11,18 +18,18 @@ export function renderShare({ credential, contacts, actions, close }) {
 
   const confirmWrap = el('label', { class: 'check', hidden: true }, [
     el('input', { type: 'checkbox', onChange: (event) => { createButton.disabled = !event.target.checked; } }),
-    el('span', {}, 'I checked this recipient — this is who I mean.'),
+    el('span', {}, t('credentials.share.confirmRecipient')),
   ]);
 
   const result = el('div', { class: 'resolve', 'aria-live': 'polite' });
-  const createButton = button('Create grant', {
+  const createButton = button(t('credentials.share.createGrant'), {
     variant: 'gold',
     disabled: true,
     onClick: () => actions.createGrant(resolved, duration.value, close),
   });
 
   const duration = el('select', {}, DURATIONS.map((value) =>
-    el('option', { value, selected: value === '7 days' }, value),
+    el('option', { value, selected: value === '7 days' }, t(DURATION_KEYS[value])),
   ));
 
   function apply(next, node) {
@@ -35,7 +42,7 @@ export function renderShare({ credential, contacts, actions, close }) {
 
   const input = el('input', {
     type: 'text',
-    placeholder: '@handle or npub1…',
+    placeholder: t('credentials.share.inputPlaceholder'),
     autocomplete: 'off',
     spellcheck: 'false',
     onInput: (event) => {
@@ -47,8 +54,8 @@ export function renderShare({ credential, contacts, actions, close }) {
         case 'npub':
           needsConfirm.value = true;
           apply(outcome, el('p', { class: 'small' }, [
-            'Raw key — no verified handle. ',
-            el('strong', {}, 'Double-check it belongs to the right person.'),
+            t('credentials.share.rawKey'),
+            el('strong', {}, t('credentials.share.doubleCheck')),
           ]));
           break;
         case 'known':
@@ -59,34 +66,34 @@ export function renderShare({ credential, contacts, actions, close }) {
             ' · ',
             el('span', { class: 'mono' }, `@${outcome.handle}`),
             el('br'),
-            'A verified handle proves control of the key — not an endorsement.',
+            t('credentials.share.contactVerifiedNote'),
           ]));
           break;
         case 'lookalike':
           needsConfirm.value = true;
           apply(outcome, el('p', { class: 'warnbox' }, [
             '⚠ ',
-            el('strong', {}, `@${outcome.handle} is not @${outcome.near}`),
-            ' — different identities with similar-looking handles. Compare full keys or scan a QR from the person directly.',
+            el('strong', {}, t('credentials.share.lookalike', { handle: outcome.handle, near: outcome.near })),
+            t('credentials.share.lookalikeNote'),
           ]));
           break;
         default:
           needsConfirm.value = false;
-          apply(null, el('p', { class: 'small danger' }, '✕ No verified handle found. Check the spelling or paste their npub.'));
+          apply(null, el('p', { class: 'small danger' }, t('credentials.share.noHandleMatch')));
       }
     },
   });
 
   return [
-    el('h2', {}, 'Share access'),
+    el('h2', {}, t('credentials.share.title')),
     el('p', { class: 'muted small' }, `${credential.title} · ${credential.issuer.displayName} ✓`),
-    el('label', {}, 'Recipient'),
+    el('label', {}, t('credentials.share.recipient')),
     input,
     result,
     confirmWrap,
-    el('label', {}, 'Access expires'),
+    el('label', {}, t('credentials.share.accessExpires')),
     duration,
-    noteBox('You can revoke access at any time — already-downloaded copies cannot be recalled.'),
-    el('div', { class: 'dlg-foot' }, [button('Cancel', { onClick: close }), createButton]),
+    noteBox(t('credentials.share.revokeNote')),
+    el('div', { class: 'dlg-foot' }, [button(t('common.actions.cancel'), { onClick: close }), createButton]),
   ];
 }

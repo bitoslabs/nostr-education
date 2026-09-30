@@ -2,12 +2,13 @@ import { el } from '../../core/dom.js';
 import { bindScreen } from '../../core/reactive.js';
 import { getPersona } from '../../data/personas.js';
 import { isVisible } from '../../domain/feed.js';
+import { t } from '../../services/i18n/index.js';
 import { eventCard } from '../components/event-card.js';
 import { emptyState, pageTitle } from '../components/primitives.js';
 
 export function renderNotifications({ app, state }) {
   const list = el('div', { class: 'feed' });
-  const node = el('section', { class: 'screen' }, [pageTitle('Notifications'), list]);
+  const node = el('section', { class: 'screen' }, [pageTitle(t('notifications.title')), list]);
 
   function render(snapshot) {
     const persona = getPersona(snapshot.personaId);
@@ -20,7 +21,7 @@ export function renderNotifications({ app, state }) {
         ? events.map((event) =>
             eventCard(event, { persona, actions: app, enrollments: snapshot.enrollRequests }),
           )
-        : [emptyState('No workflow notifications.')]),
+        : [emptyState(t('notifications.empty'))]),
     );
   }
 

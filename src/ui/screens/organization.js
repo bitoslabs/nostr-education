@@ -1,27 +1,53 @@
 import { el } from '../../core/dom.js';
 import { bindScreen } from '../../core/reactive.js';
 import { findPersonaByKey, getPersona } from '../../data/personas.js';
-import { INVITE_STATUS, academyTypeLabel, inviteBadge } from '../../domain/academy.js';
+import { INVITE_STATUS, inviteBadge } from '../../domain/academy.js';
 import {
   CLASS_STATUS,
   classStatusBadge,
   classroomsForAcademy,
   subjectsForAcademy,
 } from '../../domain/classroom.js';
-import { deliveryCopy, deliveryTone, isDeliverySettled, staleCopy } from '../../domain/delivery.js';
+import { deliveryTone, isDeliverySettled } from '../../domain/delivery.js';
 import { truncateNpub } from '../../domain/identity.js';
 import { ROLE, pendingRequestCount, REQUEST_STATUS, requestBadge } from '../../domain/school.js';
+import { t } from '../../services/i18n/index.js';
 import { avatar, button, emptyState, noteBox, pageTitle, row, stat, tabs } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
 
 const ORG_TABS = Object.freeze([
-  { id: 'overview', label: 'Overview' },
-  { id: 'courses', label: 'Courses' },
-  { id: 'enrollment', label: 'Enrollment' },
-  { id: 'staff', label: 'Staff & roles' },
-  { id: 'sign', label: 'Sign queue' },
-  { id: 'network', label: 'Network' },
+  { id: 'overview', key: 'organization.tabs.overview' },
+  { id: 'courses', key: 'organization.tabs.courses' },
+  { id: 'enrollment', key: 'organization.tabs.enrollment' },
+  { id: 'staff', key: 'organization.tabs.staff' },
+  { id: 'sign', key: 'organization.tabs.sign' },
+  { id: 'network', key: 'organization.tabs.network' },
 ]);
+
+const ACADEMY_TYPE_KEYS = Object.freeze({
+  school: 'organization.academyTypes.school',
+  college: 'organization.academyTypes.college',
+  training: 'organization.academyTypes.training',
+});
+
+const RELAY_MODE_KEYS = Object.freeze({
+  read: 'organization.relayMode.read',
+  write: 'organization.relayMode.write',
+  'read+write': 'organization.relayMode.readWrite',
+});
+
+const RELAY_HEALTH_KEYS = Object.freeze({
+  connected: 'organization.relayHealth.connected',
+  connecting: 'organization.relayHealth.connecting',
+  offline: 'organization.relayHealth.offline',
+});
+
+const DELIVERY_STATE_KEYS = Object.freeze({
+  pending: 'organization.deliveryState.pending',
+  delivered: 'organization.deliveryState.delivered',
+  failed: 'organization.deliveryState.failed',
+  stale: 'organization.deliveryState.stale',
+});
 
 export function renderOrganization({ app, state }) {
   const node = el('section', { class: 'screen' });
@@ -33,11 +59,11 @@ export function renderOrganization({ app, state }) {
 
     if (!academy) {
       node.replaceChildren(
-        pageTitle('Organization'),
+        pageTitle(t('organization.title')),
         el('div', { class: 'card card--accent' }, [
-          el('h3', {}, 'Create your academy'),
-          el('p', { class: 'muted small' }, 'You do not own an academy yet. Create one to invite teachers and learners.'),
-          button('Create academy', { variant: 'gold', onClick: () => app.openCreateAcademy() }),
+          el('h3', {}, t('organization.create.title')),
+          el('p', { class: 'muted small' }, t('organization.create.body')),
+          button(t('organization.create.action'), { variant: 'gold', onClick: () => app.openCreateAcademy() }),
         ]),
       );
       return;
@@ -50,18 +76,26 @@ export function renderOrganization({ app, state }) {
 
     const tabsView = tabs(
       ORG_TABS.map((tab) => {
-        if (tab.id === 'sign') return { id: tab.id, label: `Sign queue (${pending})` };
-        if (tab.id === 'enrollment') return { id: tab.id, label: `Enrollment (${pendingRequests})` };
-        return tab;
+        if (tab.id === 'sign') {
+          return { id: tab.id, label: t('organization.tabs.signCount', { count: pending }) };
+        }
+        if (tab.id === 'enrollment') {
+          return { id: tab.id, label: t('organization.tabs.enrollmentCount', { count: pendingRequests }) };
+        }
+        return { id: tab.id, label: t(tab.key) };
       }),
       snapshot.orgTab,
       (id) => app.setOrgTab(id),
-      { label: 'Organization' },
+      { label: t('organization.title') },
     );
 
     node.replaceChildren(
-      pageTitle('Organization'),
-      el('p', { class: 'muted small' }, `${academy.name} · ${academyTypeLabel(academy.type)}`),
+      pageTitle(t('organization.title')),
+      el(
+        'p',
+        { class: 'muted small' },
+        `${academy.name} · ${t(ACADEMY_TYPE_KEYS[academy.type] ?? 'organization.academyTypes.school')}`,
+      ),
       tabsView,
       bodyFor(snapshot, app, pending, academy),
     );
@@ -108,21 +142,21 @@ function overviewBody(state, app, pending, academy) {
   ).length;
   return el('div', {}, [
     el('div', { class: 'statgrid' }, [
-      stat({ value: liveCourses, label: 'courses live', onClick: () => app.setOrgTab('courses') }),
-      stat({ value: requests, label: 'enrollment requests', onClick: () => app.setOrgTab('enrollment') }),
-      stat({ value: pending, label: 'pending signatures', onClick: () => app.setOrgTab('sign') }),
-      stat({ value: `${healthy}/${state.relays.length}`, label: 'relays healthy', onClick: () => app.setOrgTab('network') }),
+      stat({ value: liveCourses, label: t('organization.overview.coursesLive'), onClick: () => app.setOrgTab('courses') }),
+      stat({ value: requests, label: t('organization.overview.enrollmentRequests'), onClick: () => app.setOrgTab('enrollment') }),
+      stat({ value: pending, label: t('organization.overview.pendingSignatures'), onClick: () => app.setOrgTab('sign') }),
+      stat({ value: `${healthy}/${state.relays.length}`, label: t('organization.overview.relaysHealthy'), onClick: () => app.setOrgTab('network') }),
     ]),
     academyProfileCard(academy, app),
     el('div', { class: 'card' }, [
-      el('h3', {}, 'Grow your academy'),
-      el('p', { class: 'muted small' }, 'Invite a teacher by handle, or share a join link for learners.'),
+      el('h3', {}, t('organization.overview.growTitle')),
+      el('p', { class: 'muted small' }, t('organization.overview.growBody')),
       el('div', { class: 'arow' }, [
-        button('Invite a teacher', { small: true, onClick: () => app.openInviteTeacher() }),
-        button('Copy learner link', { variant: 'gold', small: true, onClick: () => app.openInviteLink(ROLE.STUDENT) }),
+        button(t('organization.overview.inviteTeacher'), { small: true, onClick: () => app.openInviteTeacher() }),
+        button(t('organization.overview.copyLearnerLink'), { variant: 'gold', small: true, onClick: () => app.openInviteLink(ROLE.STUDENT) }),
       ]),
     ]),
-    el('h3', {}, 'Completion queue'),
+    el('h3', {}, t('organization.overview.completionQueue')),
     signQueueRows(state, app, pending),
   ]);
 }
@@ -135,18 +169,18 @@ function academyProfileCard(academy, app) {
       avatar(org, 44),
       el('span', { class: 'listrow__txt' }, [
         el('span', { class: 'list-row__title' }, academy.name),
-        el('span', { class: 'mono small muted' }, npub ? truncateNpub(npub) : 'organization key pending'),
+        el('span', { class: 'mono small muted' }, npub ? truncateNpub(npub) : t('organization.profile.keyPending')),
       ]),
-      statusBadge('kind:0 profile', 'info'),
+      statusBadge(t('organization.badge.kind0Profile'), 'info'),
     ]),
-    el('p', { class: 'muted small' }, academy.about || 'Add a public description for your academy profile.'),
+    el('p', { class: 'muted small' }, academy.about || t('organization.profile.aboutFallback')),
     el('div', { class: 'arow' }, [
-      button('Edit info', { variant: 'gold', small: true, onClick: () => { app.setSettingsSection('academy'); app.navigate('/settings'); } }),
+      button(t('organization.editInfo'), { variant: 'gold', small: true, onClick: () => { app.setSettingsSection('academy'); app.navigate('/settings'); } }),
       npub
-        ? button('Copy org key', { small: true, onClick: () => app.copyText(npub, 'Organization npub copied.') })
+        ? button(t('organization.profile.copyOrgKey'), { small: true, onClick: () => app.copyText(npub, t('organization.profile.copiedToast')) })
         : null,
     ]),
-    noteBox('Public kind:0 profile signed by the academy key — separate from your personal key.'),
+    noteBox(t('organization.profile.note')),
   ]);
 }
 
@@ -165,26 +199,28 @@ function coursesBody(state, app, academy) {
         el(
           'span',
           { class: 'muted small' },
-          rooms.length ? `${rooms.length} classroom${rooms.length === 1 ? '' : 's'}` : 'no classrooms',
+          rooms.length
+            ? t(rooms.length === 1 ? 'organization.courses.classroomOne' : 'organization.courses.classroomMany', { count: rooms.length })
+            : t('organization.courses.noClassrooms'),
         ),
         el('span', { class: 'spacer' }),
         el('div', { class: 'inline-actions' }, [
-          button('Edit', { small: true, onClick: () => app.openEditSubject(subject.id) }),
-          button('Delete', { small: true, onClick: () => app.deleteSubject(subject.id) }),
+          button(t('common.actions.edit'), { small: true, onClick: () => app.openEditSubject(subject.id) }),
+          button(t('common.actions.delete'), { small: true, onClick: () => app.deleteSubject(subject.id) }),
         ]),
       ]),
       rooms.length
         ? el('div', { class: 'rows classroom-rows' }, rooms.map((room) => classroomRow(state, app, room)))
-        : emptyState('No classrooms yet.'),
+        : emptyState(t('organization.courses.empty')),
     ]);
   });
 
   return el('div', {}, [
     el('div', { class: 'arow courses-toolbar' }, [
-      button('＋ New subject', { variant: 'gold', small: true, onClick: () => app.openCreateSubject() }),
-      button('＋ New classroom', { small: true, onClick: () => app.openCreateClassroom() }),
+      button(t('organization.courses.newSubject'), { variant: 'gold', small: true, onClick: () => app.openCreateSubject() }),
+      button(t('organization.courses.newClassroom'), { small: true, onClick: () => app.openCreateClassroom() }),
     ]),
-    subjects.length ? el('div', {}, cards) : emptyState('Add a subject to start building classrooms.'),
+    subjects.length ? el('div', {}, cards) : emptyState(t('organization.courses.addSubjectEmpty')),
   ]);
 }
 
@@ -199,20 +235,20 @@ function classroomRow(state, app, room) {
   );
   const learners = (room.studentIds ?? []).length;
   const teacherLine = teacher
-    ? `teacher ${teacher.displayName} ✓`
+    ? t('organization.classroom.teacherNamed', { name: teacher.displayName })
     : pendingTeacher
-      ? 'teacher invite pending'
-      : 'no teacher';
+      ? t('organization.classroom.teacherInvitePending')
+      : t('organization.classroom.noTeacher');
 
   const actions = [
     pendingTeacher
-      ? button('Copy invite', { small: true, onClick: () => app.copyInviteLink(pendingTeacher.id) })
+      ? button(t('organization.classroom.copyInvite'), { small: true, onClick: () => app.copyInviteLink(pendingTeacher.id) })
       : null,
-    !teacher ? button('Invite teacher', { small: true, onClick: () => app.openInviteClassTeacher(room.id) }) : null,
+    !teacher ? button(t('organization.classroom.inviteTeacher'), { small: true, onClick: () => app.openInviteClassTeacher(room.id) }) : null,
     teacher && room.status !== CLASS_STATUS.PUBLISHED && room.status !== CLASS_STATUS.ARCHIVED
-      ? button('Publish', { variant: 'gold', small: true, onClick: () => app.publishClassroom(room.id) })
+      ? button(t('organization.classroom.publish'), { variant: 'gold', small: true, onClick: () => app.publishClassroom(room.id) })
       : null,
-    button('Manage', { small: true, onClick: () => app.openManageClassroom(room.id) }),
+    button(t('organization.classroom.manage'), { small: true, onClick: () => app.openManageClassroom(room.id) }),
   ].filter(Boolean);
 
   return el('div', { class: 'classroom-row' }, [
@@ -222,9 +258,15 @@ function classroomRow(state, app, room) {
     ]),
     el('div', { class: 'classroom-row__actions' }, actions),
     el('div', { class: 'classroom-row__meta' }, [
-      badge ? statusBadge(badge.label, badge.tone) : null,
+      badge ? statusBadge(t(badge.key, badge.params), badge.tone) : null,
       el('span', { class: 'muted small' }, teacherLine),
-      teacher ? el('span', { class: 'muted small' }, `${learners} learner${learners === 1 ? '' : 's'}`) : null,
+      teacher
+        ? el(
+            'span',
+            { class: 'muted small' },
+            t(learners === 1 ? 'organization.classroom.learnerOne' : 'organization.classroom.learnerMany', { count: learners }),
+          )
+        : null,
     ]),
   ]);
 }
@@ -238,13 +280,13 @@ function enrollmentBody(state, app, academy) {
   const joinRows = [...requestsByMember.values()].map((entry) =>
     row([
       el('span', { class: 'who' }, entry.displayName),
-      el('span', { class: 'muted small mono' }, entry.handle || 'no handle'),
-      statusBadge(entry.status, requestBadge(entry.status)?.tone ?? 'muted'),
+      el('span', { class: 'muted small mono' }, entry.handle || t('organization.enrollment.noHandle')),
+      statusBadge(t(`organization.requestStatus.${entry.status}`), requestBadge(entry.status)?.tone ?? 'muted'),
       el('span', { class: 'spacer' }),
       ...(entry.status === REQUEST_STATUS.PENDING
         ? [
-            button('Decline', { small: true, onClick: () => app.declineJoin(entry.id) }),
-            button('Accept', { variant: 'gold', small: true, onClick: () => app.acceptJoin(entry.id) }),
+            button(t('organization.enrollment.decline'), { small: true, onClick: () => app.declineJoin(entry.id) }),
+            button(t('organization.enrollment.accept'), { variant: 'gold', small: true, onClick: () => app.acceptJoin(entry.id) }),
           ]
         : []),
     ]),
@@ -254,12 +296,12 @@ function enrollmentBody(state, app, academy) {
     row([
       el('span', { class: 'who' }, entry.learnerName),
       el('span', { class: 'muted small' }, entry.courseTitle || entry.courseId),
-      statusBadge(entry.status, requestBadge(entry.status)?.tone ?? 'muted'),
+      statusBadge(t(`organization.requestStatus.${entry.status}`), requestBadge(entry.status)?.tone ?? 'muted'),
       el('span', { class: 'spacer' }),
       ...(entry.status === REQUEST_STATUS.PENDING
         ? [
-            button('Decline', { small: true, onClick: () => app.declineEnrollment(entry.id) }),
-            button('Accept', { variant: 'gold', small: true, onClick: () => app.acceptEnrollment(entry.id) }),
+            button(t('organization.enrollment.decline'), { small: true, onClick: () => app.declineEnrollment(entry.id) }),
+            button(t('organization.enrollment.accept'), { variant: 'gold', small: true, onClick: () => app.acceptEnrollment(entry.id) }),
           ]
         : []),
     ]),
@@ -275,10 +317,10 @@ function enrollmentBody(state, app, academy) {
 
   return el('div', {}, [
     el('div', { class: 'card' }, [
-      el('h3', {}, 'Invite learners'),
-      el('p', { class: 'muted small' }, 'Share a join link. Learners accept it, then land in the membership queue for your approval.'),
+      el('h3', {}, t('organization.enrollment.inviteTitle')),
+      el('p', { class: 'muted small' }, t('organization.enrollment.inviteBody')),
       el('div', { class: 'arow' }, [
-        button('Share join link', { variant: 'gold', small: true, onClick: () => app.openInviteLink(ROLE.STUDENT) }),
+        button(t('organization.enrollment.shareJoinLink'), { variant: 'gold', small: true, onClick: () => app.openInviteLink(ROLE.STUDENT) }),
       ]),
       links.length
         ? el(
@@ -287,25 +329,25 @@ function enrollmentBody(state, app, academy) {
             links.map((invite) =>
               row([
                 el('span', { class: 'mono small' }, invite.code),
-                statusBadge('invite pending', 'info'),
+                statusBadge(t('organization.inviteStatus.pending'), 'info'),
                 el('span', { class: 'spacer' }),
-                button('Copy', { small: true, onClick: () => app.copyInviteLink(invite.id) }),
-                button('Revoke', { small: true, onClick: () => app.revokeInvite(invite.id) }),
+                button(t('common.actions.copy'), { small: true, onClick: () => app.copyInviteLink(invite.id) }),
+                button(t('organization.revoke'), { small: true, onClick: () => app.revokeInvite(invite.id) }),
               ]),
             ),
           )
         : null,
     ]),
-    el('h3', {}, 'Membership requests'),
-    joinRows.length ? el('div', { class: 'rows' }, joinRows) : emptyState('No membership requests ✓'),
-    el('h3', {}, 'Class enrollment requests'),
-    enrollRows.length ? el('div', { class: 'rows' }, enrollRows) : emptyState('No enrollment requests ✓'),
+    el('h3', {}, t('organization.enrollment.membershipTitle')),
+    joinRows.length ? el('div', { class: 'rows' }, joinRows) : emptyState(t('organization.enrollment.membershipEmpty')),
+    el('h3', {}, t('organization.enrollment.classRequestsTitle')),
+    enrollRows.length ? el('div', { class: 'rows' }, enrollRows) : emptyState(t('organization.enrollment.classRequestsEmpty')),
   ]);
 }
 
 function shortTarget(target) {
   const value = String(target ?? '').trim();
-  if (!value) return 'unknown key';
+  if (!value) return t('organization.staff.unknownKey');
   return value.startsWith('npub1') ? truncateNpub(value) : value;
 }
 
@@ -355,9 +397,9 @@ function staffBody(state, app, academy) {
       persona: info.persona,
       name: info.name,
       secondary: info.secondary,
-      badge: statusBadge('teacher ✓', 'ok'),
+      badge: statusBadge(t('organization.badge.teacher'), 'ok'),
       actions: [
-        button('Roles ▾', { small: true, onClick: () => app.stub('Role editing is coming soon.') }),
+        button(t('organization.staff.roles'), { small: true, onClick: () => app.stub(t('organization.staff.rolesStub')) }),
       ],
     });
   });
@@ -368,41 +410,41 @@ function staffBody(state, app, academy) {
       persona: info.persona,
       name: info.name,
       secondary: info.secondary,
-      badge: statusBadge(inviteBadge(invite.status)?.label ?? 'invite pending', inviteBadge(invite.status)?.tone ?? 'info'),
+      badge: statusBadge(t(`organization.inviteStatus.${invite.status}`), inviteBadge(invite.status)?.tone ?? 'info'),
       actions: [
-        button('Copy link', { small: true, onClick: () => app.copyInviteLink(invite.id) }),
-        button('Revoke', { small: true, className: 'btn--danger', onClick: () => app.revokeInvite(invite.id) }),
+        button(t('organization.copyLink'), { small: true, onClick: () => app.copyInviteLink(invite.id) }),
+        button(t('organization.revoke'), { small: true, className: 'btn--danger', onClick: () => app.revokeInvite(invite.id) }),
       ],
     });
   });
 
   return el('div', {}, [
     el('div', { class: 'arow' }, [
-      button('＋ Invite teacher', { variant: 'gold', small: true, onClick: () => app.openInviteTeacher() }),
+      button(t('organization.staff.inviteTeacher'), { variant: 'gold', small: true, onClick: () => app.openInviteTeacher() }),
     ]),
-    el('h3', {}, 'Teachers'),
-    teacherRows.length ? el('div', { class: 'rows' }, teacherRows) : emptyState('No teachers yet — invite one.'),
-    pending.length ? el('h3', {}, `Pending teacher invites (${pending.length})`) : null,
+    el('h3', {}, t('organization.staff.teachers')),
+    teacherRows.length ? el('div', { class: 'rows' }, teacherRows) : emptyState(t('organization.staff.teachersEmpty')),
+    pending.length ? el('h3', {}, t('organization.staff.pendingInvites', { count: pending.length })) : null,
     pending.length ? el('div', { class: 'rows' }, pendingRows) : null,
-    el('h3', {}, 'Issuer authorization'),
+    el('h3', {}, t('organization.staff.issuerTitle')),
     el('div', { class: 'card' }, [
       el('p', { class: 'small' }, [
-        'Organization signer key ',
-        el('span', { class: 'mono' }, academy.orgNpub ? truncateNpub(academy.orgNpub) : 'generated on first publish'),
+        t('organization.staff.signerKey'),
+        el('span', { class: 'mono' }, academy.orgNpub ? truncateNpub(academy.orgNpub) : t('organization.staff.keyGenerated')),
         ' ',
-        statusBadge(academy.orgNpub ? '✓ active' : 'not created', academy.orgNpub ? 'ok' : 'muted'),
+        statusBadge(t(academy.orgNpub ? 'organization.badge.active' : 'organization.badge.notCreated'), academy.orgNpub ? 'ok' : 'muted'),
       ]),
-      el('p', { class: 'small muted' }, `Authorized signers: ${ownerName} (you). Invitations and admin access never grant signing power.`),
+      el('p', { class: 'small muted' }, t('organization.staff.authorizedSigners', { name: ownerName })),
       el('div', { class: 'arow' }, [
-        button('Edit info', { small: true, onClick: () => { app.setSettingsSection('academy'); app.navigate('/settings'); } }),
-        button('＋ Add signer…', { small: true, onClick: () => app.stub('Signer management is coming soon.') }),
+        button(t('organization.editInfo'), { small: true, onClick: () => { app.setSettingsSection('academy'); app.navigate('/settings'); } }),
+        button(t('organization.staff.addSigner'), { small: true, onClick: () => app.stub(t('organization.staff.addSignerStub')) }),
       ]),
     ]),
   ]);
 }
 
 function signQueueRows(state, app, pending) {
-  if (!state.signQueue.length) return emptyState('No pending signatures ✓');
+  if (!state.signQueue.length) return emptyState(t('organization.sign.empty'));
 
   return el(
     'div',
@@ -410,13 +452,16 @@ function signQueueRows(state, app, pending) {
     state.signQueue.map((entry) =>
       row([
         el('span', { class: 'who' }, entry.learnerName),
-        el('span', { class: 'muted small' }, `${entry.course} · criteria met · sent ${entry.time}`),
-        statusBadge(entry.status, entry.status === 'pending' ? 'info' : entry.status === 'signed' ? 'ok' : 'err'),
+        el('span', { class: 'muted small' }, t('organization.sign.rowMeta', { course: entry.course, time: entry.time })),
+        statusBadge(
+          t(`organization.signStatus.${entry.status}`),
+          entry.status === 'pending' ? 'info' : entry.status === 'signed' ? 'ok' : 'err',
+        ),
         entry.status === 'pending'
           ? el('span', { class: 'spacer' })
           : null,
         entry.status === 'pending'
-          ? button('Review', { variant: 'gold', small: true, onClick: () => app.openSign(entry.id) })
+          ? button(t('organization.sign.review'), { variant: 'gold', small: true, onClick: () => app.openSign(entry.id) })
           : null,
       ]),
     ),
@@ -430,11 +475,11 @@ function networkBody(state, app) {
     state.relays.map((relay) =>
       row([
         el('span', { class: 'mono small' }, relay.url),
-        statusBadge(relay.mode, 'info'),
-        el('span', { class: 'muted small' }, relay.latencyMs ? `${relay.latencyMs} ms` : relay.health),
+        statusBadge(t(RELAY_MODE_KEYS[relay.mode] ?? relay.mode), 'info'),
+        el('span', { class: 'muted small' }, relay.latencyMs ? `${relay.latencyMs} ms` : t(RELAY_HEALTH_KEYS[relay.health] ?? relay.health)),
         relay.health === 'offline' ? el('span', { class: 'spacer' }) : null,
         relay.health === 'offline'
-          ? button('Retry', { small: true, onClick: () => app.checkRelays() })
+          ? button(t('common.actions.retry'), { small: true, onClick: () => app.checkRelays() })
           : null,
       ]),
     ),
@@ -446,21 +491,27 @@ function networkBody(state, app) {
     state.deliveries.map((entry) =>
       row([
         el('span', { class: 'small' }, entry.label),
-        statusBadge(deliveryCopy(entry.state), deliveryTone(entry.state)),
+        statusBadge(t(DELIVERY_STATE_KEYS[entry.state] ?? entry.state), deliveryTone(entry.state)),
         el('span', { class: 'spacer' }),
         isDeliverySettled(entry.state)
           ? null
-          : button('Retry', { small: true, onClick: () => app.retryDelivery(entry.id) }),
+          : button(t('common.actions.retry'), { small: true, onClick: () => app.retryDelivery(entry.id) }),
       ]),
     ),
   );
 
   const stale = state.deliveries.find((entry) => entry.state === 'stale');
+  const staleDays = Number.isFinite(stale?.staleDays) ? stale.staleDays : 0;
   return el('div', {}, [
-    el('h3', {}, 'Relays'),
+    el('h3', {}, t('organization.network.relaysTitle')),
     relays,
-    el('h3', {}, 'Delivery log'),
+    el('h3', {}, t('organization.network.deliveryTitle')),
     deliveries,
-    stale ? noteBox(staleCopy(stale.staleDays), 'warn') : null,
+    stale
+      ? noteBox(
+          t(staleDays === 1 ? 'organization.network.staleOne' : 'organization.network.staleMany', { days: staleDays }),
+          'warn',
+        )
+      : null,
   ]);
 }

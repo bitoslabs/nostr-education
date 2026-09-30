@@ -43,21 +43,21 @@ export function roleSpaceShort(role) {
 }
 
 export function enrollmentBadge(state) {
-  if (state === ENROLLMENT.PENDING) return { label: 'enrollment pending', tone: 'info' };
-  if (state === ENROLLMENT.APPROVED) return { label: 'enrolled ✓', tone: 'ok' };
+  if (state === ENROLLMENT.PENDING) return { key: 'common.badge.enrollmentPending', label: 'enrollment pending', tone: 'info' };
+  if (state === ENROLLMENT.APPROVED) return { key: 'common.badge.enrolled', label: 'enrolled ✓', tone: 'ok' };
   return null;
 }
 
 export function membershipBadge(status) {
-  if (status === MEMBERSHIP.PENDING) return { label: 'membership pending', tone: 'info' };
-  if (status === MEMBERSHIP.ACTIVE) return { label: 'academy member ✓', tone: 'ok' };
+  if (status === MEMBERSHIP.PENDING) return { key: 'common.badge.membershipPending', label: 'membership pending', tone: 'info' };
+  if (status === MEMBERSHIP.ACTIVE) return { key: 'common.badge.academyMember', label: 'academy member ✓', tone: 'ok' };
   return null;
 }
 
 export function requestBadge(status) {
-  if (status === REQUEST_STATUS.PENDING) return { label: 'pending', tone: 'info' };
-  if (status === REQUEST_STATUS.APPROVED) return { label: 'approved ✓', tone: 'ok' };
-  if (status === REQUEST_STATUS.DECLINED) return { label: 'declined', tone: 'err' };
+  if (status === REQUEST_STATUS.PENDING) return { key: 'common.badge.pending', label: 'pending', tone: 'info' };
+  if (status === REQUEST_STATUS.APPROVED) return { key: 'common.badge.approved', label: 'approved ✓', tone: 'ok' };
+  if (status === REQUEST_STATUS.DECLINED) return { key: 'common.badge.declined', label: 'declined', tone: 'err' };
   return null;
 }
 
@@ -87,14 +87,24 @@ export const ASSIGNMENT_STATUS = Object.freeze({
 export function assignmentBadge(assignment) {
   switch (assignment.status) {
     case ASSIGNMENT_STATUS.REVISION:
-      return { label: '▲ revision requested', tone: 'warn' };
+      return { key: 'common.badge.revisionRequested', label: '▲ revision requested', tone: 'warn' };
     case ASSIGNMENT_STATUS.SUBMITTED:
-      return { label: 'submitted · awaiting review', tone: 'info' };
+      return { key: 'common.badge.submittedAwaitingReview', label: 'submitted · awaiting review', tone: 'info' };
     case ASSIGNMENT_STATUS.FINAL:
-      return { label: `✓ graded ${assignment.grade}%`, tone: 'ok' };
+      return {
+        key: 'common.badge.graded',
+        params: { grade: assignment.grade },
+        label: `✓ graded ${assignment.grade}%`,
+        tone: 'ok',
+      };
     case ASSIGNMENT_STATUS.CORRECTED:
-      return { label: `✓ graded ${assignment.grade}% (corrected)`, tone: 'ok' };
+      return {
+        key: 'common.badge.gradedCorrected',
+        params: { grade: assignment.grade },
+        label: `✓ graded ${assignment.grade}% (corrected)`,
+        tone: 'ok',
+      };
     default:
-      return { label: 'unknown', tone: 'muted' };
+      return { key: 'common.badge.unknown', label: 'unknown', tone: 'muted' };
   }
 }

@@ -1,4 +1,5 @@
 import { el } from '../../core/dom.js';
+import { t } from '../../services/i18n/index.js';
 import { button } from './primitives.js';
 
 export function formSection(title, children) {
@@ -35,8 +36,8 @@ export function imageField({ label, hint, preview, fileInput, onUpload, onRemove
       el('span', { class: 'field-label' }, label),
       hint ? el('p', { class: 'small muted', style: { margin: '0 0 8px' } }, hint) : null,
       el('div', { class: 'image-field__actions' }, [
-        button('Upload & crop', { small: true, variant: 'gold', onClick: onUpload }),
-        button('Remove', { small: true, onClick: onRemove }),
+        button(t('common.actions.uploadCrop'), { small: true, variant: 'gold', onClick: onUpload }),
+        button(t('common.actions.remove'), { small: true, onClick: onRemove }),
       ]),
       fileInput,
     ]),
@@ -49,5 +50,5 @@ export function formFoot(children, embedded = false) {
 
 export function setWorking(control, working, label) {
   control.disabled = working;
-  if (label) control.textContent = working ? 'Working…' : label;
+  if (label) control.textContent = working ? t('common.spinner.working') : label;
 }

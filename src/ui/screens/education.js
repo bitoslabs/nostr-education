@@ -13,10 +13,22 @@ import {
   subjectById,
 } from '../../domain/classroom.js';
 import { completionBadge, evaluateCompletion } from '../../domain/completion.js';
-import { academyTypeLabel, inviteRoleLabel } from '../../domain/academy.js';
 import { MEMBERSHIP, REQUEST_STATUS, membershipBadge } from '../../domain/school.js';
+import { t } from '../../services/i18n/index.js';
 import { button, emptyState, pageTitle } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
+
+const ACADEMY_TYPE_KEYS = Object.freeze({
+  school: 'education.academyTypes.school',
+  college: 'education.academyTypes.college',
+  training: 'education.academyTypes.training',
+});
+
+const INVITE_ROLE_KEYS = Object.freeze({
+  teacher: 'education.inviteRole.teacher',
+  owner: 'education.inviteRole.admin',
+  student: 'education.inviteRole.learner',
+});
 
 export function renderEducation({ app, state }) {
   const node = el('section', { class: 'screen' });
@@ -26,8 +38,8 @@ export function renderEducation({ app, state }) {
     const membership = snapshot.memberships?.[persona.id] ?? MEMBERSHIP.NONE;
     const token = membershipBadge(membership);
 
-    const children = [pageTitle('Education')];
-    if (token) children.push(el('p', {}, statusBadge(token.label, token.tone)));
+    const children = [pageTitle(t('common.roleSpace.student'))];
+    if (token) children.push(el('p', {}, statusBadge(t(token.key, token.params), token.tone)));
 
     children.push(myAcademies(snapshot, persona));
 
@@ -39,9 +51,9 @@ export function renderEducation({ app, state }) {
 
     children.push(
       el('div', { class: 'card' }, [
-        el('h3', {}, 'Find a course'),
-        el('p', { class: 'muted small' }, 'Browse the catalog for new courses.'),
-        button('Go to Discover', { onClick: () => app.navigate('/discover') }),
+        el('h3', {}, t('education.findCourse')),
+        el('p', { class: 'muted small' }, t('education.browseCatalog')),
+        button(t('education.goToDiscover'), { onClick: () => app.navigate('/discover') }),
       ]),
     );
 
@@ -108,8 +120,8 @@ function myAcademies(state, persona) {
   const memberships = academyMemberships(state, persona);
   return el('section', { class: 'card' }, [
     el('div', { class: 'crow' }, [
-      el('h3', {}, 'My academies'),
-      el('span', { class: 'ctx' }, `${memberships.length} organizations`),
+      el('h3', {}, t('education.myAcademies')),
+      el('span', { class: 'ctx' }, t('education.organizationCount', { count: memberships.length })),
     ]),
     memberships.length
       ? el('div', { class: 'list-divide' }, memberships.map(({ academy, role, status, classCount }) => {
@@ -118,32 +130,32 @@ function myAcademies(state, persona) {
             el('div', { style: { flex: '1 1 220px' } }, [
               el('div', { class: 'who' }, academy.name),
               el('div', { class: 'muted small' }, [
-                academyTypeLabel(academy.type),
-                ` · ${inviteRoleLabel(role)}`,
-                ` · ${classCount} ${classCount === 1 ? 'class' : 'classes'}`,
+                t(ACADEMY_TYPE_KEYS[academy.type] ?? 'education.academyTypes.school'),
+                ` · ${t(INVITE_ROLE_KEYS[role] ?? 'education.inviteRole.learner')}`,
+                ` · ${t(classCount === 1 ? 'education.classCountOne' : 'education.classCountMany', { count: classCount })}`,
               ]),
             ]),
-            badge ? statusBadge(badge.label, badge.tone) : statusBadge(String(status), 'info'),
+            badge ? statusBadge(t(badge.key, badge.params), badge.tone) : statusBadge(String(status), 'info'),
           ]);
         }))
-      : el('p', { class: 'muted small' }, 'Academies and universities you join will appear here.'),
+      : el('p', { class: 'muted small' }, t('education.emptyAcademies')),
   ]);
 }
 
 function joinCard(membership, app) {
   return el('div', { class: 'card card--accent' }, [
-    el('h3', {}, 'Join an academy'),
-    el('p', { class: 'muted small' }, 'The owner approves memberships. Once active, your classes and homework appear here.'),
+    el('h3', {}, t('education.joinAcademy')),
+    el('p', { class: 'muted small' }, t('education.joinAcademyBody')),
     membership === MEMBERSHIP.PENDING
-      ? el('p', { class: 'muted small' }, 'Waiting for owner approval.')
-      : button('Request to join BitOS Academy', { variant: 'gold', onClick: () => app.requestMembership() }),
+      ? el('p', { class: 'muted small' }, t('education.waitingApproval'))
+      : button(t('education.requestJoin'), { variant: 'gold', onClick: () => app.requestMembership() }),
   ]);
 }
 
 function classCards(state, app, persona) {
   const classrooms = classroomsForStudent(state.classrooms ?? [], persona.id, state.capabilities ?? []);
   if (!classrooms.length) {
-    return [emptyState('No classes yet. Use an invite link from your teacher or academy.')];
+    return [emptyState(t('education.emptyClasses'))];
   }
   return classrooms.map((room) => classCard(state, app, persona, room));
 }
@@ -161,6 +173,11 @@ function classCard(state, app, persona, room) {
     studentId: persona.id,
   });
   const badge = completionBadge(completion);
+  const badgeLabel = completion.eligible
+    ? t('education.completionEligible')
+    : completion.gradedCount === 0
+      ? t('education.noGradesYet')
+      : t('education.completionPending', { average: completion.average ?? 0 });
   const recommended = (state.recommendations ?? []).some(
     (entry) => entry.classroomId === room.id && entry.studentId === persona.id && entry.status === 'recommended',
   );
@@ -170,45 +187,46 @@ function classCard(state, app, persona, room) {
       el('span', { class: 'who' }, room.name),
       subject ? el('span', { class: 'ctx' }, subject.name) : null,
     ]),
-    el('p', { class: 'muted small' }, teacher ? `Teacher: ${teacher.displayName} ✓` : 'No teacher assigned'),
+    el('p', { class: 'muted small' }, teacher ? t('education.teacherAssigned', { name: teacher.displayName }) : t('education.noTeacher')),
     recommended
-      ? el('p', {}, statusBadge('✓ completion recommended', 'ok'))
+      ? el('p', {}, statusBadge(t('education.completionRecommended'), 'ok'))
       : badge
-        ? el('p', {}, statusBadge(badge.label, badge.tone))
+        ? el('p', {}, statusBadge(badgeLabel, badge.tone))
         : null,
     ...(homework.length
       ? homework.map((item) => homeworkRow(state, app, persona, item))
-      : [emptyState('No homework yet.')]),
+      : [emptyState(t('education.emptyHomework'))]),
   ]);
 }
 
 function homeworkRow(state, app, persona, item) {
   const submission = submissionFor(state.submissions ?? [], item.id, persona.id);
   const token = submissionStatusBadge(submission);
+  const status = homeworkStatusBadge(item.status);
   const graded = submission?.status === SUBMISSION_STATUS.GRADED;
   const revision = submission?.status === SUBMISSION_STATUS.REVISION;
   const open = isHomeworkOpen(item);
   const label = !open
-    ? 'Closed'
+    ? t('education.closed')
     : revision
-      ? 'Revise & resubmit'
+      ? t('education.reviseResubmit')
       : graded
-        ? 'Resubmit'
+        ? t('education.resubmit')
         : submission
-          ? 'Submit new version'
-          : 'Submit homework';
+          ? t('education.submitNewVersion')
+          : t('education.submitHomework');
 
   const children = [
     el('div', { class: 'crow' }, [
-      el('span', { class: 'who' }, `${item.title} · due ${item.due} · out of ${item.maxScore}`),
+      el('span', { class: 'who' }, t('education.homeworkMeta', { title: item.title, due: item.due, maxScore: item.maxScore })),
       !open
-        ? statusBadge(homeworkStatusBadge(item.status)?.label ?? 'closed', homeworkStatusBadge(item.status)?.tone ?? 'muted')
+        ? statusBadge(status ? t(status.key, status.params) : t('common.badge.closed'), status?.tone ?? 'muted')
         : null,
     ]),
     item.instructions ? el('p', { class: 'muted small' }, item.instructions) : null,
     el('div', { class: 'arow' }, [
-      statusBadge(token.label, token.tone),
-      submission?.late ? statusBadge('late', 'warn') : null,
+      statusBadge(t(token.key, token.params), token.tone),
+      submission?.late ? statusBadge(t('education.late'), 'warn') : null,
       button(label, {
         variant: graded ? 'default' : 'gold',
         small: true,

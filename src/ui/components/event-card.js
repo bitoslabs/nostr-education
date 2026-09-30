@@ -5,20 +5,21 @@ import {
   enrollmentBadge,
   enrollmentStateFor,
 } from '../../domain/school.js';
+import { t } from '../../services/i18n/index.js';
 import { icon } from './icon.js';
 import { identityChip } from './identity-chip.js';
 import { button, fileChip } from './primitives.js';
 import { statusBadge } from './status-badge.js';
 
 const BADGES = Object.freeze({
-  revision: { label: '▲ action needed', tone: 'warn', audience: 'all' },
-  completion: { label: 'pending organization signature', tone: 'info', audience: 'all' },
-  issued: { label: '✓ issued', tone: 'ok', audience: 'all' },
-  grade: { label: '✓ finalized', tone: 'ok', audience: 'all' },
-  gradec: { label: 'corrected', tone: 'info', audience: 'all' },
-  draft: { label: 'draft', tone: 'info', audience: 'all' },
-  member: { label: '✓ membership approved', tone: 'ok', audience: 'all' },
-  handle: { label: '✓ handle claimed', tone: 'ok', audience: 'all' },
+  revision: { key: 'home.badgeActionNeeded', tone: 'warn', audience: 'all' },
+  completion: { key: 'home.badgePendingSignature', tone: 'info', audience: 'all' },
+  issued: { key: 'home.badgeIssued', tone: 'ok', audience: 'all' },
+  grade: { key: 'home.badgeFinalized', tone: 'ok', audience: 'all' },
+  gradec: { key: 'home.badgeCorrected', tone: 'info', audience: 'all' },
+  draft: { key: 'common.badge.draft', tone: 'info', audience: 'all' },
+  member: { key: 'home.badgeMembershipApproved', tone: 'ok', audience: 'all' },
+  handle: { key: 'home.badgeHandleClaimed', tone: 'ok', audience: 'all' },
 });
 
 export function eventCard(event, { persona, actions, enrollments = [] } = {}) {
@@ -32,7 +33,7 @@ export function eventCard(event, { persona, actions, enrollments = [] } = {}) {
   ];
 
   const badge = badgeFor(event, persona);
-  if (badge) children.push(el('p', {}, statusBadge(badge.label, badge.tone)));
+  if (badge) children.push(el('p', {}, statusBadge(t(badge.key, badge.params), badge.tone)));
 
   children.push(el('p', { class: 'cbody' }, event.text));
 
@@ -67,16 +68,20 @@ function engagementBar(event, actions) {
   const likeCount = (counts.likes ?? 0) + (liked ? 1 : 0);
   const replyCount = counts.replies ?? 0;
   const bitz = counts.bitz ?? 0;
+  const likeAction = liked ? t('home.unlike') : t('home.like');
 
-  return el('div', { class: 'actions', role: 'group', 'aria-label': 'Post engagement' }, [
+  return el('div', { class: 'actions', role: 'group', 'aria-label': t('home.postEngagement') }, [
     actionButton({
       kind: 'like',
       on: liked,
       icon: 'lucide:heart',
       fallback: '♥',
       count: likeCount,
-      title: liked ? 'Unlike' : 'Like',
-      label: `${liked ? 'Unlike' : 'Like'} · ${countLabel(likeCount, 'like')}`,
+      title: likeAction,
+      label: t('home.likeActionLabel', {
+        action: likeAction,
+        count: countLabel(likeCount, t('home.likeNoun'), t('home.likesNoun')),
+      }),
       pressed: liked,
       onClick: () => actions?.like?.(event.id),
     }),
@@ -86,8 +91,10 @@ function engagementBar(event, actions) {
       icon: 'lucide:message-circle',
       fallback: '💬',
       count: replyCount,
-      title: 'Reply',
-      label: `Reply · ${countLabel(replyCount, 'reply')}`,
+      title: t('home.reply'),
+      label: t('home.replyActionLabel', {
+        count: countLabel(replyCount, t('home.replyNoun'), t('home.repliesNoun')),
+      }),
       onClick: () => actions?.openThread?.(event.id),
     }),
   ]);
@@ -111,11 +118,11 @@ function actionButton({ kind, icon: name, fallback, count, label, title, pressed
 function bitzStat(value) {
   return el(
     'span',
-    { class: 'action action--stat action--bitz', title: 'Bitz · kudos & tips' },
+    { class: 'action action--stat action--bitz', title: t('home.bitzTitle') },
     [
       icon('lucide:zap', { size: 18, fallback: '⚡' }),
       countNode(value),
-      el('span', { class: 'sr' }, countLabel(value, 'bitz', 'bitz')),
+      el('span', { class: 'sr' }, countLabel(value, t('home.bitz'), t('home.bitz'))),
     ],
   );
 }
@@ -150,37 +157,37 @@ function actionFor(event, { persona, actions, enrollments }) {
   switch (event.type) {
     case 'completion':
       return actor === 'nadia'
-        ? primary('Review & sign', () => actions.openSign(event.signId))
+        ? primary(t('home.reviewAndSign'), () => actions.openSign(event.signId))
         : null;
 
     case 'issued':
       return actor === 'alice'
-        ? primary('View in Credentials', () => actions.navigate('/credentials'))
+        ? primary(t('home.viewInCredentials'), () => actions.navigate('/credentials'))
         : null;
 
     case 'course': {
       if (!event.courseId) return null;
       const state = enrollmentStateFor(enrollments, actor, event.courseId);
       if (state === ENROLLMENT.APPROVED) {
-        return el('span', { class: 'spacer' }, statusBadge('enrolled ✓', 'ok'));
+        return el('span', { class: 'spacer' }, statusBadge(t('common.badge.enrolled'), 'ok'));
       }
       const badge = enrollmentBadge(state);
-      if (badge) return el('span', { class: 'spacer' }, statusBadge(badge.label, badge.tone));
-      return primary('Request enroll', () => actions.requestEnrollment(event.courseId));
+      if (badge) return el('span', { class: 'spacer' }, statusBadge(t(badge.key, badge.params), badge.tone));
+      return primary(t('home.requestEnroll'), () => actions.requestEnrollment(event.courseId));
     }
 
     case 'enrollreq':
       if (!event.requestId || !actions.canDecideEnrollment?.(event.requestId)) return null;
       return el('span', { class: 'spacer inline-actions' }, [
-        button('Decline', { small: true, onClick: () => actions.declineEnrollment(event.requestId) }),
-        primary('Accept', () => actions.acceptEnrollment(event.requestId)),
+        button(t('home.decline'), { small: true, onClick: () => actions.declineEnrollment(event.requestId) }),
+        primary(t('home.accept'), () => actions.acceptEnrollment(event.requestId)),
       ]);
 
     case 'joinreq':
       if (!event.requestId || !actions.canDecideJoin?.(event.requestId)) return null;
       return el('span', { class: 'spacer inline-actions' }, [
-        button('Decline', { small: true, onClick: () => actions.declineJoin(event.requestId) }),
-        primary('Accept', () => actions.acceptJoin(event.requestId)),
+        button(t('home.decline'), { small: true, onClick: () => actions.declineJoin(event.requestId) }),
+        primary(t('home.accept'), () => actions.acceptJoin(event.requestId)),
       ]);
 
     default:

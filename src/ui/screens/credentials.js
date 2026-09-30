@@ -4,6 +4,7 @@ import { getPersona } from '../../data/personas.js';
 import { credentialProofText, encodeProofFragment } from '../../domain/credential.js';
 import { findAcademyById } from '../../domain/academy.js';
 import { ROLE } from '../../domain/school.js';
+import { t } from '../../services/i18n/index.js';
 import { credentialCard } from '../components/credential-card.js';
 import { createIssuedPanel } from '../components/issued-credentials.js';
 import { profileCard } from '../components/profile-card.js';
@@ -20,7 +21,7 @@ export function renderCredentials({ app, state }) {
     if (persona.role === ROLE.OWNER) {
       if (!issuedPanel) {
         issuedPanel = createIssuedPanel({ app });
-        node.replaceChildren(pageTitle('Issued by your organization'), issuedPanel.root);
+        node.replaceChildren(pageTitle(t('credentials.issuedByOrg')), issuedPanel.root);
       }
       issuedPanel.update(snapshot);
       return;
@@ -33,41 +34,44 @@ export function renderCredentials({ app, state }) {
         app.navigate('/settings');
       },
       onRefresh: () => app.refreshMyProfile(),
-      onCopy: () => app.copyText(persona.npub, 'Public key copied.'),
+      onCopy: () => app.copyText(persona.npub, t('credentials.publicKeyCopied')),
     });
 
     if (persona.role === ROLE.TEACHER) {
       const memberships = teacherMemberships(snapshot, persona.id);
       node.replaceChildren(
-        pageTitle('Credentials'),
+        pageTitle(t('credentials.title')),
         profile,
         memberships.length
           ? el('div', { class: 'grid' }, memberships.map(({ academy, status }) =>
               el('div', { class: 'card' }, [
                 el('div', { class: 'dhead' }, [
-                  el('h3', {}, `Teacher · ${academy.name}`),
-                  statusBadge(status === 'active' ? '✓ active' : 'pending approval', status === 'active' ? 'ok' : 'info'),
+                  el('h3', {}, t('credentials.teacherAcademy', { name: academy.name })),
+                  statusBadge(
+                    status === 'active' ? t('credentials.membershipActive') : t('credentials.membershipPendingApproval'),
+                    status === 'active' ? 'ok' : 'info',
+                  ),
                 ]),
                 el(
                   'p',
                   { class: 'muted small' },
-                  'Teaching membership from an accepted invitation. This is role evidence, not a signed teaching credential.',
+                  t('credentials.membershipNote'),
                 ),
               ]),
             ))
           : el('div', { class: 'card' }, [
-              el('h3', {}, 'No academy teaching role yet'),
-              el('p', { class: 'muted small' }, 'Accept a teacher invitation to connect your role to an academy.'),
-              button('Open an invitation', { variant: 'gold', small: true, onClick: () => app.navigate('/join') }),
+              el('h3', {}, t('credentials.noAcademyRole')),
+              el('p', { class: 'muted small' }, t('credentials.acceptTeacherInvite')),
+              button(t('credentials.openInvitation'), { variant: 'gold', small: true, onClick: () => app.navigate('/join') }),
             ]),
-        button('Verify a credential', { variant: 'ghost', small: true, onClick: () => app.navigate('/verify') }),
+        button(t('credentials.verifyCredential'), { variant: 'ghost', small: true, onClick: () => app.navigate('/verify') }),
       );
       return;
     }
 
     const credentials = snapshot.credentials ?? [];
     node.replaceChildren(
-      pageTitle('Credentials'),
+      pageTitle(t('credentials.title')),
       profile,
       credentials.length
         ? el(
@@ -81,27 +85,27 @@ export function renderCredentials({ app, state }) {
                 onCopyProof: (entry) =>
                   app.copyText(
                     credentialProofText(entry),
-                    'Credential proof copied — share it as a verifiable proof.',
+                    t('credentials.proofCopied'),
                   ),
                 onCopyLink: (entry) => {
                   const fragment = encodeProofFragment(credentialProofText(entry));
                   if (!fragment) return;
                   const base = `${location.origin}${location.pathname}`.replace(/#.*$/, '');
-                  app.copyText(`${base}#/verify/${fragment}`, 'Verification link copied.');
+                  app.copyText(`${base}#/verify/${fragment}`, t('credentials.linkCopied'));
                 },
               }),
             ),
           )
         : el('div', { class: 'card' }, [
-            el('h3', {}, 'No credentials yet'),
+            el('h3', {}, t('credentials.empty')),
             el(
               'p',
               { class: 'muted small' },
-              'Finish a course to earn a verifiable certificate. It appears here and can be shared without giving up your keys.',
+              t('credentials.emptyHint'),
             ),
-            button('Find a course', { variant: 'gold', small: true, onClick: () => app.navigate('/discover') }),
+            button(t('credentials.findCourse'), { variant: 'gold', small: true, onClick: () => app.navigate('/discover') }),
           ]),
-      button('Verify a credential', { variant: 'ghost', small: true, onClick: () => app.navigate('/verify') }),
+      button(t('credentials.verifyCredential'), { variant: 'ghost', small: true, onClick: () => app.navigate('/verify') }),
     );
   }
 

@@ -36,6 +36,7 @@ import { createRelayService } from './services/relay.js';
 import { createSignerService } from './services/signer.js';
 import { loadSecretKey, loadState, saveState } from './services/storage.js';
 import { createThemeService } from './services/theme.js';
+import { applyStaticTranslations, getLocale, setLocale } from './services/i18n/index.js';
 import { createConfirmHost } from './ui/components/confirm-dialog.js';
 import { setIconLoader } from './ui/components/icon.js';
 import { createOverlayHost } from './ui/components/overlay.js';
@@ -108,6 +109,7 @@ const store = createStore({
   }),
   relays: [],
   following: persisted.following ?? {},
+  locale: persisted.locale ?? 'en',
   joinRequests: persisted.joinRequests ?? [],
   enrollRequests: persisted.enrollRequests ?? [],
   events: [],
@@ -152,12 +154,19 @@ const app = { ...actions, ...dialogs };
 let syncedAccount = null;
 store.subscribe((state) => {
   saveState(state);
+  if (state.locale !== getLocale()) setLocale(state.locale);
   if (state.accountId !== syncedAccount) {
     syncedAccount = state.accountId;
     syncRecords();
     syncCredentials();
   }
 });
+
+function syncDocumentLocale() {
+  setLocale(store.getState().locale);
+  applyStaticTranslations();
+}
+syncDocumentLocale();
 
 async function restoreSigner() {
   if (!session) return;

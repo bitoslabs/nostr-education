@@ -1,0 +1,17 @@
+export default {
+  title: 'Discover',
+  empty: 'No open classes yet. Academies publish their classrooms here.',
+  joinAcademy: 'Join an academy to enroll',
+  membershipExplainer: 'The academy owner approves memberships. Enrollment opens once you are a member.',
+  requestWaiting: 'Your request is waiting for the owner.',
+  requestJoin: 'Request to join',
+  membershipRequired: 'membership required',
+  openWorkspace: 'Open workspace',
+  requestEnroll: 'Request enroll',
+  academyVerified: '{name} ✓',
+  academyFallback: 'Academy',
+  teacherVerified: 'teacher {name} ✓',
+  noTeacher: 'no teacher yet',
+  learnerOne: '{count} learner',
+  learnerMany: '{count} learners',
+};

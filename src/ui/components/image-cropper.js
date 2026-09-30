@@ -1,4 +1,5 @@
 import { el } from '../../core/dom.js';
+import { t } from '../../services/i18n/index.js';
 import { button } from './primitives.js';
 
 function toBlob(canvas, type, quality) {
@@ -18,7 +19,7 @@ function preferredType(canvas) {
 export function renderCropper({
   imageUrl,
   aspect = 1,
-  title = 'Crop image',
+  title = t('settings.cropper.title'),
   outputWidth = 512,
   onApply,
   onCancel,
@@ -78,7 +79,7 @@ export function renderCropper({
     ctx.fillStyle = '#ef4444';
     ctx.font = '13px system-ui, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('Could not load this image', viewWidth / 2, viewHeight / 2);
+    ctx.fillText(t('settings.cropper.loadError'), viewWidth / 2, viewHeight / 2);
   });
   img.src = imageUrl;
 
@@ -118,7 +119,7 @@ export function renderCropper({
     max: '4',
     step: '0.01',
     value: '1',
-    'aria-label': 'Zoom',
+    'aria-label': t('settings.cropper.zoom'),
     onInput: (event) => {
       zoom = Number(event.target.value) || 1;
       clamp();
@@ -145,12 +146,12 @@ export function renderCropper({
 
   return [
     el('h2', {}, title),
-    el('p', { class: 'muted small' }, 'Drag to reposition, then zoom. The frame is what gets saved.'),
+    el('p', { class: 'muted small' }, t('settings.cropper.hint')),
     el('div', { class: 'cropper' }, [el('div', { class: 'cropper__viewport' }, canvas)]),
-    el('label', { class: 'cropper__zoom' }, ['Zoom', slider]),
+    el('label', { class: 'cropper__zoom' }, [t('settings.cropper.zoom'), slider]),
     el('div', { class: 'dlg-foot' }, [
-      button('Cancel', { onClick: onCancel }),
-      button('Use image', { variant: 'gold', onClick: apply }),
+      button(t('common.actions.cancel'), { onClick: onCancel }),
+      button(t('settings.cropper.use'), { variant: 'gold', onClick: apply }),
     ]),
   ];
 }

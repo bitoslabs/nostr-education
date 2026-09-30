@@ -19,6 +19,7 @@ import {
 } from '../../domain/classroom.js';
 import { completionBadge, evaluateCompletion } from '../../domain/completion.js';
 import { ROLE } from '../../domain/school.js';
+import { t } from '../../services/i18n/index.js';
 import { button, emptyState, pageTitle, row, tabs } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
 
@@ -32,14 +33,14 @@ export function renderTeaching({ app, state }) {
 
     const tabBar = tabs(
       [
-        { id: 'classes', label: 'My classes' },
-        { id: 'review', label: `To review (${counts.pending})` },
-        { id: 'graded', label: `Graded (${counts.graded})` },
-        { id: 'gradebook', label: 'Gradebook' },
+        { id: 'classes', label: t('teaching.tabClasses') },
+        { id: 'review', label: t('teaching.tabReview', { count: counts.pending }) },
+        { id: 'graded', label: t('teaching.tabGraded', { count: counts.graded }) },
+        { id: 'gradebook', label: t('teaching.tabGradebook') },
       ],
       snapshot.roleTab,
       (id) => app.setRoleTab(id),
-      { label: 'Teaching' },
+      { label: t('teaching.title') },
     );
 
     let body;
@@ -47,7 +48,7 @@ export function renderTeaching({ app, state }) {
     else if (snapshot.roleTab === 'gradebook') body = gradebookBody(snapshot, app, persona);
     else body = assessmentBody(snapshot, app, queue);
 
-    node.replaceChildren(pageTitle('Teaching'), tabBar, ...body);
+    node.replaceChildren(pageTitle(t('teaching.title')), tabBar, ...body);
   }
 
   return bindScreen(state, node, render);
@@ -64,7 +65,7 @@ function scopedClassrooms(state, persona) {
 function classesBody(state, app, persona) {
   const classrooms = classroomsForTeacher(state.classrooms ?? [], persona.id, state.capabilities ?? []);
   if (!classrooms.length) {
-    return [emptyState('No classes yet. An academy owner assigns you to a classroom.')];
+    return [emptyState(t('teaching.emptyClasses'))];
   }
   return classrooms.map((room) => classCard(state, app, room));
 }
@@ -78,16 +79,20 @@ function classCard(state, app, room) {
     el('div', { class: 'crow' }, [
       el('span', { class: 'who' }, room.name),
       subject ? el('span', { class: 'ctx' }, subject.name) : null,
-      el('span', { class: 't' }, `${students.length} learner${students.length === 1 ? '' : 's'}`),
+      el(
+        'span',
+        { class: 't' },
+        students.length === 1 ? t('teaching.learnerOne') : t('teaching.learners', { count: students.length }),
+      ),
     ]),
     el('div', { class: 'arow' }, [
-      button('＋ Post homework', { variant: 'gold', small: true, onClick: () => app.openCreateHomework(room.id) }),
-      button('Invite learner', { small: true, onClick: () => app.openInviteStudent(room.id) }),
-      button('Share class link', { small: true, onClick: () => app.openClassLink(room.id) }),
+      button(t('teaching.postHomeworkButton'), { variant: 'gold', small: true, onClick: () => app.openCreateHomework(room.id) }),
+      button(t('teaching.inviteLearner'), { small: true, onClick: () => app.openInviteStudent(room.id) }),
+      button(t('teaching.shareClassLink'), { small: true, onClick: () => app.openClassLink(room.id) }),
     ]),
     ...(homework.length
       ? homework.map((item) => homeworkBlock(state, app, item, students))
-      : [emptyState('No homework posted yet.')]),
+      : [emptyState(t('teaching.emptyHomework'))]),
     completionBlock(state, app, room, homework, students),
   ]);
 }
@@ -101,17 +106,22 @@ function completionBlock(state, app, room, homework, students) {
       studentId,
     });
     const badge = completionBadge(result);
+    const badgeLabel = result.eligible
+      ? t('teaching.completionEligible')
+      : result.gradedCount === 0
+        ? t('teaching.noGradesYet')
+        : t('teaching.completionPending', { average: result.average ?? 0 });
     const recommended = (state.recommendations ?? []).some(
       (entry) => entry.classroomId === room.id && entry.studentId === studentId && entry.status === 'recommended',
     );
     return row([
       el('span', { class: 'who' }, getPersona(studentId).displayName),
       recommended
-        ? statusBadge('recommended ✓', 'ok')
-        : statusBadge(badge.label, badge.tone),
+        ? statusBadge(t('teaching.recommended'), 'ok')
+        : statusBadge(badgeLabel, badge.tone),
       el('span', { class: 'spacer' }),
       !recommended && result.eligible
-        ? button('Recommend', {
+        ? button(t('teaching.recommend'), {
             variant: 'gold',
             small: true,
             onClick: () => app.recommendCompletion({ classroomId: room.id, studentId }),
@@ -119,19 +129,20 @@ function completionBlock(state, app, room, homework, students) {
         : null,
     ]);
   });
-  if (!rows.length) rows.push(emptyState('No learners enrolled yet.'));
+  if (!rows.length) rows.push(emptyState(t('teaching.emptyLearners')));
 
   return el('div', {}, [
     el('div', { class: 'crow' }, [
-      el('span', { class: 'who' }, 'Completion'),
+      el('span', { class: 'who' }, t('teaching.completion')),
       el('span', { class: 'spacer' }),
-      button('Rules', { small: true, onClick: () => app.openCompletionPolicy(room.id) }),
+      button(t('teaching.rules'), { small: true, onClick: () => app.openCompletionPolicy(room.id) }),
     ]),
     el('div', { class: 'rows' }, rows),
   ]);
 }
 
 function homeworkBlock(state, app, item, students) {
+  const status = homeworkStatusBadge(item.status);
   const rows = students.map((studentId) => {
     const submission = submissionFor(state.submissions ?? [], item.id, studentId);
     const token = submissionStatusBadge(submission);
@@ -139,11 +150,11 @@ function homeworkBlock(state, app, item, students) {
     const graded = submission?.status === SUBMISSION_STATUS.GRADED;
     return row([
       el('span', { class: 'who' }, learner.displayName),
-      statusBadge(token.label, token.tone),
-      submission?.late ? statusBadge('late', 'warn') : null,
+      statusBadge(t(token.key, token.params), token.tone),
+      submission?.late ? statusBadge(t('teaching.late'), 'warn') : null,
       el('span', { class: 'spacer' }),
       submission
-        ? button(graded ? 'Edit score' : 'Set score', {
+        ? button(graded ? t('teaching.editScore') : t('teaching.setScore'), {
             variant: graded ? 'default' : 'gold',
             small: true,
             onClick: () => app.openGradeSubmission(submission.id),
@@ -151,14 +162,17 @@ function homeworkBlock(state, app, item, students) {
         : null,
     ]);
   });
-  if (!rows.length) rows.push(emptyState('No learners enrolled yet.'));
+  if (!rows.length) rows.push(emptyState(t('teaching.emptyLearners')));
 
   return el('div', {}, [
     el('div', { class: 'crow' }, [
-      el('span', { class: 'who' }, `${item.title} · due ${item.due} · out of ${item.maxScore}`),
-      statusBadge(homeworkStatusBadge(item.status)?.label ?? 'published', homeworkStatusBadge(item.status)?.tone ?? 'ok'),
+      el('span', { class: 'who' }, t('teaching.homeworkMeta', { title: item.title, due: item.due, maxScore: item.maxScore })),
+      statusBadge(
+        status ? t(status.key, status.params) : t('common.badge.published'),
+        status?.tone ?? 'ok',
+      ),
       el('span', { class: 'spacer' }),
-      button('Manage', { small: true, onClick: () => app.openManageHomework(item.id) }),
+      button(t('teaching.manage'), { small: true, onClick: () => app.openManageHomework(item.id) }),
     ]),
     item.instructions ? el('p', { class: 'muted small' }, item.instructions) : null,
     el('div', { class: 'rows' }, rows),
@@ -176,9 +190,9 @@ function assessmentBody(state, app, queue) {
         return row([
           el('span', { class: 'who' }, getPersona(submission.studentId).displayName),
           el('span', { class: 'muted small' }, `${classroom.name} · ${homework.title} · v${submission.version}`),
-          statusBadge(token.label, token.tone),
+          statusBadge(t(token.key, token.params), token.tone),
           el('span', { class: 'spacer' }),
-          button(graded ? 'Edit score' : 'Set score', {
+          button(graded ? t('teaching.editScore') : t('teaching.setScore'), {
             variant: graded ? 'default' : 'gold',
             small: true,
             onClick: () => app.openGradeSubmission(submission.id),
@@ -187,7 +201,7 @@ function assessmentBody(state, app, queue) {
       })
     : [
         emptyState(
-          wanted === SUBMISSION_STATUS.GRADED ? 'No graded submissions yet.' : 'Nothing to review ✓',
+          wanted === SUBMISSION_STATUS.GRADED ? t('teaching.emptyGraded') : t('teaching.emptyReview'),
         ),
       ];
 
@@ -196,7 +210,7 @@ function assessmentBody(state, app, queue) {
 
 function gradebookBody(state, app, persona) {
   const classrooms = scopedClassrooms(state, persona);
-  if (!classrooms.length) return [emptyState('No classes to grade yet.')];
+  if (!classrooms.length) return [emptyState(t('teaching.emptyGradebook'))];
 
   const selectedId = classrooms.some((room) => room.id === state.gradebookClassId)
     ? state.gradebookClassId
@@ -213,7 +227,7 @@ function gradebookBody(state, app, persona) {
     classrooms.length > 1
       ? el(
           'select',
-          { 'aria-label': 'Class', onChange: (event) => app.setGradebookClass(event.target.value) },
+          { 'aria-label': t('teaching.classLabel'), onChange: (event) => app.setGradebookClass(event.target.value) },
           classrooms.map((entry) =>
             el('option', { value: entry.id, selected: entry.id === selectedId }, entry.name),
           ),
@@ -224,20 +238,20 @@ function gradebookBody(state, app, persona) {
     el('span', { class: 'who' }, room.name),
     el('span', { class: 'spacer' }),
     classAverage == null
-      ? statusBadge('no grades yet', 'muted')
-      : statusBadge(`class average ${classAverage}%`, 'ok'),
+      ? statusBadge(t('teaching.noGradesYet'), 'muted')
+      : statusBadge(t('teaching.classAverage', { n: classAverage }), 'ok'),
   ]);
 
-  if (!homework.length) return [picker, header, emptyState('No published homework in this class yet.')];
-  if (!students.length) return [picker, header, emptyState('No learners enrolled in this class yet.')];
+  if (!homework.length) return [picker, header, emptyState(t('teaching.emptyPublishedHomework'))];
+  if (!students.length) return [picker, header, emptyState(t('teaching.emptyClassLearners'))];
 
   const rows = students.map((studentId) => {
     const learner = getPersona(studentId);
     const cells = homework.map((item) => {
       const submission = submissionFor(submissions, item.id, studentId);
       const percent = scorePercent(submission);
-      const label = submission ? (percent == null ? 'submitted' : `${percent}%`) : '—';
-      return el('span', { class: 'chip' }, `${item.title}: ${label}`);
+      const label = submission ? (percent == null ? t('teaching.submitted') : `${percent}%`) : '—';
+      return el('span', { class: 'chip' }, t('teaching.gradebookChip', { title: item.title, label }));
     });
     const average = averagePercent(
       homework.map((item) => submissionFor(submissions, item.id, studentId)).filter(Boolean),
@@ -246,7 +260,7 @@ function gradebookBody(state, app, persona) {
       el('span', { class: 'who' }, learner.displayName),
       ...cells,
       el('span', { class: 'spacer' }),
-      average == null ? null : statusBadge(`avg ${average}%`, 'ok'),
+      average == null ? null : statusBadge(t('teaching.average', { n: average }), 'ok'),
     ]);
   });
 

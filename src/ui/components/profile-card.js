@@ -1,5 +1,6 @@
 import { el } from '../../core/dom.js';
 import { identitySecondary, isVerified } from '../../domain/identity.js';
+import { t } from '../../services/i18n/index.js';
 import { avatar, button } from './primitives.js';
 
 export function profileCard(persona, { onEdit, onRefresh, onCopy } = {}) {
@@ -12,14 +13,14 @@ export function profileCard(persona, { onEdit, onRefresh, onCopy } = {}) {
       el('div', { class: 'profile-hero__names' }, [
         el('span', { class: 'profile-hero__name' }, [
           persona.displayName,
-          isVerified(persona) ? el('span', { class: 'vmark', title: 'Verified handle' }, '✓') : null,
+          isVerified(persona) ? el('span', { class: 'vmark', title: t('home.verifiedHandle') }, '✓') : null,
         ]),
         el('span', { class: 'mono small muted' }, identitySecondary(persona)),
       ]),
     ]),
     persona.about
       ? el('p', { class: 'small' }, persona.about)
-      : el('p', { class: 'muted small' }, 'No bio yet — add one so classmates can recognise you.'),
+      : el('p', { class: 'muted small' }, t('home.noBio')),
     persona.website || persona.lud16
       ? el('p', { class: 'small muted profile-card__meta' }, [
           persona.website
@@ -33,12 +34,12 @@ export function profileCard(persona, { onEdit, onRefresh, onCopy } = {}) {
           persona.lud16 ? el('span', { class: 'mono' }, persona.lud16) : null,
         ])
       : null,
-    el('span', { class: 'field-label' }, 'Public key (npub)'),
+    el('span', { class: 'field-label' }, t('home.publicKey')),
     el('p', { class: 'mono small' }, persona.npub),
     el('div', { class: 'profile-actions' }, [
-      button('Edit profile', { variant: 'gold', small: true, onClick: onEdit }),
-      button('Copy npub', { small: true, onClick: onCopy }),
-      button('Refresh from relays', { small: true, onClick: onRefresh }),
+      button(t('home.editProfile'), { variant: 'gold', small: true, onClick: onEdit }),
+      button(t('home.copyNpub'), { small: true, onClick: onCopy }),
+      button(t('home.refreshFromRelays'), { small: true, onClick: onRefresh }),
     ]),
   ]);
 }

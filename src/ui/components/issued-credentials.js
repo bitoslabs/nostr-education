@@ -1,6 +1,5 @@
 import { el } from '../../core/dom.js';
 import { getPersona } from '../../data/personas.js';
-import { academyTypeLabel } from '../../domain/academy.js';
 import {
   CREDENTIAL_STATUS,
   ISSUED_FILTERS,
@@ -9,6 +8,7 @@ import {
   issuedFilterCounts,
   issuedStats,
 } from '../../domain/credential.js';
+import { t } from '../../services/i18n/index.js';
 import { icon } from './icon.js';
 import { avatar, button, segmented } from './primitives.js';
 import { statusBadge } from './status-badge.js';
@@ -22,20 +22,20 @@ function initials(name) {
 }
 
 function timeAgo(ts) {
-  if (!ts) return 'recently';
+  if (!ts) return t('credentials.time.recently');
   const diff = Date.now() - Number(ts);
-  if (!Number.isFinite(diff) || diff < 0) return 'recently';
+  if (!Number.isFinite(diff) || diff < 0) return t('credentials.time.recently');
   const minutes = Math.round(diff / 60000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 1) return t('credentials.time.justNow');
+  if (minutes < 60) return t('credentials.time.minutes', { count: minutes });
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h`;
+  if (hours < 24) return t('credentials.time.hours', { count: hours });
   const days = Math.round(hours / 24);
-  if (days < 30) return `${days}d`;
+  if (days < 30) return t('credentials.time.days', { count: days });
   try {
     return new Date(Number(ts)).toLocaleDateString();
   } catch {
-    return 'earlier';
+    return t('credentials.time.earlier');
   }
 }
 
@@ -46,23 +46,23 @@ function recipientAvatar(entry) {
 }
 
 function rowStatus(entry) {
-  if (entry.kind === 'awaiting') return statusBadge('awaiting signature', 'warn');
-  if (entry.status === CREDENTIAL_STATUS.REVOKED) return statusBadge('revoked', 'err');
-  if (entry.delivery === 'delivered') return statusBadge('✓ delivered', 'ok');
-  if (entry.delivery === 'failed') return statusBadge('failed', 'err');
-  return statusBadge('pending', 'warn');
+  if (entry.kind === 'awaiting') return statusBadge(t('credentials.status.awaitingSignature'), 'warn');
+  if (entry.status === CREDENTIAL_STATUS.REVOKED) return statusBadge(t('credentials.status.revoked'), 'err');
+  if (entry.delivery === 'delivered') return statusBadge(t('credentials.status.delivered'), 'ok');
+  if (entry.delivery === 'failed') return statusBadge(t('credentials.status.failed'), 'err');
+  return statusBadge(t('credentials.status.pending'), 'warn');
 }
 
 function issuedRow(entry, app) {
   const sub = [entry.title, entry.course].filter(Boolean).join(' · ');
   const actions =
     entry.kind === 'awaiting'
-      ? [button('Review & sign', { variant: 'gold', small: true, onClick: () => app.openSign(entry.signId) })]
+      ? [button(t('credentials.reviewSign'), { variant: 'gold', small: true, onClick: () => app.openSign(entry.signId) })]
       : [
-          button('Verify', { small: true, onClick: () => app.navigate('/verify') }),
-          button('Copy id', { small: true, onClick: () => app.copyText(entry.id, 'Credential id copied.') }),
+          button(t('credentials.verifyAction'), { small: true, onClick: () => app.navigate('/verify') }),
+          button(t('credentials.copyId'), { small: true, onClick: () => app.copyText(entry.id, t('credentials.idCopied')) }),
           entry.status === CREDENTIAL_STATUS.ACTIVE
-            ? button('Revoke', { small: true, onClick: () => app.revokeCredential(entry.id) })
+            ? button(t('credentials.revoke'), { small: true, onClick: () => app.revokeCredential(entry.id) })
             : null,
         ].filter(Boolean);
 
@@ -82,7 +82,7 @@ function issuedRow(entry, app) {
         rowStatus(entry),
         entry.recipientHandle ? el('span', { class: 'mono small muted' }, entry.recipientHandle) : null,
         entry.kind === 'awaiting' && entry.grade != null
-          ? el('span', { class: 'small muted' }, `grade ${entry.grade}%`)
+          ? el('span', { class: 'small muted' }, t('credentials.grade', { grade: entry.grade }))
           : null,
       ]),
       el('div', { class: 'issued-row__actions' }, actions),
@@ -110,23 +110,23 @@ function issuerMenu({ app, academy }) {
   menu.append(
     el(
       'summary',
-      { class: 'owner-menu__trigger', 'aria-label': 'More issuer actions' },
+      { class: 'owner-menu__trigger', 'aria-label': t('credentials.moreIssuerActions') },
       icon('lucide:ellipsis', { size: 18, fallback: '⋯' }),
     ),
     el('div', { class: 'owner-menu__list' }, [
       academy
-        ? menuItem('lucide:building-2', '🏫', 'Edit academy info', () => {
+        ? menuItem('lucide:building-2', '🏫', t('credentials.editAcademy'), () => {
             close();
             app.setSettingsSection('academy');
             app.navigate('/settings');
           })
         : null,
-      menuItem('lucide:user-round', '👤', 'Edit my profile', () => {
+      menuItem('lucide:user-round', '👤', t('credentials.editProfile'), () => {
         close();
         app.setSettingsSection('profile');
         app.navigate('/settings');
       }),
-      menuItem('lucide:layout-grid', '▦', 'Open organization', () => {
+      menuItem('lucide:layout-grid', '▦', t('credentials.openOrganization'), () => {
         close();
         app.navigate('/role');
       }),
@@ -169,8 +169,8 @@ export function createIssuedPanel({ app }) {
   const search = el('input', {
     type: 'search',
     class: 'issued-search__input',
-    placeholder: 'Search learner, course, or id',
-    'aria-label': 'Search issued credentials',
+    placeholder: t('credentials.searchPlaceholder'),
+    'aria-label': t('credentials.searchAria'),
     onInput: (event) => {
       query = event.target.value;
       renderList();
@@ -190,15 +190,15 @@ export function createIssuedPanel({ app }) {
         el('div', { class: 'owner-hero__names' }, [
           el('span', { class: 'owner-hero__name' }, [
             name,
-            el('span', { class: 'vmark', title: 'Authorized issuer' }, '✓'),
+            el('span', { class: 'vmark', title: t('credentials.authorizedIssuer') }, '✓'),
           ]),
-          el('span', { class: 'small muted' }, academy ? academyTypeLabel(academy.type) : 'Issuer'),
+          el('span', { class: 'small muted' }, academy ? t('common.academyType.' + academy.type) : t('credentials.issuer')),
           el('span', { class: 'mono small muted' }, npub),
         ]),
         el('div', { class: 'owner-hero__actions' }, [
-          button([icon('lucide:copy', { size: 15, fallback: '⧉' }), 'Copy key'], {
+          button([icon('lucide:copy', { size: 15, fallback: '⧉' }), t('credentials.copyKey')], {
             small: true,
-            onClick: () => app.copyText(npub, 'Issuer key copied.'),
+            onClick: () => app.copyText(npub, t('credentials.issuerKeyCopied')),
           }),
           issuerMenu({ app, academy }),
         ]),
@@ -230,10 +230,10 @@ export function createIssuedPanel({ app }) {
   function renderStats() {
     const totals = issuedStats(latest);
     stats.replaceChildren(
-      statCell({ value: totals.issued, label: 'issued', tabId: 'all' }),
-      statCell({ value: totals.delivered, label: 'delivered', tabId: 'delivered' }),
-      statCell({ value: totals.pending, label: 'pending', tabId: 'pending' }),
-      statCell({ value: totals.learners, label: 'learners', tabId: null }),
+      statCell({ value: totals.issued, label: t('credentials.stats.issued'), tabId: 'all' }),
+      statCell({ value: totals.delivered, label: t('credentials.stats.delivered'), tabId: 'delivered' }),
+      statCell({ value: totals.pending, label: t('credentials.stats.pending'), tabId: 'pending' }),
+      statCell({ value: totals.learners, label: t('credentials.stats.learners'), tabId: null }),
     );
   }
 
@@ -241,13 +241,16 @@ export function createIssuedPanel({ app }) {
     const counts = issuedFilterCounts(latest);
     filters.replaceChildren(
       segmented(
-        ISSUED_FILTERS.map((filter) => ({
-          id: filter.id,
-          label: counts[filter.id] ? `${filter.label} (${counts[filter.id]})` : filter.label,
-        })),
+        ISSUED_FILTERS.map((filter) => {
+          const label = t('credentials.filter.' + filter.id);
+          return {
+            id: filter.id,
+            label: counts[filter.id] ? `${label} (${counts[filter.id]})` : label,
+          };
+        }),
         tab,
         (id) => selectTab(id),
-        { label: 'Filter issued credentials' },
+        { label: t('credentials.filterLabel') },
       ),
     );
   }
@@ -259,14 +262,14 @@ export function createIssuedPanel({ app }) {
         latest.length
           ? el('div', { class: 'issued-empty' }, [
               el('span', { class: 'hex-plate issued-empty__ico' }, icon('lucide:search-x', { size: 20, fallback: '⌕' })),
-              el('h3', {}, 'Nothing matches'),
-              el('p', { class: 'muted small' }, 'Try a different name, course, or filter.'),
+              el('h3', {}, t('credentials.emptyNothingMatches')),
+              el('p', { class: 'muted small' }, t('credentials.emptyTryDifferent')),
             ])
           : el('div', { class: 'issued-empty' }, [
               el('span', { class: 'hex-plate issued-empty__ico' }, icon('lucide:badge-check', { size: 20, fallback: '🎓' })),
-              el('h3', {}, 'No credentials issued yet'),
-              el('p', { class: 'muted small' }, 'When you sign a completion, the certificate appears here with its delivery status.'),
-              button('Open sign queue', {
+              el('h3', {}, t('credentials.emptyNoneIssued')),
+              el('p', { class: 'muted small' }, t('credentials.emptyNoneIssuedHint')),
+              button(t('credentials.openSignQueue'), {
                 variant: 'gold',
                 small: true,
                 onClick: () => {
@@ -284,11 +287,11 @@ export function createIssuedPanel({ app }) {
     const mixed = awaiting.length > 0 && issued.length > 0;
     const nodes = [];
     if (awaiting.length) {
-      if (mixed) nodes.push(sectionLabel('Needs your signature'));
+      if (mixed) nodes.push(sectionLabel(t('credentials.needsSignature')));
       nodes.push(...awaiting.map((entry) => issuedRow(entry, app)));
     }
     if (issued.length) {
-      if (mixed) nodes.push(sectionLabel('Issued'));
+      if (mixed) nodes.push(sectionLabel(t('credentials.sectionIssued')));
       nodes.push(...issued.map((entry) => issuedRow(entry, app)));
     }
     list.replaceChildren(...nodes);

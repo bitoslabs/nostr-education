@@ -2,13 +2,13 @@ import { el } from '../../core/dom.js';
 import {
   credentialFromProof,
   decodeProofFragment,
-  statusLabel,
   statusTone,
   verifyCredential,
 } from '../../domain/credential.js';
 import { truncateNpub } from '../../domain/identity.js';
 import { verify } from '../../services/nostr.js';
 import { resolveNip05 } from '../../services/nip05.js';
+import { t } from '../../services/i18n/index.js';
 import { icon } from '../components/icon.js';
 import { identityChip } from '../components/identity-chip.js';
 import { button, noteBox, pageTitle } from '../components/primitives.js';
@@ -32,8 +32,8 @@ export function renderVerify({ store, app }) {
   const result = el('div', { class: 'verify__result', 'aria-live': 'polite' });
   const input = el('textarea', {
     rows: '4',
-    placeholder: 'Paste a credential id or a shared credential proof (JSON)',
-    'aria-label': 'Credential id or proof',
+    placeholder: t('credentials.verify.placeholder'),
+    'aria-label': t('credentials.verify.inputAria'),
   });
 
   function clear() {
@@ -46,7 +46,7 @@ export function renderVerify({ store, app }) {
     const query = input.value.trim();
     result.replaceChildren();
     if (!query) {
-      result.append(noteBox('Paste a credential id or a shared proof to check it.', 'info'));
+      result.append(noteBox(t('credentials.verify.emptyQuery'), 'info'));
       return;
     }
 
@@ -55,7 +55,7 @@ export function renderVerify({ store, app }) {
     const credential = local ?? pasted;
     if (!credential) {
       result.append(
-        noteBox('No credential matched that id, and this is not a valid proof. Paste the id or the shared proof (JSON).', 'warn'),
+        noteBox(t('credentials.verify.noMatch'), 'warn'),
       );
       return;
     }
@@ -71,25 +71,25 @@ export function renderVerify({ store, app }) {
   });
 
   const node = el('section', { class: 'screen' }, [
-    pageTitle('Verify'),
-    el('p', { class: 'muted' }, 'Inspect a credential before making a trust decision.'),
+    pageTitle(t('credentials.verify.title')),
+    el('p', { class: 'muted' }, t('credentials.verify.intro')),
     el('div', { class: 'card verify__panel' }, [
       el('label', { class: 'verify__field' }, [
-        el('span', { class: 'verify__field-label' }, 'Credential id or shared proof'),
+        el('span', { class: 'verify__field-label' }, t('credentials.verify.fieldLabel')),
         input,
         el(
           'span',
           { class: 'verify__field-hint' },
-          'Paste a credential id, the JSON from “Copy proof”, or open a verification link. ⌘/Ctrl + Enter to check.',
+          t('credentials.verify.fieldHint'),
         ),
       ]),
       el('div', { class: 'verify__actions' }, [
-        button('Check credential', { variant: 'gold', onClick: run }),
-        button('Clear', { variant: 'ghost', small: true, onClick: clear }),
+        button(t('credentials.checkCredential'), { variant: 'gold', onClick: run }),
+        button(t('credentials.clear'), { variant: 'ghost', small: true, onClick: clear }),
       ]),
     ]),
     result,
-    button('Back to credentials', { variant: 'ghost', small: true, onClick: () => app.navigate('/credentials') }),
+    button(t('credentials.backToCredentials'), { variant: 'ghost', small: true, onClick: () => app.navigate('/credentials') }),
   ]);
 
   const route = (typeof location !== 'undefined' ? location.hash : '').replace(/^#/, '');
@@ -106,31 +106,37 @@ function verificationCard({ credential, pasted, app }) {
   const check = verifyCredential(credential, verify);
   const active = credential.status === 'active';
   const verdict = !check.valid
-    ? { tone: 'err', title: 'Signature not verified', icon: 'lucide:shield-alert', fallback: '⚠' }
+    ? { tone: 'err', title: t('credentials.verify.notVerified'), icon: 'lucide:shield-alert', fallback: '⚠' }
     : active
-      ? { tone: 'ok', title: 'Verified credential', icon: 'lucide:badge-check', fallback: '✓' }
+      ? { tone: 'ok', title: t('credentials.verify.verified'), icon: 'lucide:badge-check', fallback: '✓' }
       : {
           tone: 'warn',
-          title: `Signature valid — ${statusLabel(credential.status).toLowerCase()}`,
+          title: t('credentials.verify.signatureValid', {
+            status: t('common.credentialStatus.' + credential.status).toLowerCase(),
+          }),
           icon: 'lucide:triangle-alert',
           fallback: '⚠',
         };
 
   const facts = el('div', { class: 'verify__facts' });
-  if (credential.payload?.holder) facts.append(fact('Recipient', credential.payload.holder));
-  if (credential.course) facts.append(fact('Course', credential.course));
+  if (credential.payload?.holder) facts.append(fact(t('credentials.verify.factRecipient'), credential.payload.holder));
+  if (credential.course) facts.append(fact(t('credentials.verify.factCourse'), credential.course));
   const issued = formatIssued(credential.issuedAt);
-  if (issued) facts.append(fact('Issued', issued));
-  if (credential.issuer) facts.append(fact('Issuer', identityChip(credential.issuer)));
+  if (issued) facts.append(fact(t('credentials.verify.factIssued'), issued));
+  if (credential.issuer) facts.append(fact(t('credentials.verify.factIssuer'), identityChip(credential.issuer)));
 
   const issuerKey = credential.issuerNpub ?? credential.issuerPubkey;
   if (issuerKey) {
     facts.append(
       fact(
-        'Issuer key',
+        t('credentials.verify.factIssuerKey'),
         el('span', { class: 'verify__key' }, [
           el('span', { class: 'mono small' }, truncateNpub(issuerKey)),
-          button('Copy', { small: true, variant: 'ghost', onClick: () => app.copyText(issuerKey, 'Issuer key copied.') }),
+          button(t('common.actions.copy'), {
+            small: true,
+            variant: 'ghost',
+            onClick: () => app.copyText(issuerKey, t('credentials.issuerKeyCopied')),
+          }),
         ]),
       ),
     );
@@ -145,7 +151,10 @@ function verificationCard({ credential, pasted, app }) {
         el('h3', {}, verdict.title),
         el('p', { class: 'muted small' }, check.reason),
       ]),
-      statusBadge(statusLabel(credential.status), statusTone(credential.status)),
+      statusBadge(
+        t('common.credentialStatus.' + credential.status),
+        statusTone(credential.status),
+      ),
     ]),
     el('h4', { class: 'verify__title' }, credential.title),
     facts,
@@ -153,23 +162,26 @@ function verificationCard({ credential, pasted, app }) {
 
   const nip05 = credential.payload?.issuerNip05;
   if (nip05) {
-    const line = el('p', { class: 'mono small muted verify__nip05' }, `Resolving ${nip05}…`);
+    const line = el('p', { class: 'mono small muted verify__nip05' }, t('credentials.verify.resolving', { nip05 }));
     card.append(line);
     resolveNip05(nip05).then((resolved) => {
       if (!resolved) {
-        line.textContent = `${nip05} · not resolved (signature still stands)`;
+        line.textContent = t('credentials.verify.notResolved', { nip05 });
         return;
       }
       line.textContent =
         resolved.pubkey === credential.issuerPubkey
-          ? `✓ ${resolved.identifier} → ${truncateNpub(resolved.npub ?? '')}`
-          : `⚠ ${resolved.identifier} resolves to a different key`;
+          ? t('credentials.verify.resolved', {
+              identifier: resolved.identifier,
+              npub: truncateNpub(resolved.npub ?? ''),
+            })
+          : t('credentials.verify.differentKey', { identifier: resolved.identifier });
     });
   }
 
   if (pasted) {
-    card.append(el('p', { class: 'muted small' }, 'Checked from a shared proof — status is not included in the proof.'));
+    card.append(el('p', { class: 'muted small' }, t('credentials.verify.sharedNote')));
   }
-  card.append(noteBox('A valid signature alone is not endorsement. Check status and freshness.'));
+  card.append(noteBox(t('credentials.verify.endorsementNote')));
   return card;
 }

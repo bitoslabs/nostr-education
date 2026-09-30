@@ -2,16 +2,15 @@ import { el } from '../../core/dom.js';
 import { bindScreen } from '../../core/reactive.js';
 import { getPersona, getPersonaIds } from '../../data/personas.js';
 import { SIGNER_TYPES, signerType } from '../../domain/account.js';
-import { academyTypeLabel } from '../../domain/academy.js';
 import { classroomsForStudent, classroomsForTeacher, subjectById } from '../../domain/classroom.js';
 import { normalizeHandle, validateHandle } from '../../domain/handle.js';
 import { identitySecondary, isVerified, truncateNpub } from '../../domain/identity.js';
-import { MODE, modeDescription, modeLabel, normalizeMode } from '../../domain/mode.js';
-import { relayModeLabel } from '../../domain/relay.js';
+import { MODE, normalizeMode } from '../../domain/mode.js';
 import { MEMBERSHIP, REQUEST_STATUS, ROLE, membershipBadge } from '../../domain/school.js';
 import { backupNsecForPubkey, decodeKey } from '../../services/nostr.js';
 import { loadOrgSecret, loadSecretKey } from '../../services/storage.js';
 import { ACCENTS, THEME_CHOICES } from '../../services/theme.js';
+import { availableLocales, t } from '../../services/i18n/index.js';
 import { icon } from '../components/icon.js';
 import { identityChip } from '../components/identity-chip.js';
 import { renderEditAcademy } from '../components/academy-dialog.js';
@@ -20,13 +19,13 @@ import { avatar, button, emptyState, noteBox, segmented, swatchGroup } from '../
 import { statusBadge } from '../components/status-badge.js';
 
 const SECTIONS = Object.freeze({
-  appearance: { title: 'Appearance', icon: 'lucide:palette', fallback: '🎨', sub: 'theme · accent · density' },
-  profile: { title: 'My profile', icon: 'lucide:id-card', fallback: '🪪', sub: 'name · picture · links' },
-  academy: { title: 'Academy info', icon: 'lucide:building-2', fallback: '🏫', sub: 'name · logo · time zone' },
-  identity: { title: 'Account & identity', icon: 'lucide:user-round', fallback: '👤', sub: 'keys · handle · signers' },
-  membership: { title: 'Membership', icon: 'lucide:school', fallback: '🎓', sub: 'academy access' },
-  relays: { title: 'Relays & network', icon: 'lucide:server', fallback: '📡', sub: 'health · delivery' },
-  session: { title: 'Session', icon: 'lucide:log-out', fallback: '⏻', sub: 'sign out' },
+  appearance: { titleKey: 'settings.sections.appearance.title', icon: 'lucide:palette', fallback: '🎨', subKey: 'settings.sections.appearance.sub' },
+  profile: { titleKey: 'settings.sections.profile.title', icon: 'lucide:id-card', fallback: '🪪', subKey: 'settings.sections.profile.sub' },
+  academy: { titleKey: 'settings.sections.academy.title', icon: 'lucide:building-2', fallback: '🏫', subKey: 'settings.sections.academy.sub' },
+  identity: { titleKey: 'settings.sections.identity.title', icon: 'lucide:user-round', fallback: '👤', subKey: 'settings.sections.identity.sub' },
+  membership: { titleKey: 'settings.sections.membership.title', icon: 'lucide:school', fallback: '🎓', subKey: 'settings.sections.membership.sub' },
+  relays: { titleKey: 'settings.sections.relays.title', icon: 'lucide:server', fallback: '📡', subKey: 'settings.sections.relays.sub' },
+  session: { titleKey: 'settings.sections.session.title', icon: 'lucide:log-out', fallback: '⏻', subKey: 'settings.sections.session.sub' },
 });
 
 export function renderSettings({ app, theme, scope, state }) {
@@ -63,18 +62,18 @@ function hubView(state, app) {
   const badge = membershipBadge(membership);
 
   return [
-    el('h1', { class: 'font-display' }, 'Settings'),
+    el('h1', { class: 'font-display' }, t('settings.title')),
     el('button', { class: 'list-row', type: 'button', onClick: () => app.navigate('/credentials') }, [
       avatar(persona, 48),
       el('span', { class: 'listrow__txt' }, [
         el('span', { class: 'list-row__title' }, [persona.displayName, el('span', { class: 'vmark' }, ' ✓')]),
         el('span', { class: 'mono small muted' }, identitySecondary(persona)),
-        el('span', { class: 'small' }, badge ? statusBadge(badge.label, badge.tone) : 'no membership'),
+        el('span', { class: 'small' }, badge ? statusBadge(t(badge.key, badge.params), badge.tone) : t('settings.noMembership')),
       ]),
       el('span', { class: 'listrow__chev', 'aria-hidden': 'true' }, '›'),
     ]),
 
-    el('span', { class: 'field-label' }, 'Preferences'),
+    el('span', { class: 'field-label' }, t('settings.preferences')),
     el(
       'div',
       { class: 'list-divide' },
@@ -83,10 +82,10 @@ function hubView(state, app) {
         .map(([id, meta]) => settingRow(meta, () => app.setSettingsSection(id))),
     ),
 
-    el('span', { class: 'field-label' }, 'Support'),
+    el('span', { class: 'field-label' }, t('settings.support')),
     el('div', { class: 'list-divide' }, [
-      plainRow('lucide:circle-help', '❓', 'Help & support', () => app.stub('Help is coming soon.')),
-      plainRow('lucide:info', 'ℹ', 'About BitOS Education', () => app.stub('BitOS Education · v1.0.0-proto')),
+      plainRow('lucide:circle-help', '❓', t('settings.helpAndSupport'), () => app.stub(t('settings.helpComingSoon'))),
+      plainRow('lucide:info', 'ℹ', t('settings.about'), () => app.stub(t('settings.aboutVersion'))),
     ]),
   ];
 }
@@ -97,7 +96,7 @@ function sectionView(section, state, app, theme, registerBackupHide, registerSyn
   const membership = state.memberships?.[persona.id] ?? state.membership ?? MEMBERSHIP.NONE;
 
   const bodies = {
-    appearance: () => [appearanceBody(theme, registerSync)],
+    appearance: () => [appearanceBody(theme, registerSync, state, app)],
     profile: () => [
       renderEditProfile({
         persona,
@@ -109,7 +108,7 @@ function sectionView(section, state, app, theme, registerBackupHide, registerSyn
     ],
     academy: () => {
       const academy = state.academies?.[persona.id];
-      if (!academy) return [emptyState('You do not own an academy yet.')];
+      if (!academy) return [emptyState(t('settings.noAcademyYet'))];
       return [
         renderEditAcademy({
           academy,
@@ -122,8 +121,8 @@ function sectionView(section, state, app, theme, registerBackupHide, registerSyn
     identity: () => [
       identityCard(persona, app),
       backupCard({
-        title: 'Back up your account key',
-        description: 'This key controls your personal Nostr account, including your owner access. You can import it on the sign-in page to use another browser.',
+        title: t('settings.backup.accountTitle'),
+        description: t('settings.backup.accountBody'),
         pubkey: state.session?.pubkey,
         npub: persona.npub,
         readSecret: () => loadSecretKey(decodeKey),
@@ -133,8 +132,8 @@ function sectionView(section, state, app, theme, registerBackupHide, registerSyn
       }),
       state.academies?.[persona.id]?.orgPubkey
         ? backupCard({
-            title: 'Back up your academy key',
-            description: 'Your academy has a separate key for its public profile. Keep both backups. Academy-key import on another device is not available yet.',
+            title: t('settings.backup.academyTitle'),
+            description: t('settings.backup.academyBody'),
             pubkey: state.academies[persona.id].orgPubkey,
             npub: state.academies[persona.id].orgNpub,
             readSecret: () => loadOrgSecret(state.academies[persona.id].id, decodeKey),
@@ -160,14 +159,14 @@ function sectionHeader(meta, app) {
       {
         class: 'icon-btn',
         type: 'button',
-        'aria-label': 'Back to settings',
+        'aria-label': t('settings.backToSettings'),
         onClick: () => app.setSettingsSection(null),
       },
       icon('lucide:chevron-left', { size: 20, fallback: '←' }),
     ),
     el('div', { class: 'secthead__txt' }, [
-      el('h1', { class: 'font-display secthead__title' }, meta.title),
-      meta.sub ? el('span', { class: 'list-row__sub' }, meta.sub) : null,
+      el('h1', { class: 'font-display secthead__title' }, t(meta.titleKey)),
+      meta.subKey ? el('span', { class: 'list-row__sub' }, t(meta.subKey)) : null,
     ]),
   ]);
 }
@@ -176,8 +175,8 @@ function settingRow(meta, onClick) {
   return el('button', { class: 'list-row', type: 'button', onClick }, [
     el('span', { class: 'hex-plate', style: { width: '40px', height: '40px' } }, icon(meta.icon, { size: 18, fallback: meta.fallback })),
     el('span', { class: 'listrow__txt' }, [
-      el('span', { class: 'list-row__title' }, meta.title),
-      el('span', { class: 'list-row__sub' }, meta.sub),
+      el('span', { class: 'list-row__title' }, t(meta.titleKey)),
+      el('span', { class: 'list-row__sub' }, t(meta.subKey)),
     ]),
     el('span', { class: 'listrow__chev', 'aria-hidden': 'true' }, '›'),
   ]);
@@ -213,32 +212,45 @@ function switchLine(key, label, theme) {
   ]);
 }
 
-function appearanceBody(theme, registerSync) {
-  const themeSeg = segmented(THEME_CHOICES, theme.current(), (id) => theme.setTheme(id), { label: 'Theme' });
+function appearanceBody(theme, registerSync, state, app) {
+  const themeSeg = segmented(THEME_CHOICES, theme.current(), (id) => theme.setTheme(id), { label: t('settings.appearance.theme') });
   const resolvedNote = el('p', { class: 'small dim' });
   const accentSwatches = swatchGroup(
     Object.entries(ACCENTS).map(([id, token]) => ({ id, color: token.value, label: id })),
     theme.accent(),
     (id) => theme.setAccent(id),
   );
+  const languageSelect = el(
+    'select',
+    {
+      'aria-label': t('settings.appearance.language'),
+      onChange: (event) => app.setLocale(event.target.value),
+    },
+    availableLocales().map((code) =>
+      el('option', { value: code, selected: code === state.locale }, t('settings.locales.' + code)),
+    ),
+  );
   const root = el('div', {}, [
-    el('span', { class: 'field-label' }, 'Theme'),
+    el('span', { class: 'field-label' }, t('settings.appearance.theme')),
     themeSeg,
     resolvedNote,
 
-    el('span', { class: 'field-label', style: { marginTop: '18px' } }, 'Accent'),
+    el('span', { class: 'field-label', style: { marginTop: '18px' } }, t('settings.appearance.accent')),
     accentSwatches,
 
+    el('span', { class: 'field-label', style: { marginTop: '18px' } }, t('settings.appearance.language')),
+    languageSelect,
+
     el('div', { class: 'list-divide', style: { marginTop: '18px' } }, [
-      switchLine('oled', 'Pure black (OLED)', theme),
-      switchLine('compact', 'Compact density', theme),
-      switchLine('reduceMotion', 'Reduce motion', theme),
+      switchLine('oled', t('settings.appearance.pureBlack'), theme),
+      switchLine('compact', t('settings.appearance.compactDensity'), theme),
+      switchLine('reduceMotion', t('settings.appearance.reduceMotion'), theme),
     ]),
 
     el(
       'div',
       { class: 'state-banner info' },
-      'Theme follows the system by default; overrides persist locally on this device.',
+      t('settings.appearance.note'),
     ),
   ]);
 
@@ -251,7 +263,7 @@ function appearanceBody(theme, registerSync) {
       btn.classList.toggle('is-on', on);
       btn.setAttribute('aria-pressed', String(on));
     });
-    resolvedNote.textContent = `System follows your device — currently resolving to ${theme.resolved()}.`;
+    resolvedNote.textContent = t('settings.appearance.resolved', { theme: theme.resolved() });
 
     const accentId = theme.accent();
     accentSwatches.querySelectorAll('.swatch').forEach((btn, i) => {
@@ -275,15 +287,15 @@ function identityCard(persona, app) {
   return el('div', { class: 'card' }, [
     el('div', { class: 'dhead' }, [
       identityChip(persona, { size: 44 }),
-      isVerified(persona) ? statusBadge('✓ handle verified', 'ok') : statusBadge('handle unverified', 'muted'),
+      isVerified(persona) ? statusBadge(t('settings.identity.handleVerified'), 'ok') : statusBadge(t('settings.identity.handleUnverified'), 'muted'),
     ]),
-    el('span', { class: 'field-label', style: { marginTop: '12px' } }, 'Public key (npub)'),
+    el('span', { class: 'field-label', style: { marginTop: '12px' } }, t('settings.identity.publicKey')),
     el('p', { class: 'mono small' }, persona.npub),
     el('div', { class: 'arow' }, [
-      button('Edit profile', { variant: 'gold', small: true, onClick: () => app.setSettingsSection('profile') }),
-      button('Copy public key', { small: true, onClick: () => app.copyText(persona.npub, 'Public key copied.') }),
+      button(t('settings.identity.editProfile'), { variant: 'gold', small: true, onClick: () => app.setSettingsSection('profile') }),
+      button(t('settings.identity.copyPublicKey'), { small: true, onClick: () => app.copyText(persona.npub, t('settings.identity.publicKeyCopied')) }),
     ]),
-    noteBox('Your npub is safe to share. Back up your secret key below before changing devices or clearing browser data.'),
+    noteBox(t('settings.identity.npubNote')),
   ]);
 }
 
@@ -292,20 +304,20 @@ function backupCard({ title, description, pubkey, npub, readSecret, external = f
   const status = el('p', { class: 'muted small', role: 'status', 'aria-live': 'polite' });
   const secret = el('code', { class: 'backup-key mono' });
   const secretArea = el('div', { class: 'backup-key-area', hidden: true }, [
-    el('span', { class: 'field-label' }, 'Secret key (nsec)'),
+    el('span', { class: 'field-label' }, t('settings.backup.secretKey')),
     secret,
   ]);
   let revealedNsec = null;
   let hideTimer = null;
 
-  const copy = button('Copy secret key', {
+  const copy = button(t('settings.backup.copySecretKey'), {
     small: true,
     disabled: true,
     onClick: () => {
-      if (revealedNsec) app.copyText(revealedNsec, 'Secret key copied. Clear your clipboard after saving it.');
+      if (revealedNsec) app.copyText(revealedNsec, t('settings.backup.secretCopied'));
     },
   });
-  const toggle = button('Reveal secret key', {
+  const toggle = button(t('settings.backup.revealSecretKey'), {
     small: true,
     variant: 'gold',
     onClick: () => {
@@ -315,15 +327,15 @@ function backupCard({ title, description, pubkey, npub, readSecret, external = f
       }
       const nsec = backupNsecForPubkey(readSecret(), pubkey);
       if (!nsec) {
-        status.textContent = 'A matching key is not available in this browser. Use the original signer or backup.';
+        status.textContent = t('settings.backup.unavailable');
         return;
       }
       revealedNsec = nsec;
       secret.textContent = nsec;
       secretArea.hidden = false;
       copy.disabled = false;
-      toggle.textContent = 'Hide secret key';
-      status.textContent = 'Visible for 60 seconds. Save it somewhere private and offline.';
+      toggle.textContent = t('settings.backup.hideSecretKey');
+      status.textContent = t('settings.backup.visible');
       document.addEventListener('visibilitychange', hideWhenHidden);
       hideTimer = setTimeout(hide, 60_000);
     },
@@ -337,8 +349,8 @@ function backupCard({ title, description, pubkey, npub, readSecret, external = f
     secret.textContent = '';
     secretArea.hidden = true;
     copy.disabled = true;
-    toggle.textContent = 'Reveal secret key';
-    status.textContent = 'Secret key hidden.';
+    toggle.textContent = t('settings.backup.revealSecretKey');
+    status.textContent = t('settings.backup.hidden');
   }
 
   function hideWhenHidden() {
@@ -350,12 +362,12 @@ function backupCard({ title, description, pubkey, npub, readSecret, external = f
   card.append(
     el('h3', {}, title),
     el('p', { class: 'muted small' }, description),
-    el('span', { class: 'field-label' }, 'Key to back up'),
+    el('span', { class: 'field-label' }, t('settings.backup.keyToBackUp')),
     el('p', { class: 'mono small' }, npub ?? pubkey ?? ''),
     external
-      ? noteBox('This account uses an external signer. Back up the key in your extension or bunker; BitOS cannot show it here.')
+      ? noteBox(t('settings.backup.externalSigner'))
       : el('div', {}, [
-          noteBox('Anyone with your nsec can act as you. Reveal it only in private. Never send it in chat or email.', 'warn'),
+          noteBox(t('settings.backup.warning'), 'warn'),
           el('div', { class: 'arow' }, [toggle, copy]),
           secretArea,
           status,
@@ -400,7 +412,7 @@ function classPreviewRow(state, room) {
     el('span', { class: 'who' }, room.name),
     subject ? el('span', { class: 'ctx' }, subject.name) : null,
     el('span', { class: 'spacer' }),
-    teacher ? el('span', { class: 'muted small' }, `teacher ${teacher.displayName}`) : null,
+    teacher ? el('span', { class: 'muted small' }, t('settings.membership.classTeacher', { name: teacher.displayName })) : null,
   ]);
 }
 
@@ -411,15 +423,15 @@ function academyMembershipRow(state, { academy, role, rooms }, membership) {
     el('div', { class: 'crow' }, [
       el('span', {}, [
         el('strong', {}, academy.name),
-        el('span', { class: 'muted small' }, ` · ${academyTypeLabel(academy.type)}`),
+        el('span', { class: 'muted small' }, ` · ${t('common.academyType.' + academy.type)}`),
       ]),
       el('span', { class: 'spacer' }),
-      statusBadge(isTeacher ? 'teacher' : 'learner', isTeacher ? 'key' : 'info'),
-      pending ? statusBadge('pending approval', 'info') : null,
+      statusBadge(t('common.role.' + role), isTeacher ? 'key' : 'info'),
+      pending ? statusBadge(t('settings.membership.pendingApproval'), 'info') : null,
     ]),
     rooms.length
       ? el('div', { class: 'rows' }, rooms.map((room) => classPreviewRow(state, room)))
-      : emptyState(pending ? 'Waiting for the academy owner to approve.' : 'No classes yet.'),
+      : emptyState(pending ? t('settings.membership.waitingApproval') : t('settings.membership.noClasses')),
   ]);
 }
 
@@ -430,13 +442,13 @@ function membershipCard(state, app, persona, membership) {
   if (owned) {
     cards.push(
       el('div', { class: 'card card--accent' }, [
-        el('h3', {}, `You own ${owned.name}`),
-        el('p', { class: 'muted small' }, `${academyTypeLabel(owned.type)} · owner`),
+        el('h3', {}, t('settings.membership.youOwn', { academy: owned.name })),
+        el('p', { class: 'muted small' }, `${t('common.academyType.' + owned.type)} · ${t('common.role.owner')}`),
         el('div', { class: 'arow' }, [
-          button('Open organization', { variant: 'gold', small: true, onClick: () => app.navigate('/role') }),
-          button('Edit academy info', { small: true, onClick: () => app.setSettingsSection('academy') }),
-          button('Invite a teacher', { small: true, onClick: () => app.openInviteTeacher() }),
-          button('Share learner link', { small: true, onClick: () => app.openInviteLink(ROLE.STUDENT) }),
+          button(t('settings.membership.openOrganization'), { variant: 'gold', small: true, onClick: () => app.navigate('/role') }),
+          button(t('settings.membership.editAcademyInfo'), { small: true, onClick: () => app.setSettingsSection('academy') }),
+          button(t('settings.membership.inviteTeacher'), { small: true, onClick: () => app.openInviteTeacher() }),
+          button(t('settings.membership.shareLearnerLink'), { small: true, onClick: () => app.openInviteLink(ROLE.STUDENT) }),
         ]),
       ]),
     );
@@ -458,7 +470,7 @@ function membershipCard(state, app, persona, membership) {
 
   cards.push(
     el('div', { class: 'card' }, [
-      el('h3', {}, 'Joined academies'),
+      el('h3', {}, t('settings.membership.joined')),
       joined.length
         ? el(
             'div',
@@ -466,16 +478,16 @@ function membershipCard(state, app, persona, membership) {
             joined.map((entry) => academyMembershipRow(state, entry, membership)),
           )
         : pending.length
-          ? el('p', { class: 'muted small' }, 'Waiting for approval from the academies below.')
+          ? el('p', { class: 'muted small' }, t('settings.membership.waitingAcademies'))
           : emptyState(
-            owned ? 'You have not joined another academy yet.' : 'You have not joined an academy yet.',
+            owned ? t('settings.membership.noOtherAcademy') : t('settings.membership.noAcademy'),
           ),
       pending.length
         ? el(
             'section',
             {},
             [
-              el('h4', {}, 'Pending membership requests'),
+              el('h4', {}, t('settings.membership.pendingRequests')),
               el('div', { class: 'rows' }, pending.map((request) => {
               const academyName = request.academyId
                 ? Object.values(state.academies ?? {}).find((entry) => entry.id === request.academyId)
@@ -483,9 +495,9 @@ function membershipCard(state, app, persona, membership) {
                 : request.academy;
               return el('div', { class: 'row' }, [
                 el('span', { class: 'who' }, academyName),
-                el('span', { class: 'muted small' }, 'membership request'),
+                el('span', { class: 'muted small' }, t('settings.membership.membershipRequest')),
                 el('span', { class: 'spacer' }),
-                statusBadge('pending', 'info'),
+                statusBadge(t('common.badge.pending'), 'info'),
               ]);
               })),
             ],
@@ -494,8 +506,8 @@ function membershipCard(state, app, persona, membership) {
       el('div', { class: 'arow' }, [
         owned
           ? null
-          : button('Create an academy', { small: true, onClick: () => app.openCreateAcademy() }),
-        button('Join with a link', { variant: owned ? 'ghost' : 'gold', small: true, onClick: () => app.navigate('/join') }),
+          : button(t('settings.membership.createAcademy'), { small: true, onClick: () => app.openCreateAcademy() }),
+        button(t('settings.membership.joinWithLink'), { variant: owned ? 'ghost' : 'gold', small: true, onClick: () => app.navigate('/join') }),
       ]),
     ]),
   );
@@ -506,13 +518,13 @@ function membershipCard(state, app, persona, membership) {
 function signerCard(state, app) {
   const signer = signerType(state.signerType);
   return el('div', { class: 'card' }, [
-    el('h3', {}, 'Keys & signer'),
-    el('p', { class: 'small' }, ['Signer: ', el('strong', {}, signer.label)]),
-    el('p', { class: 'muted small' }, signer.sub),
+    el('h3', {}, t('settings.signer.keysSigner')),
+    el('p', { class: 'small' }, [t('settings.signer.prefix'), el('strong', {}, t('common.signer.' + signer.id + '.label'))]),
+    el('p', { class: 'muted small' }, t('common.signer.' + signer.id + '.sub')),
     el('div', { class: 'arow' }, [
-      button('Sign a test challenge', { small: true, onClick: () => app.testSigner() }),
+      button(t('settings.signer.test'), { small: true, onClick: () => app.testSigner() }),
     ]),
-    noteBox('BitOS cannot restore a lost key. Keep your account backup and, if you own an academy, its separate key backup.'),
+    noteBox(t('settings.signer.note')),
   ]);
 }
 
@@ -520,7 +532,7 @@ function handleCard(persona, app) {
   const feedback = el('p', { class: 'muted small', 'aria-live': 'polite' });
   const input = el('input', {
     type: 'text',
-    placeholder: 'alice',
+    placeholder: t('settings.handle.placeholder'),
     autocomplete: 'off',
     spellcheck: 'false',
     onInput: (event) => {
@@ -534,42 +546,44 @@ function handleCard(persona, app) {
         feedback.className = 'small danger';
         feedback.textContent =
           result.reason === 'reserved'
-            ? `'${result.handle}' is reserved.`
+            ? t('settings.handle.reserved', { handle: result.handle })
             : result.reason === 'length'
-              ? 'Handles are 3–24 characters.'
-              : 'Letters and numbers only, plus dots and underscores.';
+              ? t('settings.handle.length')
+              : t('settings.handle.chars');
         return;
       }
       const taken = getPersonaIds()
         .map((id) => normalizeHandle(String(getPersona(id).handle ?? '').split('@')[0]))
         .includes(result.handle);
       feedback.className = taken ? 'small danger' : 'small ok';
-      feedback.textContent = taken ? `@${result.handle} is taken.` : `✓ @${result.handle} is available.`;
+      feedback.textContent = taken
+        ? t('settings.handle.taken', { handle: result.handle })
+        : t('settings.handle.available', { handle: result.handle });
     },
   });
 
   return el('div', {}, [
     el('div', { class: 'card' }, [
-    el('h3', {}, 'Handle (UNIQ)'),
-    el('p', { class: 'muted small' }, `Current: ${persona.handle || truncateNpub(persona.npub)}`),
-    el('span', { class: 'field-label', style: { marginTop: '10px' } }, 'Claim a handle'),
+    el('h3', {}, t('settings.handle.title')),
+    el('p', { class: 'muted small' }, t('settings.handle.current', { handle: persona.handle || truncateNpub(persona.npub) })),
+    el('span', { class: 'field-label', style: { marginTop: '10px' } }, t('settings.handle.claim')),
     input,
     feedback,
     el(
       'div',
       { class: 'state-banner info' },
-      'Claiming makes the link public. A verified handle proves control of the key — not an endorsement.',
+      t('settings.handle.note'),
     ),
     el('div', { class: 'arow' }, [
-      button('Sign & claim', { variant: 'gold', small: true, onClick: () => app.claimHandle(input.value) }),
+      button(t('settings.handle.signClaim'), { variant: 'gold', small: true, onClick: () => app.claimHandle(input.value) }),
     ]),
     ]),
-    el('h3', {}, 'Available signers'),
+    el('h3', {}, t('settings.signer.available')),
     el('div', { class: 'list-divide' }, SIGNER_TYPES.map((type) =>
       el('div', { class: 'list-row' }, [
         el('span', { class: 'listrow__txt' }, [
-          el('span', { class: 'list-row__title' }, type.label),
-          el('span', { class: 'list-row__sub' }, type.sub),
+          el('span', { class: 'list-row__title' }, t('common.signer.' + type.id + '.label')),
+          el('span', { class: 'list-row__sub' }, t('common.signer.' + type.id + '.sub')),
         ]),
       ]),
     )),
@@ -582,10 +596,10 @@ function relayCard(state, app) {
 
   const input = el('input', {
     type: 'text',
-    placeholder: 'wss://relay.example.com or ws://relay.local:7777',
+    placeholder: t('settings.relay.placeholder'),
     autocomplete: 'off',
     spellcheck: 'false',
-    'aria-label': 'Relay URL',
+    'aria-label': t('settings.relay.url'),
   });
   const addRelay = () => {
     if (app.addRelay(input.value)) input.value = '';
@@ -600,41 +614,54 @@ function relayCard(state, app) {
   const currentMode = normalizeMode(state.mode);
   const modeSelect = el(
     'select',
-    { 'aria-label': 'Deployment mode', onChange: (event) => app.setMode(event.target.value) },
+    { 'aria-label': t('settings.relay.deploymentMode'), onChange: (event) => app.setMode(event.target.value) },
     Object.values(MODE).map((value) =>
-      el('option', { value, selected: value === currentMode }, modeLabel(value)),
+      el('option', { value, selected: value === currentMode }, t('settings.mode.' + value + '.label')),
     ),
   );
 
   return el('div', {}, [
-    el('span', { class: 'field-label' }, 'Deployment mode'),
+    el('span', { class: 'field-label' }, t('settings.relay.deploymentMode')),
     modeSelect,
-    el('p', { class: 'muted small' }, modeDescription(state.mode)),
+    el('p', { class: 'muted small' }, t('settings.mode.' + currentMode + '.desc')),
     el('div', { class: 'dhead', style: { marginTop: '14px' } }, [
-      el('h3', {}, 'Relays'),
+      el('h3', {}, t('settings.relay.title')),
       statusBadge(
-        relays.length ? `${healthy}/${relays.length} online` : 'none configured',
+        relays.length ? t('settings.relay.online', { healthy, total: relays.length }) : t('settings.relay.none'),
         healthy ? 'ok' : relays.length ? 'warn' : 'muted',
       ),
     ]),
     relays.length
       ? el('div', { class: 'list-divide' }, relays.map((relay) => relayRow(relay, app)))
-      : emptyState('No relays configured yet — add one below.'),
+      : emptyState(t('settings.relay.empty')),
     el('div', { class: 'arow' }, [
-      button('Check relays', { small: true, onClick: () => app.checkRelays() }),
+      button(t('settings.relay.check'), { small: true, onClick: () => app.checkRelays() }),
     ]),
-    el('span', { class: 'field-label', style: { marginTop: '14px' } }, 'Add relay'),
+    el('span', { class: 'field-label', style: { marginTop: '14px' } }, t('settings.relay.add')),
     el('div', { class: 'keyrow' }, [
       input,
-      button('Add', { variant: 'gold', small: true, onClick: addRelay }),
+      button(t('common.actions.add'), { variant: 'gold', small: true, onClick: addRelay }),
     ]),
-    noteBox('BitOS reads from read relays and publishes to write relays. Tap a relay to cycle its mode. Both wss:// and plaintext ws:// URLs are accepted.'),
+    noteBox(t('settings.relay.note')),
   ]);
+}
+
+function relayModeKey(mode) {
+  if (mode === 'read') return 'common.relayMode.read';
+  if (mode === 'write') return 'common.relayMode.write';
+  return 'common.relayMode.readWrite';
 }
 
 function relayRow(relay, app) {
   const tone = relay.health === 'connected' ? 'ok' : relay.health === 'offline' ? 'err' : 'warn';
-  const detail = relay.latencyMs != null ? `${relay.health} · ${relay.latencyMs} ms` : relay.health;
+  const healthKey =
+    relay.health === 'connected'
+      ? 'settings.relay.health.connected'
+      : relay.health === 'offline'
+        ? 'settings.relay.health.offline'
+        : 'settings.relay.health.checking';
+  const healthLabel = t(healthKey);
+  const detail = relay.latencyMs != null ? `${healthLabel} · ${relay.latencyMs} ms` : healthLabel;
   return el('div', { class: 'list-row' }, [
     el(
       'span',
@@ -653,17 +680,17 @@ function relayRow(relay, app) {
       {
         class: 'chip',
         type: 'button',
-        title: 'Change read/write mode',
+        title: t('settings.relay.changeMode'),
         onClick: () => app.cycleRelayMode(relay.id),
       },
-      relayModeLabel(relay.mode),
+      t(relayModeKey(relay.mode)),
     ),
     el(
       'button',
       {
         class: 'icon-btn',
         type: 'button',
-        'aria-label': `Remove ${relay.url}`,
+        'aria-label': t('common.a11y.removeNamed', { name: relay.url }),
         onClick: () => app.removeRelay(relay.id),
       },
       icon('lucide:trash-2', { size: 16, fallback: '🗑' }),
@@ -673,8 +700,8 @@ function relayRow(relay, app) {
 
 function sessionCard(app) {
   return el('div', { class: 'card' }, [
-    el('h3', {}, 'Session'),
-    el('p', { class: 'muted small' }, 'Signing out clears the session on this device. Your keys stay with your signer.'),
-    button('Sign out', { variant: 'ghost', onClick: () => app.signOut() }),
+    el('h3', {}, t('settings.session.title')),
+    el('p', { class: 'muted small' }, t('settings.session.note')),
+    button(t('common.actions.signOut'), { variant: 'ghost', onClick: () => app.signOut() }),
   ]);
 }

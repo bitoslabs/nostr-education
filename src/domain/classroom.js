@@ -192,28 +192,33 @@ export function scorePercent(submission) {
 }
 
 export function classStatusBadge(status) {
-  if (status === CLASS_STATUS.DRAFT) return { label: 'draft — hidden from students', tone: 'info' };
-  if (status === CLASS_STATUS.PUBLISHED) return { label: 'published ✓', tone: 'ok' };
-  if (status === CLASS_STATUS.ARCHIVED) return { label: 'archived', tone: 'muted' };
+  if (status === CLASS_STATUS.DRAFT) return { key: 'common.badge.classDraft', label: 'draft — hidden from students', tone: 'info' };
+  if (status === CLASS_STATUS.PUBLISHED) return { key: 'common.badge.published', label: 'published ✓', tone: 'ok' };
+  if (status === CLASS_STATUS.ARCHIVED) return { key: 'common.badge.archived', label: 'archived', tone: 'muted' };
   return null;
 }
 
 export function homeworkStatusBadge(status) {
-  if (status === HOMEWORK_STATUS.DRAFT) return { label: 'draft', tone: 'info' };
-  if (status === HOMEWORK_STATUS.PUBLISHED) return { label: 'published ✓', tone: 'ok' };
-  if (status === HOMEWORK_STATUS.CLOSED) return { label: 'closed — no new submissions', tone: 'muted' };
+  if (status === HOMEWORK_STATUS.DRAFT) return { key: 'common.badge.draft', label: 'draft', tone: 'info' };
+  if (status === HOMEWORK_STATUS.PUBLISHED) return { key: 'common.badge.published', label: 'published ✓', tone: 'ok' };
+  if (status === HOMEWORK_STATUS.CLOSED) return { key: 'common.badge.closed', label: 'closed — no new submissions', tone: 'muted' };
   return null;
 }
 
 export function submissionStatusBadge(submission) {
-  if (!submission) return { label: 'not submitted', tone: 'warn' };
+  if (!submission) return { key: 'common.badge.notSubmitted', label: 'not submitted', tone: 'warn' };
   if (submission.status === SUBMISSION_STATUS.GRADED) {
-    return { label: `✓ scored ${submission.score}/${submission.maxScore}`, tone: 'ok' };
+    return {
+      key: 'common.badge.scored',
+      params: { score: submission.score, maxScore: submission.maxScore },
+      label: `✓ scored ${submission.score}/${submission.maxScore}`,
+      tone: 'ok',
+    };
   }
   if (submission.status === SUBMISSION_STATUS.REVISION) {
-    return { label: '▲ revision requested', tone: 'warn' };
+    return { key: 'common.badge.revisionRequested', label: '▲ revision requested', tone: 'warn' };
   }
-  return { label: 'submitted · awaiting score', tone: 'info' };
+  return { key: 'common.badge.submittedAwaitingScore', label: 'submitted · awaiting score', tone: 'info' };
 }
 
 export function gradingProgress(submissions = [], studentIds = []) {

@@ -4,6 +4,7 @@ const ORG_SECRET_KEY = 'bitos.education.orgsecrets.v1';
 
 const PERSISTED_FIELDS = [
   'session',
+  'locale',
   'mode',
   'relayConfig',
   'profiles',

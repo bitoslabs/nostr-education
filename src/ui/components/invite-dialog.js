@@ -1,7 +1,14 @@
 import { el } from '../../core/dom.js';
-import { inviteRoleLabel } from '../../domain/academy.js';
+import { ROLE } from '../../domain/school.js';
+import { t } from '../../services/i18n/index.js';
 import { icon } from './icon.js';
 import { button, noteBox } from './primitives.js';
+
+const INVITE_ROLE_KEYS = Object.freeze({
+  [ROLE.TEACHER]: 'organization.invite.roleTeacher',
+  [ROLE.OWNER]: 'organization.invite.roleAdmin',
+  [ROLE.STUDENT]: 'organization.invite.roleLearner',
+});
 
 export function inviteLinkPanel({ invite, copyText, actions, close }) {
   const input = el('input', {
@@ -9,27 +16,27 @@ export function inviteLinkPanel({ invite, copyText, actions, close }) {
     class: 'mono small',
     readOnly: true,
     value: invite.url,
-    'aria-label': 'Invite link',
+    'aria-label': t('organization.invite.linkAria'),
     onFocus: (event) => event.target.select(),
   });
 
   const canCheck = Boolean(actions?.checkJoinLink);
   let busy = false;
 
-  const shareTitle = el('span', {}, canCheck ? 'Checking this link…' : 'Open link');
+  const shareTitle = el('span', {}, canCheck ? t('organization.invite.checking') : t('organization.invite.openLink'));
   const shareMsg = el(
     'p',
     { class: 'invite-share__msg muted small' },
-    'Anyone with the code can join from another device once it is public.',
+    t('organization.invite.shareMsg'),
   );
-  const publishButton = button([icon('lucide:globe', { size: 16, fallback: '🌐' }), 'Publish public link'], {
+  const publishButton = button([icon('lucide:globe', { size: 16, fallback: '🌐' }), t('organization.invite.publish')], {
     variant: 'gold',
     onClick: async () => {
       if (busy) return;
       busy = true;
       publishButton.disabled = true;
-      publishButton.replaceChildren(icon('lucide:loader', { size: 16, fallback: '…' }), 'Publishing…');
-      shareTitle.replaceChildren('Publishing to relays…');
+      publishButton.replaceChildren(icon('lucide:loader', { size: 16, fallback: '…' }), t('organization.invite.publishing'));
+      shareTitle.replaceChildren(t('organization.invite.publishingToRelays'));
       const published = await actions?.publishJoinLinkToRelays?.(invite.id);
       busy = false;
       publishButton.disabled = false;
@@ -52,19 +59,19 @@ export function inviteLinkPanel({ invite, copyText, actions, close }) {
 
   function showLive() {
     shareBox.classList.add('is-live');
-    shareTitle.replaceChildren('Public link is live');
-    shareMsg.textContent = 'A relay accepted this code. Anyone with it can join from another device.';
+    shareTitle.replaceChildren(t('organization.invite.live'));
+    shareMsg.textContent = t('organization.invite.liveMsg');
     publishButton.replaceChildren(
       icon('lucide:globe', { size: 16, fallback: '🌐' }),
-      'Republish public link',
+      t('organization.invite.republish'),
     );
   }
 
   async function verify() {
     if (!canCheck) return;
     shareBox.classList.remove('is-live');
-    shareTitle.replaceChildren('Checking this link on your relays…');
-    shareMsg.textContent = 'Looking for this code on your relays…';
+    shareTitle.replaceChildren(t('organization.invite.checkingRelays'));
+    shareMsg.textContent = t('organization.invite.lookingForCode');
     let live = await actions.checkJoinLink(invite.id);
     if (!live) {
       await new Promise((resolve) => setTimeout(resolve, 1200));
@@ -75,74 +82,75 @@ export function inviteLinkPanel({ invite, copyText, actions, close }) {
       return;
     }
     shareBox.classList.remove('is-live');
-    shareTitle.replaceChildren('Not published yet');
-    shareMsg.textContent = 'Publish it so the code is readable on public relays and the link works on other devices.';
+    shareTitle.replaceChildren(t('organization.invite.notPublished'));
+    shareMsg.textContent = t('organization.invite.notPublishedMsg');
     publishButton.replaceChildren(
       icon('lucide:globe', { size: 16, fallback: '🌐' }),
-      'Publish public link',
+      t('organization.invite.publish'),
     );
   }
 
   verify();
 
+  const role = t(INVITE_ROLE_KEYS[invite.role] ?? 'organization.invite.roleLearner');
   return [
-    el('h2', {}, `Invite ${inviteRoleLabel(invite.role)}`),
+    el('h2', {}, t('organization.invite.title', { role })),
     el(
       'p',
       { class: 'muted small' },
       invite.target
-        ? `For ${invite.target} — send them this link.`
-        : 'Share this link — anyone who opens it can request to join.',
+        ? t('organization.invite.forTarget', { target: invite.target })
+        : t('organization.invite.shareLink'),
     ),
     el('div', { class: 'invite-link' }, el('span', { class: 'invite-code mono' }, invite.code)),
     el('div', { class: 'input-group' }, [
       input,
-      button('Copy link', {
+      button(t('organization.copyLink'), {
         variant: 'gold',
         small: true,
         className: 'input-group__btn',
-        onClick: () => copyText(invite.url, 'Invite link copied — share it.'),
+        onClick: () => copyText(invite.url, t('organization.invite.copied')),
       }),
     ]),
     shareBox,
-    noteBox('The link stops working once the invite is accepted or revoked.'),
-    el('div', { class: 'dlg-foot' }, [button('Done', { onClick: close })]),
+    noteBox(t('organization.invite.note')),
+    el('div', { class: 'dlg-foot' }, [button(t('common.actions.done'), { onClick: close })]),
   ];
 }
 
 export function renderInviteTeacher({ actions, close }) {
   const nameInput = el('input', {
     type: 'text',
-    placeholder: 'Bob',
+    placeholder: t('organization.inviteTeacher.namePlaceholder'),
     autocomplete: 'name',
-    'aria-label': 'Teacher name',
+    'aria-label': t('organization.inviteTeacher.nameAria'),
   });
   const targetInput = el('input', {
     type: 'text',
-    placeholder: '@bob or npub1…',
+    placeholder: t('organization.inviteTeacher.targetPlaceholder'),
     autocomplete: 'off',
     spellcheck: 'false',
-    'aria-label': 'Teacher handle or npub',
+    'aria-label': t('organization.inviteTeacher.targetAria'),
   });
   const error = el('p', { class: 'small danger', 'aria-live': 'polite' });
 
   const body = el('div', {}, [
-    el('h2', {}, 'Invite a teacher'),
-    el('p', { class: 'muted small' }, 'Invite by handle or npub. They stay a teacher — not an owner.'),
-    el('label', {}, 'Name (optional)'),
+    el('h2', {}, t('organization.inviteTeacher.title')),
+    el('p', { class: 'muted small' }, t('organization.inviteTeacher.subtitle')),
+    el('label', {}, t('organization.inviteTeacher.nameLabel')),
     nameInput,
-    el('label', {}, 'Handle or npub'),
+    el('label', {}, t('organization.inviteTeacher.targetLabel')),
     targetInput,
     error,
-    noteBox('Teaching a class still needs an explicit class assignment, even after they accept.'),
+    noteBox(t('organization.inviteTeacher.note')),
     el('div', { class: 'dlg-foot' }, [
-      button('Cancel', { onClick: close }),
-      button('Create invite', {
+      button(t('common.actions.cancel'), { onClick: close }),
+      button(t('organization.inviteTeacher.submit'), {
         variant: 'gold',
         onClick: () => {
           const invite = actions.inviteTeacher({ name: nameInput.value, target: targetInput.value });
           if (!invite) {
-            error.textContent = 'Check the handle or npub, then try again.';
+            error.textContent = t('organization.inviteTeacher.error');
             return;
           }
           body.replaceChildren(...inviteLinkPanel({ invite, copyText: actions.copyText, actions, close }));

@@ -1,5 +1,6 @@
 import { el } from '../../core/dom.js';
 import { ACADEMY_TYPES } from '../../domain/academy.js';
+import { t } from '../../services/i18n/index.js';
 import { avatar, button, noteBox } from './primitives.js';
 import { charCount, fieldHead, formFoot, formSection, imageField, setWorking } from './form-fields.js';
 
@@ -13,7 +14,7 @@ function localTimeZone() {
 
 function typeOptions(selectedId) {
   return ACADEMY_TYPES.map((type) =>
-    el('option', { value: type.id, selected: type.id === selectedId }, type.label),
+    el('option', { value: type.id, selected: type.id === selectedId }, t(`organization.academyTypes.${type.id}`)),
   );
 }
 
@@ -21,7 +22,7 @@ export function renderCreateAcademy({ actions, close, roleNotice = null }) {
   const nameInput = el('input', {
     id: 'create-academy-name',
     type: 'text',
-    placeholder: 'Northgate College',
+    placeholder: t('organization.academyNamePlaceholder'),
     autocomplete: 'organization',
     maxlength: '80',
   });
@@ -32,29 +33,30 @@ export function renderCreateAcademy({ actions, close, roleNotice = null }) {
     value: localTimeZone(),
   });
   const error = el('p', { class: 'small danger', 'aria-live': 'polite' });
-  const cancel = button('Cancel', { onClick: close });
-  const submit = button('Create academy', { variant: 'gold', type: 'submit' });
+  const cancel = button(t('common.actions.cancel'), { onClick: close });
+  const submitLabel = t('organization.create.action');
+  const submit = button(submitLabel, { variant: 'gold', type: 'submit' });
 
   const run = async () => {
     if (!String(nameInput.value).trim()) {
-      error.textContent = 'Enter an academy name.';
+      error.textContent = t('organization.academyNameRequired');
       nameInput.focus();
       return;
     }
     error.textContent = '';
-    setWorking(submit, true, 'Create academy');
+    setWorking(submit, true, submitLabel);
     const ok = await actions.createAcademy({
       name: nameInput.value,
       type: typeSelect.value,
       timeZone: timeZone.value,
     });
-    setWorking(submit, false, 'Create academy');
+    setWorking(submit, false, submitLabel);
     if (ok) close();
   };
 
   return el('div', {}, [
-    el('h2', {}, 'Create your academy'),
-    el('p', { class: 'muted small' }, 'You become the owner. You can refine these details later.'),
+    el('h2', {}, t('organization.create.title')),
+    el('p', { class: 'muted small' }, t('organization.create.subtitle')),
     roleNotice,
     el(
       'form',
@@ -65,20 +67,20 @@ export function renderCreateAcademy({ actions, close, roleNotice = null }) {
         },
       },
       [
-        formSection('Academy', [
-          el('label', { for: 'create-academy-name' }, 'Academy name'),
+        formSection(t('organization.create.sectionAcademy'), [
+          el('label', { for: 'create-academy-name' }, t('organization.academyName')),
           nameInput,
-          el('p', { class: 'field-hint' }, 'Shown to learners and on every credential you issue.'),
-          el('label', { for: 'create-academy-type' }, 'Type'),
+          el('p', { class: 'field-hint' }, t('organization.create.nameHint')),
+          el('label', { for: 'create-academy-type' }, t('organization.typeLabel')),
           typeSelect,
         ]),
-        formSection('Region', [
-          el('label', { for: 'create-academy-timezone' }, 'Time zone'),
+        formSection(t('organization.sectionRegion'), [
+          el('label', { for: 'create-academy-timezone' }, t('organization.timeZone')),
           timeZone,
-          el('p', { class: 'field-hint' }, 'Used for deadlines and dates across the academy.'),
+          el('p', { class: 'field-hint' }, t('organization.timeZoneHint')),
         ]),
         error,
-        noteBox('An owner administers the academy. Issuing credentials still needs a separately authorized signer.'),
+        noteBox(t('organization.create.note')),
         formFoot([cancel, submit]),
       ],
     ),
@@ -105,14 +107,14 @@ export function renderEditAcademy({ academy, actions, close, cropImage }) {
     id: 'edit-academy-about',
     rows: '3',
     value: academy.about ?? '',
-    placeholder: 'What this academy offers…',
+    placeholder: t('organization.editAcademy.aboutPlaceholder'),
     maxlength: '240',
   });
   const handleInput = el('input', {
     id: 'edit-academy-nip05',
     type: 'text',
     value: academy.handle ?? '',
-    placeholder: 'academy@domain',
+    placeholder: t('organization.editAcademy.handlePlaceholder'),
     autocomplete: 'off',
     spellcheck: 'false',
   });
@@ -131,39 +133,40 @@ export function renderEditAcademy({ academy, actions, close, cropImage }) {
     logoFile.value = '';
     if (!file || busy.value) return;
     if (!file.type.startsWith('image/')) {
-      status.textContent = 'Choose an image file.';
+      status.textContent = t('organization.editAcademy.chooseImage');
       return;
     }
     busy.value = true;
-    status.textContent = 'Cropping logo…';
-    const blob = await cropImage({ file, aspect: 1, title: 'Crop academy logo', outputWidth: 512 });
+    status.textContent = t('organization.editAcademy.cropping');
+    const blob = await cropImage({ file, aspect: 1, title: t('organization.editAcademy.cropTitle'), outputWidth: 512 });
     if (!blob) {
       busy.value = false;
       status.textContent = '';
       return;
     }
-    status.textContent = 'Uploading logo…';
+    status.textContent = t('organization.editAcademy.uploading');
     const url = await actions.uploadImage(blob);
     busy.value = false;
     if (url) {
       state.picture = url;
       renderLogo();
-      status.textContent = 'Logo uploaded.';
+      status.textContent = t('organization.editAcademy.logoUploaded');
     } else {
       status.textContent = '';
     }
   });
 
-  const submit = button('Save & publish', { variant: 'gold', type: 'submit' });
+  const submitLabel = t('organization.editAcademy.submit');
+  const submit = button(submitLabel, { variant: 'gold', type: 'submit' });
 
   const run = async () => {
     if (!String(nameInput.value).trim()) {
-      error.textContent = 'Enter an academy name.';
+      error.textContent = t('organization.academyNameRequired');
       nameInput.focus();
       return;
     }
     error.textContent = '';
-    setWorking(submit, true, 'Save & publish');
+    setWorking(submit, true, submitLabel);
     const ok = await actions.updateAcademyInfo({
       name: nameInput.value,
       about: aboutInput.value,
@@ -172,7 +175,7 @@ export function renderEditAcademy({ academy, actions, close, cropImage }) {
       timeZone: timeZone.value,
       handle: handleInput.value,
     });
-    setWorking(submit, false, 'Save & publish');
+    setWorking(submit, false, submitLabel);
     if (ok) close();
   };
 
@@ -186,16 +189,16 @@ export function renderEditAcademy({ academy, actions, close, cropImage }) {
         },
       },
       [
-        formSection('Basics', [
-          el('label', { for: 'edit-academy-name' }, 'Academy name'),
+        formSection(t('organization.editAcademy.sectionBasics'), [
+          el('label', { for: 'edit-academy-name' }, t('organization.academyName')),
           nameInput,
-          el('label', { for: 'edit-academy-type' }, 'Type'),
+          el('label', { for: 'edit-academy-type' }, t('organization.typeLabel')),
           typeSelect,
         ]),
-        formSection('Branding', [
+        formSection(t('organization.editAcademy.sectionBranding'), [
           imageField({
-            label: 'Logo',
-            hint: 'Square image. Uploads are signed and stored on Blossom.',
+            label: t('organization.editAcademy.logo'),
+            hint: t('organization.editAcademy.logoHint'),
             preview: logoPreview,
             fileInput: logoFile,
             onUpload: () => logoFile.click(),
@@ -205,25 +208,25 @@ export function renderEditAcademy({ academy, actions, close, cropImage }) {
             },
           }),
         ]),
-        formSection('About', [
-          fieldHead('Description', 'edit-academy-about', charCount(aboutInput, 240)),
+        formSection(t('organization.editAcademy.sectionAbout'), [
+          fieldHead(t('organization.editAcademy.description'), 'edit-academy-about', charCount(aboutInput, 240)),
           aboutInput,
         ]),
-        formSection('Region', [
-          el('label', { for: 'edit-academy-timezone' }, 'Time zone'),
+        formSection(t('organization.sectionRegion'), [
+          el('label', { for: 'edit-academy-timezone' }, t('organization.timeZone')),
           timeZone,
-          el('p', { class: 'field-hint' }, 'Used for deadlines and dates across the academy.'),
+          el('p', { class: 'field-hint' }, t('organization.timeZoneHint')),
         ]),
-        formSection('Discovery', [
-          el('label', { for: 'edit-academy-nip05' }, 'NIP-05 handle (optional)'),
+        formSection(t('organization.editAcademy.sectionDiscovery'), [
+          el('label', { for: 'edit-academy-nip05' }, t('organization.editAcademy.nip05Label')),
           handleInput,
-          el('p', { class: 'field-hint' }, 'A verified name@domain for the academy key, shown on certificates you issue.'),
+          el('p', { class: 'field-hint' }, t('organization.editAcademy.nip05Hint')),
         ]),
-        el('span', { class: 'field-label', style: { marginTop: '12px' } }, 'Organization key (npub)'),
-        el('p', { class: 'mono small' }, academy.orgNpub ?? 'Generated on first publish'),
+        el('span', { class: 'field-label', style: { marginTop: '12px' } }, t('organization.editAcademy.orgKeyLabel')),
+        el('p', { class: 'mono small' }, academy.orgNpub ?? t('organization.editAcademy.orgKeyPending')),
         status,
         error,
-        noteBox('The organization key is separate from your personal key. Invitations and admin access never grant signing power.'),
+        noteBox(t('organization.editAcademy.note')),
         formFoot([submit], true),
       ],
     ),

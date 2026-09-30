@@ -1,4 +1,5 @@
 import { el } from '../../core/dom.js';
+import { t } from '../../services/i18n/index.js';
 import { icon } from './icon.js';
 
 export function avatar(person, size = 32) {
@@ -48,7 +49,7 @@ export function iconButton(name, { label, fallback, size = 20, onClick } = {}) {
   );
 }
 
-export function tabs(items, activeId, onSelect, { label = 'Tabs' } = {}) {
+export function tabs(items, activeId, onSelect, { label = t('common.a11y.tabs') } = {}) {
   return el(
     'div',
     { class: 'tabs', role: 'tablist', 'aria-label': label },
@@ -92,7 +93,7 @@ export function fileChip(name, { onRemove } = {}) {
     onRemove
       ? el(
           'button',
-          { class: 'fx', type: 'button', 'aria-label': `Remove ${name}`, onClick: onRemove },
+          { class: 'fx', type: 'button', 'aria-label': t('common.a11y.removeNamed', { name }), onClick: onRemove },
           '✕',
         )
       : null,
@@ -103,7 +104,7 @@ export function noteBox(message, tone = 'info') {
   return el('div', { class: tone === 'warn' ? 'warnbox' : 'notebox' }, message);
 }
 
-export function spinner(label = 'Working…') {
+export function spinner(label = t('common.spinner.working')) {
   return el('span', { class: 'spinner-wrap' }, [
     el('span', { class: 'spinner', 'aria-hidden': 'true' }),
     el('span', {}, label),
@@ -118,7 +119,7 @@ export function pageTitle(text) {
   return el('h1', {}, text);
 }
 
-export function segmented(items, activeId, onSelect, { label = 'Options', columns } = {}) {
+export function segmented(items, activeId, onSelect, { label = t('common.a11y.options'), columns } = {}) {
   return el(
     'div',
     {
@@ -142,7 +143,7 @@ export function segmented(items, activeId, onSelect, { label = 'Options', column
   );
 }
 
-export function swatchGroup(items, activeId, onSelect, { label = 'Accent' } = {}) {
+export function swatchGroup(items, activeId, onSelect, { label = t('common.a11y.accent') } = {}) {
   return el(
     'div',
     { class: 'swatches', role: 'group', 'aria-label': label },

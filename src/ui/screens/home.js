@@ -1,6 +1,7 @@
 import van from 'vanjs-core';
 import { getPersona } from '../../data/personas.js';
 import { FEED_TABS, filterFeed } from '../../domain/feed.js';
+import { t } from '../../services/i18n/index.js';
 import { eventCard } from '../components/event-card.js';
 import { button, emptyState, tabs } from '../components/primitives.js';
 
@@ -9,9 +10,9 @@ const { section, h1, h3, p, div } = van.tags;
 export function renderHome({ app, state }) {
   return section(
     { class: 'screen' },
-    h1('Home'),
+    h1(t('home.title')),
     () => createdBanner(state.val, getPersona(state.val.personaId), app),
-    () => tabs(FEED_TABS, state.val.feedTab, (id) => app.setFeedTab(id), { label: 'Feed' }),
+    () => tabs(FEED_TABS, state.val.feedTab, (id) => app.setFeedTab(id), { label: t('home.feed') }),
     () => feedList(state.val, app),
   );
 }
@@ -30,7 +31,7 @@ function feedList(state, app) {
       ? events.map((event) =>
           eventCard(event, { persona, actions: app, enrollments: state.enrollRequests }),
         )
-      : [emptyState('Nothing here yet — follow people or find a course.')]),
+      : [emptyState(t('home.emptyFeed'))]),
   );
 }
 
@@ -40,16 +41,16 @@ function createdBanner(state, persona, app) {
   if (state.lastCreated?.id !== persona.id) return document.createComment('home-banner');
   return div(
     { class: 'card card--accent' },
-    h3('✓ Account created'),
-    p({ class: 'small' }, 'Back up your recovery key now — BitOS cannot restore a lost key.'),
+    h3(t('home.accountCreated')),
+    p({ class: 'small' }, t('home.accountCreatedBody')),
     div(
       { class: 'arow' },
-      button('Open settings', {
+      button(t('home.openSettings'), {
         variant: 'gold',
         small: true,
         onClick: () => app.navigate('/settings'),
       }),
-      button('Dismiss', { small: true, onClick: () => app.dismissCreated() }),
+      button(t('home.dismiss'), { small: true, onClick: () => app.dismissCreated() }),
     ),
   );
 }

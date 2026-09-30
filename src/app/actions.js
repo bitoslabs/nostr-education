@@ -34,7 +34,6 @@ import {
   createInvite,
   findAcademyById,
   findInviteByCode,
-  inviteRoleLabel,
   inviteUrl,
   orgProfileContent,
   parseInviteReference,
@@ -66,7 +65,6 @@ import {
   addRelay as addRelayToList,
   nextRelayMode,
   normalizeRelayUrl,
-  relayModeLabel,
   removeRelay as removeRelayFromList,
   setRelayMode as setRelayModeInList,
 } from '../domain/relay.js';
@@ -83,8 +81,21 @@ import {
   hasPersona,
   registerPersona,
 } from '../data/personas.js';
+import { t, availableLocales, setLocale as setI18nLocale } from '../services/i18n/index.js';
 
 let sequence = 0;
+
+function inviteRoleKey(role) {
+  if (role === ROLE.TEACHER) return 'common.inviteRole.teacher';
+  if (role === ROLE.OWNER) return 'common.inviteRole.admin';
+  return 'common.inviteRole.learner';
+}
+
+function relayModeKey(mode) {
+  if (mode === 'read') return 'common.relayMode.read';
+  if (mode === 'write') return 'common.relayMode.write';
+  return 'common.relayMode.readWrite';
+}
 
 function nextId(prefix) {
   sequence += 1;
@@ -130,13 +141,13 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     update({ gradebookClassId: gradebookClassId ?? null });
   }
 
-  async function copyText(text, label = 'Copied') {
+  async function copyText(text, label = t('common.actions.copied')) {
     try {
       await navigator.clipboard.writeText(String(text));
       toast(label, 'ok');
       return true;
     } catch {
-      toast('Copy failed — select the text and copy manually.', 'warn');
+      toast(t('actions.copyFailed'), 'warn');
       return false;
     }
   }
@@ -195,7 +206,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
   function normalizeInviteTarget(raw) {
     const value = String(raw ?? '').trim();
     if (!value) {
-      toast('Enter a handle or npub.', 'warn');
+      toast(t('actions.enterHandleOrNpub'), 'warn');
       return null;
     }
     if (isNpub(value)) return value;
@@ -255,19 +266,19 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
             type: 'member',
             author: 'academy',
             time: 'now',
-            context: classroom?.name ?? academy?.name ?? 'Academy',
+            context: classroom?.name ?? academy?.name ?? t('actions.academyFallback'),
             audience: [persona.id],
             text: classroom
-              ? `joined ${classroom.name} as its teacher.`
-              : `Welcome — you joined ${academy?.name ?? 'the academy'} as a teacher.`,
+              ? t('actions.joinedAsTeacher', { name: classroom.name })
+              : t('actions.welcomeJoinedAcademyTeacher', { name: academy?.name ?? t('actions.theAcademy') }),
           },
           ...current.events,
         ],
       });
       toast(
         classroom
-          ? `You teach ${classroom.name} — post homework when ready.`
-          : `You're a teacher at ${academy?.name ?? 'the academy'} — class tools unlocked.`,
+          ? t('actions.youTeachClass', { name: classroom.name })
+          : t('actions.youAreTeacherAt', { name: academy?.name ?? t('actions.theAcademy') }),
         'ok',
       );
       return true;
@@ -289,12 +300,12 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
             time: 'now',
             context: classroom.name,
             audience: [persona.id],
-            text: `enrolled in ${classroom.name}.`,
+            text: t('actions.enrolledIn', { name: classroom.name }),
           },
           ...current.events,
         ],
       });
-      toast(`You're enrolled in ${classroom.name} — homework is in Education.`, 'ok');
+      toast(t('actions.youAreEnrolled', { name: classroom.name }), 'ok');
       return true;
     }
 
@@ -315,7 +326,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
             accountId: persona.id,
             displayName: persona.displayName,
             handle: persona.handle,
-            academy: academy?.name ?? 'Academy',
+            academy: academy?.name ?? t('actions.academyFallback'),
             role: persona.role,
             time: 'now',
             status: REQUEST_STATUS.PENDING,
@@ -338,10 +349,10 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
               type: 'joinreq',
               author: persona.id,
               time: 'now',
-              context: academy?.name ?? 'Academy',
+              context: academy?.name ?? t('actions.academyFallback'),
               audience: [academy?.ownerId ?? 'nadia'],
               requestId: joinId,
-              text: `accepted the invite link and requested to join ${academy?.name ?? 'the academy'} as a learner.`,
+              text: t('actions.acceptedInviteRequestedJoin', { name: academy?.name ?? t('actions.theAcademy') }),
             },
             ...current.events,
           ],
@@ -353,14 +364,14 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         payload: joinRequest,
         recipients: [academy.ownerId],
         encrypted: true,
-        title: 'Request academy membership',
-        action: el('span', {}, `Request to join ${academy.name} as a learner.`),
+        title: t('actions.requestAcademyMembership'),
+        action: el('span', {}, t('actions.requestToJoinAsLearner', { name: academy.name })),
       });
     }
     toast(
       existingRequest
-        ? 'Your membership request is already awaiting approval.'
-        : 'Invite accepted — the owner approves memberships next.',
+        ? t('actions.membershipRequestPending')
+        : t('actions.inviteAcceptedOwnerApproves'),
       'info',
     );
     return true;
@@ -387,7 +398,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
 
   async function signAndPublish({ title, action, detail, kind = KIND.APP_DATA, tags = [], content = '' }) {
     if (!signer.canSign()) {
-      toast('Connect a signer to sign this action.', 'warn');
+      toast(t('actions.connectSignerToSign'), 'warn');
       return null;
     }
     const event = buildEvent({ kind, tags, content });
@@ -397,13 +408,13 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       if (!result.approved) return null;
       signed = result.event;
     } catch (error) {
-      toast(error?.message ?? 'Signing failed.', 'warn');
+      toast(error?.message ?? t('actions.signingFailed'), 'warn');
       return null;
     }
 
     const published = await relay.publish(signed);
-    if (!published.count) toast('Signed, but no relay accepted the event yet.', 'warn');
-    else toast(`Signed and published to ${published.count}/${published.total} relays.`, 'ok');
+    if (!published.count) toast(t('actions.signedNoRelay'), 'warn');
+    else toast(t('actions.signedPublishedRelays', { count: published.count, total: published.total }), 'ok');
     return { event: signed, published };
   }
 
@@ -459,7 +470,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
   async function publishOrgProfile(academy) {
     const identity = ensureOrgIdentity(academy);
     if (!identity) {
-      toast('The organization key for this academy is not available on this device.', 'warn');
+      toast(t('actions.orgKeyUnavailable'), 'warn');
       return null;
     }
     const orgSigner = localSigner(identity.secretKey);
@@ -470,10 +481,10 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     try {
       const signed = await orgSigner.signEvent(event);
       const published = await relay.publish(signed);
-      if (!published.count) toast('Organization profile signed, but no relay accepted it yet.', 'warn');
+      if (!published.count) toast(t('actions.orgProfileNoRelay'), 'warn');
       return { event: signed, published };
     } catch (error) {
-      toast(error?.message ?? 'The organization profile could not be published.', 'warn');
+      toast(error?.message ?? t('actions.orgProfilePublishFailed'), 'warn');
       return null;
     }
   }
@@ -491,7 +502,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const persona = getPersona(state().personaId);
     const displayName = String(fields.displayName ?? '').trim();
     if (!displayName) {
-      toast('Add a display name before saving.', 'warn');
+      toast(t('actions.addDisplayNameBeforeSaving'), 'warn');
       return false;
     }
     const next = {
@@ -508,9 +519,9 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       bot: fields.bot === true,
     };
     const published = await publishProfileEvent(next, {
-      title: 'Update profile',
+      title: t('actions.updateProfile'),
       action: el('span', {}, [
-        el('strong', {}, 'Publish profile'),
+        el('strong', {}, t('actions.publishProfile')),
         el('br'),
         `${displayName} · `,
         el('span', { class: 'mono' }, truncateNpub(persona.npub)),
@@ -534,35 +545,35 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
             }
           : state().session,
     });
-    toast('Profile published to your relays.', 'ok');
+    toast(t('actions.profilePublished'), 'ok');
     return true;
   }
 
   async function uploadImage(blob, { server } = {}) {
     if (!blob) return null;
     if (!signer.canSign()) {
-      toast('Connect a signer to upload images.', 'warn');
+      toast(t('actions.connectSignerToUpload'), 'warn');
       return null;
     }
     const target = normalizeBlossomServer(server ?? state().blossomServer);
     try {
-      toast('Uploading image to Blossom…', 'info');
+      toast(t('actions.uploadingImage'), 'info');
       const result = await uploadBlob({
         blob,
         server: target,
         signer,
-        title: 'Upload image',
+        title: t('actions.uploadImage'),
         action: el('span', {}, [
-          el('strong', {}, 'Upload to Blossom'),
+          el('strong', {}, t('actions.uploadToBlossom')),
           el('br'),
           `${target.replace(/^https?:\/\//, '')} · ${Math.max(1, Math.round(blob.size / 1024))} KB`,
         ]),
       });
       if (!result) return null;
-      toast('Image uploaded.', 'ok');
+      toast(t('actions.imageUploaded'), 'ok');
       return result.url;
     } catch (error) {
-      toast(error?.message ?? 'Image upload failed.', 'warn');
+      toast(error?.message ?? t('actions.imageUploadFailed'), 'warn');
       return null;
     }
   }
@@ -574,7 +585,14 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
   function setMode(mode) {
     const next = normalizeMode(mode);
     update({ mode: next });
-    toast(`Mode set to ${next}.`, 'ok');
+    toast(t('actions.modeSet', { mode: next }), 'ok');
+    return next;
+  }
+
+  function setLocale(locale) {
+    const next = availableLocales().includes(locale) ? locale : 'en';
+    setI18nLocale(next);
+    update({ locale: next });
     return next;
   }
 
@@ -638,10 +656,10 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
   async function refreshMyProfile() {
     const me = state().accountId;
     if (!me) return false;
-    toast('Fetching your profile from relays…', 'info');
+    toast(t('actions.fetchingProfile'), 'info');
     const result = await fetchProfile(me);
     toast(
-      result ? 'Profile refreshed from relays.' : 'No kind:0 profile found on your relays yet.',
+      result ? t('actions.profileRefreshed') : t('actions.noProfileFound'),
       result ? 'ok' : 'warn',
     );
     return Boolean(result);
@@ -679,7 +697,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       if (encrypted && giftWrap) {
         const active = signer.getSigner();
         if (!active?.nip44Encrypt || !active?.signEvent) {
-          toast('This signer cannot gift-wrap, so the record stays on this device.', 'warn');
+          toast(t('actions.signerCannotGiftWrap'), 'warn');
           return null;
         }
         let last = null;
@@ -694,7 +712,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
 
       if (encrypted) {
         if (!signer.canEncrypt()) {
-          toast('This signer cannot encrypt, so the record stays on this device.', 'warn');
+          toast(t('actions.signerCannotEncrypt'), 'warn');
           return null;
         }
         let last = null;
@@ -729,7 +747,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     };
 
     return run().catch((error) => {
-      toast(error?.message ?? 'The record could not be published.', 'warn');
+      toast(error?.message ?? t('actions.recordPublishFailed'), 'warn');
       return null;
     });
   }
@@ -769,7 +787,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
 
   async function signInWithExtension() {
     if (!signer.canSign() && !globalThis.window?.nostr) {
-      toast('No Nostr extension (NIP-07) was found.', 'warn');
+      toast(t('actions.noNostrExtension'), 'warn');
       return false;
     }
     let pubkey;
@@ -778,12 +796,12 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       pubkey = await active.getPublicKey();
       applySession({ method: 'extension', pubkey, profile: {}, activeSigner: active });
     } catch (error) {
-      toast(error?.message ?? 'The extension refused the request.', 'warn');
+      toast(error?.message ?? t('actions.extensionRefused'), 'warn');
       return false;
     }
     acceptPendingInvite();
     navigateTo('/home');
-    toast('Signed in with your browser extension.', 'ok');
+    toast(t('actions.signedInWithExtension'), 'ok');
     return true;
   }
 
@@ -798,7 +816,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
   } = {}) {
     const name = String(displayName ?? '').trim();
     if (!name) {
-      toast('Enter a display name first.', 'warn');
+      toast(t('actions.enterDisplayNameFirst'), 'warn');
       return false;
     }
 
@@ -811,7 +829,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         return false;
       }
       if (handleTaken(result.handle)) {
-        toast(`@${result.handle} is taken — try another.`, 'warn');
+        toast(t('actions.handleTakenTryAnother', { handle: result.handle }), 'warn');
         return false;
       }
       resolvedHandle = result.handle;
@@ -820,10 +838,10 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const current = state();
     const isOwner = role === ROLE.OWNER;
     const pendingInvite = current.pendingInviteCode;
-    const requestedAcademy = String(academyName ?? '').trim() || `${name}'s Academy`;
+    const requestedAcademy = String(academyName ?? '').trim() || t('actions.academyNamedFor', { name });
 
     if (signerTypeId === 'bunker') {
-      toast('Connect a bunker from sign-in, then create your account.', 'warn');
+      toast(t('actions.connectBunkerFirst'), 'warn');
       return false;
     }
 
@@ -834,7 +852,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       try {
         pubkey = await activeSigner.getPublicKey();
       } catch (error) {
-        toast(error?.message ?? 'The extension refused the request.', 'warn');
+        toast(error?.message ?? t('actions.extensionRefused'), 'warn');
         return false;
       }
     } else {
@@ -852,9 +870,9 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     });
 
     await signAndPublish({
-      title: 'Publish profile',
+      title: t('actions.publishProfile'),
       action: el('span', {}, [
-        el('strong', {}, 'Publish profile'),
+        el('strong', {}, t('actions.publishProfile')),
         el('br'),
         `${name} · `,
         el('span', { class: 'mono' }, truncateNpub(account.npub)),
@@ -869,11 +887,11 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
 
     if (academy) {
       await signAndPublish({
-        title: 'Create academy',
+        title: t('actions.createAcademy'),
         action: el('span', {}, [
-          el('strong', {}, `Create ${requestedAcademy}`),
+          el('strong', {}, t('actions.createNamed', { name: requestedAcademy })),
           el('br'),
-          'You become the owner and can invite teachers and learners.',
+          t('actions.becomeOwnerInvite'),
         ]),
         ...recordPayload('academy', academy.id, academy),
       });
@@ -899,7 +917,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
               time: 'now',
               context: academy.name,
               audience: 'all',
-              text: `created ${academy.name} and became its owner.`,
+              text: t('actions.createdAcademyBecameOwner', { name: academy.name }),
             },
             ...current.events,
           ]
@@ -909,24 +927,24 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     if (pendingInvite && !isOwner) acceptPendingInvite();
 
     navigateTo(isOwner ? '/role' : '/home');
-    toast(isOwner ? `${academy.name} created.` : 'Account created — back up your key.', 'ok');
+    toast(isOwner ? t('actions.academyCreatedNamed', { name: academy.name }) : t('actions.accountCreatedBackupKey'), 'ok');
     return true;
   }
 
   async function signInWithKey({ key, displayName, role = ROLE.STUDENT } = {}) {
     const value = String(key ?? '').trim();
     if (!value) {
-      toast('Paste an nsec1… or npub1… key.', 'warn');
+      toast(t('actions.pasteKey'), 'warn');
       return false;
     }
     if (!isKeyLike(value)) {
-      toast('That is not a valid nsec, npub, or public key.', 'warn');
+      toast(t('actions.invalidKey'), 'warn');
       return false;
     }
 
     const decoded = decodeKey(value);
     if (!decoded?.pubkey) {
-      toast('That key could not be read.', 'warn');
+      toast(t('actions.keyUnreadable'), 'warn');
       return false;
     }
 
@@ -961,8 +979,8 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     navigateTo('/home');
     toast(
       activeSigner
-        ? 'Signed in with your key.'
-        : 'Viewing this identity read-only — connect a signer to act as it.',
+        ? t('actions.signedInWithKey')
+        : t('actions.readOnlyIdentity'),
       activeSigner ? 'ok' : 'warn',
     );
     return true;
@@ -970,9 +988,9 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
 
   async function signOut() {
     const ok = await confirm({
-      title: 'Sign out?',
-      body: 'This clears the session on this device and returns you to the sign-in screen. Keys stored by a signer stay with that signer.',
-      confirmLabel: 'Sign out',
+      title: t('actions.signOutTitle'),
+      body: t('actions.signOutBody'),
+      confirmLabel: t('common.actions.signOut'),
     });
     if (!ok) return false;
 
@@ -1007,7 +1025,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       lastCreated: null,
     });
     navigate('/welcome');
-    toast('Signed out.', 'info');
+    toast(t('actions.signedOut'), 'info');
     return true;
   }
 
@@ -1016,27 +1034,27 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const persona = getPersona(current.personaId);
     const academyName = String(name ?? '').trim();
     if (!academyName) {
-      toast('Name your academy first.', 'warn');
+      toast(t('actions.nameAcademyFirst'), 'warn');
       return false;
     }
 
     const existing = ownedAcademy(current, persona.id);
     if (existing) {
-      toast(`You already own ${existing.name} — open Organization to manage it.`, 'info');
+      toast(t('actions.alreadyOwnAcademy', { name: existing.name }), 'info');
       return false;
     }
 
     const academy = newAcademy({ name: academyName, type, timeZone, ownerId: persona.id });
 
     const signed = await signAndPublish({
-      title: 'Create academy',
+      title: t('actions.createAcademy'),
       action: el('span', {}, [
-        el('strong', {}, `Create ${academyName}`),
+        el('strong', {}, t('actions.createNamed', { name: academyName })),
         el('br'),
         `${persona.displayName} · `,
         el('span', { class: 'mono' }, truncateNpub(persona.npub)),
         el('br'),
-        'You become the owner and control its records.',
+        t('actions.becomeOwnerControlRecords'),
       ]),
       ...recordPayload('academy', academy.id, academy),
     });
@@ -1060,13 +1078,13 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           time: 'now',
           context: academyName,
           audience: 'all',
-          text: `created ${academyName} and became its owner.`,
+          text: t('actions.createdAcademyBecameOwner', { name: academyName }),
         },
         ...current.events,
       ],
     });
     navigateTo('/role');
-    toast(`${academyName} created — invite a teacher or share a join link.`, 'ok');
+    toast(t('actions.academyCreatedInvite', { name: academyName }), 'ok');
     return true;
   }
 
@@ -1074,7 +1092,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const current = state();
     const academy = ownedAcademy(current, current.personaId);
     if (!academy) {
-      toast('Create an academy before editing its info.', 'warn');
+      toast(t('actions.createAcademyBeforeEditingInfo'), 'warn');
       return false;
     }
 
@@ -1099,11 +1117,11 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     };
 
     const signed = await signAndPublish({
-      title: 'Update academy info',
+      title: t('actions.updateAcademyInfo'),
       action: el('span', {}, [
-        el('strong', {}, `Update ${nextName}`),
+        el('strong', {}, t('actions.updateNamed', { name: nextName })),
         el('br'),
-        'Repost the academy record and publish your public profile from the organization key.',
+        t('actions.repostAcademyRecord'),
       ]),
       ...recordPayload('academy', updated.id, updated),
     });
@@ -1122,15 +1140,15 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           time: 'now',
           context: nextName,
           audience: 'all',
-          text: `updated the academy profile for ${nextName}.`,
+          text: t('actions.updatedAcademyProfile', { name: nextName }),
         },
         ...state().events,
       ],
     });
     toast(
       profile
-        ? 'Academy info updated — public profile published from the organization key.'
-        : 'Academy info saved locally; the organization profile was not published.',
+        ? t('actions.academyInfoUpdated')
+        : t('actions.academyInfoSavedLocally'),
       profile ? 'ok' : 'warn',
     );
     return true;
@@ -1140,7 +1158,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const current = state();
     const academy = ownedAcademy(current, current.personaId);
     if (!academy) {
-      toast('Create an academy before inviting teachers.', 'warn');
+      toast(t('actions.createAcademyBeforeInvitingTeachers'), 'warn');
       return null;
     }
     const normalizedTarget = normalizeInviteTarget(target);
@@ -1168,7 +1186,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           time: 'now',
           context: academy.name,
           audience: [normalizedTarget],
-          text: `invited ${label} to teach at ${academy.name}.`,
+          text: t('actions.invitedToTeach', { label, academy: academy.name }),
         },
         ...current.events,
       ],
@@ -1181,13 +1199,13 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         payload: invite,
         recipients: [recipient],
         encrypted: true,
-        title: 'Send invite',
-        action: el('span', {}, `Send the teacher invite to ${label} (encrypted).`),
+        title: t('actions.sendInvite'),
+        action: el('span', {}, t('actions.sendTeacherInvite', { label })),
       });
     } else {
-      publishJoinLink(invite, `Publish the teacher join link for ${academy.name}.`);
+      publishJoinLink(invite, t('actions.publishTeacherJoinLink', { academy: academy.name }));
     }
-    toast(`Invite ready for ${label}.`, 'ok');
+    toast(t('actions.inviteReadyFor', { label }), 'ok');
     return { ...invite, url: inviteUrl(invite.code, appBase()) };
   }
 
@@ -1209,11 +1227,11 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         type: RECORD_TYPES.ACADEMY,
         id: academy.id,
         payload: academy,
-        title: 'Publish academy',
-        action: el('span', {}, `Publish ${academy.name} so its join links can be verified.`),
+        title: t('actions.publishAcademy'),
+        action: el('span', {}, t('actions.publishAcademyForJoinLinks', { name: academy.name })),
       });
       if (!academyPublished?.count) {
-        toast('The academy record was not accepted by a relay yet.', 'warn');
+        toast(t('actions.academyRecordNotAccepted'), 'warn');
         return false;
       }
     }
@@ -1222,11 +1240,11 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       type: RECORD_TYPES.JOIN_LINK,
       id: invite.id,
       payload: publicLinkPayload(invite),
-      title: 'Publish join link',
+      title: t('actions.publishJoinLink'),
       action: el('span', {}, message),
     });
     if (!published?.count) {
-      toast('Join link saved on this device, but no relay accepted it yet.', 'warn');
+      toast(t('actions.joinLinkSavedNoRelay'), 'warn');
       return false;
     }
     return true;
@@ -1239,7 +1257,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
   function publishJoinLinkToRelays(inviteId) {
     const invite = findInvite(inviteId);
     if (!invite) return Promise.resolve(false);
-    return publishJoinLink(invite, 'Publish this join link to your relays.');
+    return publishJoinLink(invite, t('actions.publishThisJoinLink'));
   }
 
   function checkJoinLink(inviteId, { timeoutMs = 6000 } = {}) {
@@ -1283,7 +1301,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const current = state();
     const academy = ownedAcademy(current, current.personaId);
     if (!academy) {
-      toast('Create an academy before sharing a join link.', 'warn');
+      toast(t('actions.createAcademyBeforeSharingLink'), 'warn');
       return null;
     }
     const existing = current.invites.find(
@@ -1294,7 +1312,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         !invite.target,
     );
     if (existing) {
-      publishJoinLink(existing, `Publish the join link for ${academy.name}.`);
+      publishJoinLink(existing, t('actions.publishJoinLinkFor', { name: academy.name }));
       return { ...existing, url: inviteUrl(existing.code, appBase()) };
     }
 
@@ -1308,16 +1326,16 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       time: 'now',
     };
     update({ invites: [invite, ...current.invites] });
-    publishJoinLink(invite, `Publish the join link for ${academy.name}.`);
-    toast('Join link ready — copy and share it.', 'ok');
+    publishJoinLink(invite, t('actions.publishJoinLinkFor', { name: academy.name }));
+    toast(t('actions.joinLinkReady'), 'ok');
     return { ...invite, url: inviteUrl(invite.code, appBase()) };
   }
 
   async function copyInviteLink(inviteId) {
     const invite = state().invites.find((entry) => entry.id === inviteId);
     if (!invite) return false;
-    publishJoinLink(invite, 'Publish this join link so anyone can open it.');
-    return copyText(inviteUrl(invite.code, appBase()), 'Invite link copied — share it.');
+    publishJoinLink(invite, t('actions.publishJoinLinkAnyone'));
+    return copyText(inviteUrl(invite.code, appBase()), t('actions.inviteLinkCopied'));
   }
 
   function revokeInvite(inviteId) {
@@ -1328,14 +1346,14 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         entry.id === inviteId ? { ...entry, status: INVITE_STATUS.REVOKED } : entry,
       ),
     });
-    publishJoinLink({ ...invite, status: INVITE_STATUS.REVOKED }, 'Revoke this join link.');
-    toast('Invite revoked — that link no longer works.', 'warn');
+    publishJoinLink({ ...invite, status: INVITE_STATUS.REVOKED }, t('actions.revokeThisJoinLink'));
+    toast(t('actions.inviteRevoked'), 'warn');
   }
 
   function rememberInvite(reference) {
     const invite = findInviteByCode(state().invites, parseInviteReference(reference));
     if (!invite || invite.status !== INVITE_STATUS.PENDING) {
-      toast('That invite link is not recognized or is no longer valid.', 'warn');
+      toast(t('actions.inviteLinkInvalid'), 'warn');
       return false;
     }
     update({ pendingInviteCode: invite.code });
@@ -1346,11 +1364,11 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const current = state();
     const invite = findInviteByCode(current.invites, parseInviteReference(reference) ?? reference);
     if (!invite) {
-      toast('That invite link is not recognized.', 'warn');
+      toast(t('actions.inviteLinkNotRecognized'), 'warn');
       return false;
     }
     if (invite.status !== INVITE_STATUS.PENDING) {
-      toast('That invite was already used or revoked.', 'warn');
+      toast(t('actions.inviteUsedOrRevoked'), 'warn');
       return false;
     }
 
@@ -1361,16 +1379,16 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         ? classroomById(current.classrooms ?? [], invite.classroomId)
         : null;
       const approved = await signer.request({
-        title: 'Accept invitation',
+        title: t('actions.acceptInvitation'),
         action: el('span', {}, [
-          el('strong', {}, `Join ${classroom?.name ?? academy?.name ?? 'the academy'}`),
+          el('strong', {}, t('actions.joinNamed', { name: classroom?.name ?? academy?.name ?? t('actions.theAcademy') })),
           el('br'),
-          `as a ${inviteRoleLabel(invite.role)} · `,
+          t('actions.asARole', { role: t(inviteRoleKey(invite.role)) }),
           el('span', { class: 'mono' }, truncateNpub(persona.npub)),
         ]),
       });
       if (!approved.approved) {
-        toast('Not signed. Nothing changed.', 'warn');
+        toast(t('actions.notSignedNothingChanged'), 'warn');
         return false;
       }
     }
@@ -1382,12 +1400,12 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const current = state();
     const academy = ownedAcademy(current, current.personaId);
     if (!academy) {
-      toast('Open your academy first.', 'warn');
+      toast(t('actions.openAcademyFirst'), 'warn');
       return null;
     }
     const subjectName = String(name ?? '').trim();
     if (!subjectName) {
-      toast('Name the subject first.', 'warn');
+      toast(t('actions.nameSubjectFirst'), 'warn');
       return null;
     }
     const subject = {
@@ -1406,7 +1424,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           time: 'now',
           context: academy.name,
           audience: 'all',
-          text: `added the subject ${subjectName}.`,
+          text: t('actions.addedSubject', { name: subjectName }),
         },
         ...current.events,
       ],
@@ -1415,10 +1433,10 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       type: 'subject',
       id: subject.id,
       payload: subject,
-      title: 'Publish subject',
-      action: el('span', {}, `Publish subject “${subjectName}” to your academy.`),
+      title: t('actions.publishSubject'),
+      action: el('span', {}, t('actions.publishSubjectNamed', { name: subjectName })),
     });
-    toast(`Subject “${subjectName}” added.`, 'ok');
+    toast(t('actions.subjectAdded', { name: subjectName }), 'ok');
     return subject;
   }
 
@@ -1427,12 +1445,12 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const academy = ownedAcademy(current, current.personaId);
     const subject = subjectById(current.subjects ?? [], subjectId);
     if (!academy || !subject || subject.academyId !== academy.id) {
-      toast('That subject is not in your academy.', 'warn');
+      toast(t('actions.subjectNotInAcademy'), 'warn');
       return false;
     }
     const nextName = String(name ?? '').trim();
     if (!nextName) {
-      toast('Name the subject first.', 'warn');
+      toast(t('actions.nameSubjectFirst'), 'warn');
       return false;
     }
     const updated = { ...subject, name: nextName, code: String(code ?? '').trim() };
@@ -1446,7 +1464,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           time: 'now',
           context: academy.name,
           audience: 'all',
-          text: `updated the subject ${nextName}.`,
+          text: t('actions.updatedSubject', { name: nextName }),
         },
         ...current.events,
       ],
@@ -1455,10 +1473,10 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       type: 'subject',
       id: updated.id,
       payload: updated,
-      title: 'Update subject',
-      action: el('span', {}, `Publish the updated subject “${nextName}”.`),
+      title: t('actions.updateSubject'),
+      action: el('span', {}, t('actions.publishUpdatedSubject', { name: nextName })),
     });
-    toast(`Subject “${nextName}” updated.`, 'ok');
+    toast(t('actions.subjectUpdated', { name: nextName }), 'ok');
     return true;
   }
 
@@ -1467,17 +1485,17 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const academy = ownedAcademy(current, current.personaId);
     const subject = subjectById(current.subjects ?? [], subjectId);
     if (!academy || !subject || subject.academyId !== academy.id) {
-      toast('That subject is not in your academy.', 'warn');
+      toast(t('actions.subjectNotInAcademy'), 'warn');
       return false;
     }
     if (subjectInUse(current.classrooms ?? [], subjectId)) {
-      toast('Move or delete its classrooms before deleting the subject.', 'warn');
+      toast(t('actions.moveOrDeleteClassrooms'), 'warn');
       return false;
     }
     const ok = await confirm({
-      title: `Delete “${subject.name}”?`,
-      body: 'The subject is removed from this device and a deletion record is published.',
-      confirmLabel: 'Delete',
+      title: t('actions.deleteNamed', { name: subject.name }),
+      body: t('actions.subjectDeletedBody'),
+      confirmLabel: t('common.actions.delete'),
     });
     if (!ok) return false;
 
@@ -1491,7 +1509,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           time: 'now',
           context: academy.name,
           audience: 'all',
-          text: `removed the subject ${subject.name}.`,
+          text: t('actions.removedSubject', { name: subject.name }),
         },
         ...current.events,
       ],
@@ -1500,10 +1518,10 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       type: 'subject',
       id: subjectId,
       payload: { ...subject, deleted: true },
-      title: 'Delete subject',
-      action: el('span', {}, `Remove “${subject.name}” from your academy.`),
+      title: t('actions.deleteSubject'),
+      action: el('span', {}, t('actions.removeSubjectNamed', { name: subject.name })),
     });
-    toast(`Subject “${subject.name}” removed.`, 'warn');
+    toast(t('actions.subjectRemoved', { name: subject.name }), 'warn');
     return true;
   }
 
@@ -1511,12 +1529,12 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const current = state();
     const academy = ownedAcademy(current, current.personaId);
     if (!academy) {
-      toast('Create an academy first.', 'warn');
+      toast(t('actions.createAcademyFirst'), 'warn');
       return null;
     }
     const subject = subjectById(current.subjects ?? [], subjectId);
     if (!subject) {
-      toast('Pick a subject for the classroom.', 'warn');
+      toast(t('actions.pickSubjectForClassroom'), 'warn');
       return null;
     }
     const className = String(name ?? '').trim() || subject.name;
@@ -1563,7 +1581,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           time: 'now',
           context: subject.name,
           audience: 'all',
-          text: `created the classroom ${className} (${subject.name})${assigned ? '' : ' and invited a teacher'}.`,
+          text: t(assigned ? 'actions.createdClassroom' : 'actions.createdClassroomInvitedTeacher', { name: className, subject: subject.name }),
         },
         ...current.events,
       ],
@@ -1572,11 +1590,13 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       type: 'classroom',
       id: classroom.id,
       payload: toPublicRecord(classroom),
-      title: 'Publish classroom',
-      action: el('span', {}, `Publish ${className} (${subject.name}).`),
+      title: t('actions.publishClassroom'),
+      action: el('span', {}, t('actions.publishClassroomNamed', { name: className, subject: subject.name })),
     });
     toast(
-      assigned ? `${className} published — students can be enrolled.` : `${className} created — invite a teacher to publish it.`,
+      assigned
+        ? t('actions.classroomPublishedEnrollable', { name: className })
+        : t('actions.classroomCreatedInviteTeacher', { name: className }),
       'ok',
     );
     return classroom;
@@ -1587,7 +1607,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const classroom = classroomById(current.classrooms ?? [], classroomId);
     if (!classroom) return false;
     if (!classroom.teacherId) {
-      toast('Assign a teacher before publishing.', 'warn');
+      toast(t('actions.assignTeacherBeforePublishing'), 'warn');
       return false;
     }
     const updated = { ...classroom, status: CLASS_STATUS.PUBLISHED };
@@ -1598,10 +1618,10 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       type: 'classroom',
       id: updated.id,
       payload: toPublicRecord(updated),
-      title: 'Publish classroom',
-      action: el('span', {}, `Publish ${classroom.name} to the catalog.`),
+      title: t('actions.publishClassroom'),
+      action: el('span', {}, t('actions.publishClassroomToCatalog', { name: classroom.name })),
     });
-    toast(`${classroom.name} published — students can see it.`, 'ok');
+    toast(t('actions.classroomPublishedVisible', { name: classroom.name }), 'ok');
     return true;
   }
 
@@ -1626,8 +1646,8 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       type: 'classroom',
       id: updated.id,
       payload: toPublicRecord(updated),
-      title: 'Assign teacher',
-      action: el('span', {}, `Assign a teacher to ${classroom.name}.`),
+      title: t('actions.assignTeacher'),
+      action: el('span', {}, t('actions.assignTeacherTo', { name: classroom.name })),
     });
     if (capability && canPublish()) {
       publishRecord({
@@ -1636,11 +1656,11 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         payload: capability,
         recipients: [teacherId],
         encrypted: true,
-        title: 'Grant teacher assignment',
-        action: el('span', {}, `Sign the teacher assignment for ${classroom.name} (encrypted).`),
+        title: t('actions.grantTeacherAssignment'),
+        action: el('span', {}, t('actions.signTeacherAssignment', { name: classroom.name })),
       });
     }
-    toast(`${classroom.name} assigned and published.`, 'ok');
+    toast(t('actions.classroomAssignedPublished', { name: classroom.name }), 'ok');
     return true;
   }
 
@@ -1649,19 +1669,19 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const academy = ownedAcademy(current, current.personaId);
     const classroom = classroomById(current.classrooms ?? [], classroomId);
     if (!academy || !classroom || classroom.academyId !== academy.id) {
-      toast('That classroom is not in your academy.', 'warn');
+      toast(t('actions.classroomNotInAcademy'), 'warn');
       return false;
     }
     const nextName = String(name ?? '').trim();
     if (!nextName) {
-      toast('Name the classroom first.', 'warn');
+      toast(t('actions.nameClassroomFirst'), 'warn');
       return false;
     }
     const nextSubject =
       subjectById(current.subjects ?? [], subjectId) ??
       subjectById(current.subjects ?? [], classroom.subjectId);
     if (!nextSubject) {
-      toast('Pick a subject for the classroom.', 'warn');
+      toast(t('actions.pickSubjectForClassroom'), 'warn');
       return false;
     }
     const assigned = teacherId || null;
@@ -1689,7 +1709,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           time: 'now',
           context: nextSubject.name,
           audience: 'all',
-          text: `updated the classroom ${nextName}.`,
+          text: t('actions.updatedClassroom', { name: nextName }),
         },
         ...current.events,
       ],
@@ -1698,10 +1718,10 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       type: 'classroom',
       id: updated.id,
       payload: toPublicRecord(updated),
-      title: 'Update classroom',
-      action: el('span', {}, `Publish changes to ${nextName}.`),
+      title: t('actions.updateClassroom'),
+      action: el('span', {}, t('actions.publishChangesTo', { name: nextName })),
     });
-    toast(`${nextName} updated.`, 'ok');
+    toast(t('actions.classroomUpdated', { name: nextName }), 'ok');
     return true;
   }
 
@@ -1710,7 +1730,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const academy = ownedAcademy(current, current.personaId);
     const classroom = classroomById(current.classrooms ?? [], classroomId);
     if (!academy || !classroom || classroom.academyId !== academy.id) {
-      toast('That classroom is not in your academy.', 'warn');
+      toast(t('actions.classroomNotInAcademy'), 'warn');
       return false;
     }
     const updated = { ...classroom, status };
@@ -1733,7 +1753,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       type: 'classroom',
       id: updated.id,
       payload: toPublicRecord(updated),
-      title: status === CLASS_STATUS.ARCHIVED ? 'Archive classroom' : 'Restore classroom',
+      title: status === CLASS_STATUS.ARCHIVED ? t('actions.archiveClassroom') : t('actions.restoreClassroom'),
       action: el('span', {}, `${message}`),
     });
     return true;
@@ -1742,8 +1762,8 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
   function archiveClassroom(classroomId) {
     const classroom = classroomById(state().classrooms ?? [], classroomId);
     if (!classroom) return false;
-    const ok = setClassroomStatus(classroomId, CLASS_STATUS.ARCHIVED, `archived ${classroom.name}.`);
-    if (ok) toast(`${classroom.name} archived — hidden from learners, records kept.`, 'warn');
+    const ok = setClassroomStatus(classroomId, CLASS_STATUS.ARCHIVED, t('actions.archivedClassroom', { name: classroom.name }));
+    if (ok) toast(t('actions.classroomArchived', { name: classroom.name }), 'warn');
     return ok;
   }
 
@@ -1751,12 +1771,12 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const classroom = classroomById(state().classrooms ?? [], classroomId);
     if (!classroom) return false;
     const status = classroom.teacherId ? CLASS_STATUS.PUBLISHED : CLASS_STATUS.DRAFT;
-    const ok = setClassroomStatus(classroomId, status, `restored ${classroom.name}.`);
+    const ok = setClassroomStatus(classroomId, status, t('actions.restoredClassroom', { name: classroom.name }));
     if (ok) {
       toast(
         classroom.teacherId
-          ? `${classroom.name} restored and published.`
-          : `${classroom.name} restored as a draft — assign a teacher to publish it.`,
+          ? t('actions.classroomRestoredPublished', { name: classroom.name })
+          : t('actions.classroomRestoredDraft', { name: classroom.name }),
         'ok',
       );
     }
@@ -1768,19 +1788,19 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const academy = ownedAcademy(current, current.personaId);
     const classroom = classroomById(current.classrooms ?? [], classroomId);
     if (!academy || !classroom || classroom.academyId !== academy.id) {
-      toast('That classroom is not in your academy.', 'warn');
+      toast(t('actions.classroomNotInAcademy'), 'warn');
       return false;
     }
     const activity = classroomActivity(current.homework ?? [], current.submissions ?? [], classroomId);
     const learners = (classroom.studentIds ?? []).length;
     if (activity.homework || activity.submissions || learners) {
-      toast('Archive the classroom instead — it already has learners or work.', 'warn');
+      toast(t('actions.archiveInsteadHasWork'), 'warn');
       return false;
     }
     const ok = await confirm({
-      title: `Delete “${classroom.name}”?`,
-      body: 'The classroom is removed from this device and a deletion record is published.',
-      confirmLabel: 'Delete',
+      title: t('actions.deleteNamed', { name: classroom.name }),
+      body: t('actions.classroomDeletedBody'),
+      confirmLabel: t('common.actions.delete'),
     });
     if (!ok) return false;
 
@@ -1794,7 +1814,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           time: 'now',
           context: classroom.name,
           audience: 'all',
-          text: `removed the classroom ${classroom.name}.`,
+          text: t('actions.removedClassroom', { name: classroom.name }),
         },
         ...current.events,
       ],
@@ -1803,10 +1823,10 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       type: 'classroom',
       id: classroomId,
       payload: toPublicRecord({ ...classroom, deleted: true }),
-      title: 'Delete classroom',
-      action: el('span', {}, `Remove ${classroom.name} from your academy.`),
+      title: t('actions.deleteClassroom'),
+      action: el('span', {}, t('actions.removeClassroomNamed', { name: classroom.name })),
     });
-    toast(`${classroom.name} removed.`, 'warn');
+    toast(t('actions.classroomRemoved', { name: classroom.name }), 'warn');
     return true;
   }
 
@@ -1814,7 +1834,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const current = state();
     const classroom = classroomById(current.classrooms ?? [], classroomId);
     if (!classroom || !authorize(ACTION.SET_POLICY, classroomContext(current, classroom))) {
-      toast('Only the academy owner can set completion rules.', 'warn');
+      toast(t('actions.onlyOwnerSetCompletion'), 'warn');
       return false;
     }
     const policy = normalizePolicy({ minAverage, requireAllHomework });
@@ -1836,7 +1856,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           time: 'now',
           context: classroom.name,
           audience: 'all',
-          text: `updated completion rules for ${classroom.name} · v${updated.completionVersion}.`,
+          text: t('actions.updatedCompletionRules', { name: classroom.name, version: updated.completionVersion }),
         },
         ...current.events,
       ],
@@ -1845,10 +1865,10 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       type: 'classroom',
       id: updated.id,
       payload: toPublicRecord(updated),
-      title: 'Completion rules',
-      action: el('span', {}, `Publish completion rules v${updated.completionVersion} for ${classroom.name}.`),
+      title: t('actions.completionRules'),
+      action: el('span', {}, t('actions.publishCompletionRules', { version: updated.completionVersion, name: classroom.name })),
     });
-    toast(`Completion rules updated (v${updated.completionVersion}).`, 'ok');
+    toast(t('actions.completionRulesUpdated', { version: updated.completionVersion }), 'ok');
     return true;
   }
 
@@ -1856,7 +1876,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const current = state();
     const classroom = classroomById(current.classrooms ?? [], classroomId);
     if (!authorize(ACTION.RECOMMEND_COMPLETION, classroomContext(current, classroom))) {
-      toast('Only the class teacher or academy owner can recommend completion.', 'warn');
+      toast(t('actions.onlyTeacherOrOwnerRecommend'), 'warn');
       return false;
     }
     const homework = homeworkForClassroom(current.homework ?? [], classroomId);
@@ -1867,14 +1887,14 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       studentId,
     });
     if (!result.eligible) {
-      toast('That learner has not met the completion rules yet.', 'warn');
+      toast(t('actions.learnerNotMetRules'), 'warn');
       return false;
     }
     const pending = (current.recommendations ?? []).some(
       (entry) => entry.classroomId === classroomId && entry.studentId === studentId && entry.status === 'recommended',
     );
     if (pending) {
-      toast('Completion is already recommended for this learner.', 'info');
+      toast(t('actions.completionAlreadyRecommended'), 'info');
       return false;
     }
     const persona = getPersona(current.personaId);
@@ -1919,7 +1939,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           time: 'now',
           context: classroom.name,
           audience: [studentId, academy?.ownerId].filter(Boolean),
-          text: `recommended ${learner.displayName} for completion of ${classroom.name}.`,
+          text: t('actions.recommendedForCompletion', { learner: learner.displayName, name: classroom.name }),
         },
         ...current.events,
       ],
@@ -1931,11 +1951,11 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         payload: recommendation,
         recipients: [academy.ownerId],
         encrypted: true,
-        title: 'Recommend completion',
-        action: el('span', {}, `Send ${learner.displayName}'s completion recommendation to the issuer (encrypted).`),
+        title: t('actions.recommendCompletion'),
+        action: el('span', {}, t('actions.sendCompletionRecommendation', { learner: learner.displayName })),
       });
     }
-    toast(`Completion recommended for ${learner.displayName}.`, 'ok');
+    toast(t('actions.completionRecommendedFor', { name: learner.displayName }), 'ok');
     return true;
   }
 
@@ -1943,7 +1963,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const current = state();
     const classroom = classroomById(current.classrooms ?? [], classroomId);
     if (!classroom) {
-      toast('Pick a classroom first.', 'warn');
+      toast(t('actions.pickClassroomFirst'), 'warn');
       return null;
     }
     const normalized = normalizeInviteTarget(target);
@@ -1971,7 +1991,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           time: 'now',
           context: classroom.name,
           audience: [normalized],
-          text: `invited ${label} to ${classroom.name} as a ${inviteRoleLabel(role)}.`,
+          text: t('actions.invitedToClassAsRole', { label, name: classroom.name, role: t(inviteRoleKey(role)) }),
         },
         ...current.events,
       ],
@@ -1984,13 +2004,13 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         payload: invite,
         recipients: [recipient],
         encrypted: true,
-        title: 'Send invite',
-        action: el('span', {}, `Send the ${inviteRoleLabel(role)} invite to ${label} (encrypted).`),
+        title: t('actions.sendInvite'),
+        action: el('span', {}, t('actions.sendRoleInvite', { role: t(inviteRoleKey(role)), label })),
       });
     } else {
-      publishJoinLink(invite, `Publish the join link for ${classroom.name}.`);
+      publishJoinLink(invite, t('actions.publishJoinLinkFor', { name: classroom.name }));
     }
-    toast(`Invite ready for ${label} — share the link.`, 'ok');
+    toast(t('actions.inviteReadyShareLink', { label }), 'ok');
     return { ...invite, url: inviteUrl(invite.code, appBase()) };
   }
 
@@ -2006,7 +2026,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const current = state();
     const classroom = classroomById(current.classrooms ?? [], classroomId);
     if (!classroom) {
-      toast('Pick a classroom first.', 'warn');
+      toast(t('actions.pickClassroomFirst'), 'warn');
       return null;
     }
     const existing = (current.invites ?? []).find(
@@ -2017,7 +2037,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         !invite.target,
     );
     if (existing) {
-      publishJoinLink(existing, `Publish the join link for ${classroom.name}.`);
+      publishJoinLink(existing, t('actions.publishJoinLinkFor', { name: classroom.name }));
       return { ...existing, url: inviteUrl(existing.code, appBase()) };
     }
 
@@ -2032,8 +2052,8 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       time: 'now',
     };
     update({ invites: [invite, ...current.invites] });
-    publishJoinLink(invite, `Publish the join link for ${classroom.name}.`);
-    toast('Class join link ready — copy and share it.', 'ok');
+    publishJoinLink(invite, t('actions.publishJoinLinkFor', { name: classroom.name }));
+    toast(t('actions.classJoinLinkReady'), 'ok');
     return { ...invite, url: inviteUrl(invite.code, appBase()) };
   }
 
@@ -2050,22 +2070,22 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const current = state();
     const classroom = classroomById(current.classrooms ?? [], classroomId);
     if (!classroom) {
-      toast('Pick a classroom first.', 'warn');
+      toast(t('actions.pickClassroomFirst'), 'warn');
       return null;
     }
     if (!canManageClassroom(current, classroom)) {
-      toast('Only the class teacher or academy owner can post homework.', 'warn');
+      toast(t('actions.onlyTeacherOrOwnerPostHomework'), 'warn');
       return null;
     }
     const homeworkTitle = String(title ?? '').trim();
     if (!homeworkTitle) {
-      toast('Add a homework title.', 'warn');
+      toast(t('actions.addHomeworkTitle'), 'warn');
       return null;
     }
     const criteria = normalizeRubric(rubric);
     const max = criteria.length ? rubricMax(criteria) : Number(maxScore);
     if (!Number.isFinite(max) || max <= 0) {
-      toast(criteria.length ? 'Each rubric criterion needs a positive maximum.' : 'Max score must be a positive number.', 'warn');
+      toast(criteria.length ? t('actions.rubricPositiveMax') : t('actions.maxScorePositive'), 'warn');
       return null;
     }
     const persona = getPersona(current.personaId);
@@ -2078,7 +2098,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       subjectId: classroom.subjectId,
       title: homeworkTitle,
       instructions: String(instructions ?? '').trim(),
-      due: String(due ?? '').trim() || 'no due date',
+      due: String(due ?? '').trim() || t('actions.noDueDate'),
       dueAt: String(dueAt ?? '').trim() || null,
       maxScore: max,
       rubric: criteria,
@@ -2096,8 +2116,8 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           context: `${subject?.name ?? classroom.name} ▸ ${classroom.name}`,
           audience: 'all',
           text: publish
-            ? `published “${homeworkTitle}” · due ${item.due} · out of ${max}.`
-            : `saved “${homeworkTitle}” as a draft.`,
+            ? t('actions.publishedHomework', { title: homeworkTitle, due: item.due, max })
+            : t('actions.savedHomeworkDraft', { title: homeworkTitle }),
         },
         ...current.events,
       ],
@@ -2109,12 +2129,12 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         payload: item,
         recipients: [classroom.teacherId, ...(classroom.studentIds ?? [])],
         encrypted: true,
-        title: 'Publish homework',
-        action: el('span', {}, `Send “${homeworkTitle}” to the class (encrypted).`),
+        title: t('actions.publishHomework'),
+        action: el('span', {}, t('actions.sendHomeworkToClass', { title: homeworkTitle })),
       });
-      toast(`Homework “${homeworkTitle}” posted.`, 'ok');
+      toast(t('actions.homeworkPosted', { title: homeworkTitle }), 'ok');
     } else {
-      toast(`Homework “${homeworkTitle}” saved as a draft — not sent to learners.`, 'info');
+      toast(t('actions.homeworkSavedDraft', { title: homeworkTitle }), 'info');
     }
     return item;
   }
@@ -2125,14 +2145,14 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     if (!item) return false;
     const classroom = classroomById(current.classrooms ?? [], item.classroomId);
     if (!canManageClassroom(current, classroom)) {
-      toast('Only the class teacher or academy owner can publish this homework.', 'warn');
+      toast(t('actions.onlyTeacherOrOwnerPublishHomework'), 'warn');
       return false;
     }
     if (item.status === HOMEWORK_STATUS.PUBLISHED) return true;
     return setHomeworkStatus(
       homeworkId,
       HOMEWORK_STATUS.PUBLISHED,
-      `published “${item.title}” to the class.`,
+      t('actions.publishedHomeworkToClass', { title: item.title }),
       'ok',
     );
   }
@@ -2142,23 +2162,23 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const item = (current.homework ?? []).find((entry) => entry.id === homeworkId);
     if (!item) return false;
     if (!isHomeworkOpen(item)) {
-      toast('This homework is closed to new submissions.', 'warn');
+      toast(t('actions.homeworkClosed'), 'warn');
       return false;
     }
     const classroom = classroomById(current.classrooms ?? [], item.classroomId);
     if (!canSubmitWork(current, classroom)) {
-      toast('Only learners enrolled in this class can submit.', 'warn');
+      toast(t('actions.onlyEnrolledCanSubmit'), 'warn');
       return false;
     }
     const late = isLate(item);
     if (late && !canSubmitLate(classroom, item)) {
-      toast('This homework is past its due date and late work is not accepted.', 'warn');
+      toast(t('actions.homeworkLateNotAccepted'), 'warn');
       return false;
     }
     const persona = getPersona(current.personaId);
     const body = String(text ?? '').trim();
     if (!body) {
-      toast('Write your answer first.', 'warn');
+      toast(t('actions.writeAnswerFirst'), 'warn');
       return false;
     }
     const existing = submissionFor(current.submissions ?? [], homeworkId, persona.id);
@@ -2212,8 +2232,8 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           homeworkId,
           late,
           text: late
-            ? `submitted version ${version} of “${item.title}” after the due date.`
-            : `submitted version ${version} of “${item.title}”.`,
+            ? t('actions.submittedVersionLate', { version, title: item.title })
+            : t('actions.submittedVersion', { version, title: item.title }),
         },
         ...current.events,
       ],
@@ -2225,13 +2245,13 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       recipients: [item.createdBy],
       encrypted: true,
       head: headAddress('submission', submission.id, persona.id),
-      title: 'Submit homework',
-      action: el('span', {}, `Submit version ${version} of “${item.title}” (encrypted).`),
+      title: t('actions.submitHomework'),
+      action: el('span', {}, t('actions.submitVersionEncrypted', { version, title: item.title })),
     });
     toast(
       late
-        ? `Submitted version ${version} (late) — your teacher will score it.`
-        : `Submitted version ${version} — your teacher will score it.`,
+        ? t('actions.submittedLateToast', { version })
+        : t('actions.submittedToast', { version }),
       late ? 'warn' : 'ok',
     );
     return true;
@@ -2247,7 +2267,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       ? canCorrectAssessment(current, classroom)
       : canFinalizeAssessment(current, classroom);
     if (!canScore) {
-      toast('Only the class teacher or academy owner can score this.', 'warn');
+      toast(t('actions.onlyTeacherOrOwnerScore'), 'warn');
       return false;
     }
     const homeworkItem = (current.homework ?? []).find((entry) => entry.id === submission.homeworkId);
@@ -2258,13 +2278,13 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     if (rubric.length) {
       sheet = Array.isArray(scores) ? scores : [];
       if (!scoresComplete(sheet, rubric)) {
-        toast('Score every rubric criterion.', 'warn');
+        toast(t('actions.scoreEveryCriterion'), 'warn');
         return false;
       }
       numeric = scoresTotal(sheet);
       maxScore = rubricMax(rubric);
     } else if (!isValidScore(score, submission.maxScore)) {
-      toast(`Enter a score between 0 and ${submission.maxScore}.`, 'warn');
+      toast(t('actions.enterScoreBetween', { max: submission.maxScore }), 'warn');
       return false;
     }
     const persona = getPersona(current.personaId);
@@ -2315,7 +2335,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           context: submission.homeworkId,
           audience: [submission.studentId],
           homeworkId: submission.homeworkId,
-          text: `scored a submission ${numeric}/${maxScore}.`,
+          text: t('actions.scoredSubmission', { score: numeric, max: maxScore }),
         },
         ...current.events,
       ],
@@ -2327,10 +2347,10 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       recipients: [submission.studentId],
       encrypted: true,
       head: headAddress('assessment', submission.id, persona.id),
-      title: 'Send score',
-      action: el('span', {}, `Send ${numeric}/${maxScore} to the learner (encrypted).`),
+      title: t('actions.sendScore'),
+      action: el('span', {}, t('actions.sendScoreToLearner', { score: numeric, max: maxScore })),
     });
-    toast(`Score saved — ${numeric}/${maxScore}.`, 'ok');
+    toast(t('actions.scoreSaved', { score: numeric, max: maxScore }), 'ok');
     return true;
   }
 
@@ -2340,12 +2360,12 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     if (!submission) return false;
     const classroom = classroomById(current.classrooms ?? [], submission.classroomId);
     if (!canFinalizeAssessment(current, classroom)) {
-      toast('Only the class teacher or academy owner can request a revision.', 'warn');
+      toast(t('actions.onlyTeacherOrOwnerRequestRevision'), 'warn');
       return false;
     }
     const note = String(feedback ?? '').trim();
     if (!note) {
-      toast('Write what the learner should change.', 'warn');
+      toast(t('actions.writeRevisionNote'), 'warn');
       return false;
     }
     const persona = getPersona(current.personaId);
@@ -2390,12 +2410,12 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'revision',
           author: persona.id,
           time: 'now',
-          context: homeworkItem?.title ?? classroom?.name ?? 'Homework',
+          context: homeworkItem?.title ?? classroom?.name ?? t('actions.homeworkFallback'),
           audience: [submission.studentId],
           homeworkId: submission.homeworkId,
           actionNeeded: true,
           quote: note,
-          text: `requested a revision on a submission.`,
+          text: t('actions.requestedRevision'),
         },
         ...current.events,
       ],
@@ -2407,10 +2427,10 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       recipients: [submission.studentId],
       encrypted: true,
       head: headAddress('assessment', submission.id, persona.id),
-      title: 'Request revision',
-      action: el('span', {}, 'Send revision feedback to the learner (encrypted).'),
+      title: t('actions.requestRevision'),
+      action: el('span', {}, t('actions.sendRevisionFeedback')),
     });
-    toast('Revision requested — the learner can resubmit.', 'ok');
+    toast(t('actions.revisionRequested'), 'ok');
     return true;
   }
 
@@ -2420,25 +2440,25 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     if (!item) return false;
     const classroom = classroomById(current.classrooms ?? [], item.classroomId);
     if (!canManageClassroom(current, classroom)) {
-      toast('Only the class teacher or academy owner can edit this homework.', 'warn');
+      toast(t('actions.onlyTeacherOrOwnerEditHomework'), 'warn');
       return false;
     }
     const nextTitle = String(title ?? '').trim();
     if (!nextTitle) {
-      toast('Add a homework title.', 'warn');
+      toast(t('actions.addHomeworkTitle'), 'warn');
       return false;
     }
     const criteria = rubric === undefined ? normalizeRubric(item.rubric) : normalizeRubric(rubric);
     const max = criteria.length ? rubricMax(criteria) : Number(maxScore ?? item.maxScore);
     if (!Number.isFinite(max) || max <= 0) {
-      toast(criteria.length ? 'Each rubric criterion needs a positive maximum.' : 'Max score must be a positive number.', 'warn');
+      toast(criteria.length ? t('actions.rubricPositiveMax') : t('actions.maxScorePositive'), 'warn');
       return false;
     }
     const updated = {
       ...item,
       title: nextTitle,
       instructions: String(instructions ?? '').trim(),
-      due: String(due ?? '').trim() || 'no due date',
+      due: String(due ?? '').trim() || t('actions.noDueDate'),
       dueAt: dueAt === undefined ? item.dueAt ?? null : String(dueAt ?? '').trim() || null,
       maxScore: max,
       rubric: criteria,
@@ -2451,9 +2471,9 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'homework',
           author: current.personaId,
           time: 'now',
-          context: `${classroom?.name ?? 'Class'} ▸ ${nextTitle}`,
+          context: `${classroom?.name ?? t('actions.classFallback')} ▸ ${nextTitle}`,
           audience: 'all',
-          text: `updated “${nextTitle}” · due ${updated.due} · out of ${max}.`,
+          text: t('actions.updatedHomeworkEvent', { title: nextTitle, due: updated.due, max }),
         },
         ...current.events,
       ],
@@ -2464,10 +2484,10 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       payload: updated,
       recipients: homeworkRecipients(classroom),
       encrypted: true,
-      title: 'Update homework',
-      action: el('span', {}, `Send the updated “${nextTitle}” to the class (encrypted).`),
+      title: t('actions.updateHomework'),
+      action: el('span', {}, t('actions.sendUpdatedHomework', { title: nextTitle })),
     });
-    toast(`Homework “${nextTitle}” updated.`, 'ok');
+    toast(t('actions.homeworkUpdated', { title: nextTitle }), 'ok');
     return true;
   }
 
@@ -2477,7 +2497,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     if (!item) return false;
     const classroom = classroomById(current.classrooms ?? [], item.classroomId);
     if (!canManageClassroom(current, classroom)) {
-      toast('Only the class teacher or academy owner can change this homework.', 'warn');
+      toast(t('actions.onlyTeacherOrOwnerChangeHomework'), 'warn');
       return false;
     }
     const updated = { ...item, status };
@@ -2489,7 +2509,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'homework',
           author: current.personaId,
           time: 'now',
-          context: classroom?.name ?? 'Class',
+          context: classroom?.name ?? t('actions.classFallback'),
           audience: 'all',
           text: message,
         },
@@ -2504,10 +2524,10 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       encrypted: true,
       title:
         status === HOMEWORK_STATUS.CLOSED
-          ? 'Close homework'
+          ? t('actions.closeHomeworkTitle')
           : status === HOMEWORK_STATUS.DRAFT
-            ? 'Save homework draft'
-            : 'Publish homework',
+            ? t('actions.saveHomeworkDraftTitle')
+            : t('actions.publishHomework'),
       action: el('span', {}, message),
     });
     toast(message, tone);
@@ -2520,7 +2540,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     return setHomeworkStatus(
       homeworkId,
       HOMEWORK_STATUS.CLOSED,
-      `closed “${item.title}” — no new submissions.`,
+      t('actions.closedHomework', { title: item.title }),
       'warn',
     );
   }
@@ -2528,7 +2548,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
   function reopenHomework(homeworkId) {
     const item = (state().homework ?? []).find((entry) => entry.id === homeworkId);
     if (!item) return false;
-    return setHomeworkStatus(homeworkId, HOMEWORK_STATUS.PUBLISHED, `reopened “${item.title}” for submissions.`, 'ok');
+    return setHomeworkStatus(homeworkId, HOMEWORK_STATUS.PUBLISHED, t('actions.reopenedHomework', { title: item.title }), 'ok');
   }
 
   async function deleteHomework(homeworkId) {
@@ -2537,18 +2557,18 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     if (!item) return false;
     const classroom = classroomById(current.classrooms ?? [], item.classroomId);
     if (!canManageClassroom(current, classroom)) {
-      toast('Only the class teacher or academy owner can delete this homework.', 'warn');
+      toast(t('actions.onlyTeacherOrOwnerDeleteHomework'), 'warn');
       return false;
     }
     const submitted = (current.submissions ?? []).some((entry) => entry.homeworkId === homeworkId);
     if (submitted) {
-      toast('Close the homework instead — learners have already submitted.', 'warn');
+      toast(t('actions.closeHomeworkInstead'), 'warn');
       return false;
     }
     const ok = await confirm({
-      title: `Delete “${item.title}”?`,
-      body: 'The homework is removed here and a deletion record is sent to the class.',
-      confirmLabel: 'Delete',
+      title: t('actions.deleteNamed', { name: item.title }),
+      body: t('actions.homeworkDeletedBody'),
+      confirmLabel: t('common.actions.delete'),
     });
     if (!ok) return false;
 
@@ -2560,9 +2580,9 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'homework',
           author: current.personaId,
           time: 'now',
-          context: classroom?.name ?? 'Class',
+          context: classroom?.name ?? t('actions.classFallback'),
           audience: 'all',
-          text: `removed “${item.title}”.`,
+          text: t('actions.removedHomework', { title: item.title }),
         },
         ...current.events,
       ],
@@ -2573,10 +2593,10 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       payload: { id: homeworkId, classroomId: item.classroomId, deleted: true },
       recipients: homeworkRecipients(classroom),
       encrypted: true,
-      title: 'Delete homework',
-      action: el('span', {}, `Remove “${item.title}” from the class.`),
+      title: t('actions.deleteHomework'),
+      action: el('span', {}, t('actions.removeHomeworkFromClass', { title: item.title })),
     });
-    toast(`Homework “${item.title}” removed.`, 'warn');
+    toast(t('actions.homeworkRemoved', { title: item.title }), 'warn');
     return true;
   }
 
@@ -2589,7 +2609,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     }
     const current = normalizeHandle(String(persona.handle ?? '').split('@')[0]);
     if (result.handle !== current && handleTaken(result.handle)) {
-      toast(`@${result.handle} is taken — try a variation.`, 'warn');
+      toast(t('actions.handleTakenTryVariation', { handle: result.handle }), 'warn');
       return false;
     }
 
@@ -2599,17 +2619,17 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       verifiedAt: new Date().toISOString(),
     };
     const published = await publishProfileEvent(claimed, {
-      title: 'Handle claim',
+      title: t('actions.handleClaim'),
       action: el('span', {}, [
-        el('strong', {}, `Claim @${result.handle}`),
+        el('strong', {}, t('actions.claimHandle', { handle: result.handle })),
         el('br'),
-        'This publishes the handle in your public profile (kind:0) so others can find you by name.',
+        t('actions.claimHandleBody'),
         el('br'),
         el('span', { class: 'mono' }, truncateNpub(persona.npub)),
       ]),
     });
     if (!published) {
-      toast('Not signed. The handle was not claimed.', 'warn');
+      toast(t('actions.handleNotClaimed'), 'warn');
       return false;
     }
 
@@ -2627,19 +2647,19 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           author: persona.id,
           time: 'now',
           audience: 'all',
-          text: `Claimed the handle @${result.handle}.`,
+          text: t('actions.claimedHandle', { handle: result.handle }),
         },
         ...state().events,
       ],
     });
-    toast(`@${result.handle} is yours — published in your profile.`, 'ok');
+    toast(t('actions.handleYours', { handle: result.handle }), 'ok');
     return true;
   }
 
   function requestMembership() {
     const persona = getPersona(state().personaId);
     if (membershipOf(state(), persona.id) === MEMBERSHIP.ACTIVE) {
-      toast('You are already a member.', 'info');
+      toast(t('actions.alreadyMember'), 'info');
       return;
     }
     const id = nextId('jr');
@@ -2668,19 +2688,19 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           context: 'BitOS Academy',
           audience: ['nadia'],
           requestId: id,
-          text: 'requested to join BitOS Academy.',
+          text: t('actions.requestedToJoinBitOSAcademy'),
         },
         ...state().events,
       ],
     });
-    toast('Join request sent — awaiting academy approval.', 'info');
+    toast(t('actions.joinRequestSent'), 'info');
   }
 
   function acceptJoin(requestId) {
     const request = state().joinRequests.find((entry) => entry.id === requestId);
     if (!request) return false;
     if (!canDecideJoin(requestId)) {
-      toast('Only the academy owner can approve memberships.', 'warn');
+      toast(t('actions.onlyOwnerApproveMemberships'), 'warn');
       return false;
     }
     const sameRequest = (entry) =>
@@ -2712,7 +2732,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           time: 'now',
           context: 'BitOS Academy',
           audience: [request.accountId],
-          text: 'Approved your BitOS Academy membership — welcome.',
+          text: t('actions.approvedMembershipWelcome'),
         },
         ...state().events,
       ],
@@ -2729,8 +2749,8 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         },
         recipients: [request.accountId],
         encrypted: true,
-        title: 'Approve academy membership',
-        action: el('span', {}, `Approve ${request.displayName} for ${request.academy}.`),
+        title: t('actions.approveAcademyMembership'),
+        action: el('span', {}, t('actions.approveMemberFor', { name: request.displayName, academy: request.academy })),
       });
       if (capability && canPublish()) {
         publishRecord({
@@ -2739,12 +2759,12 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           payload: capability,
           recipients: [request.accountId],
           encrypted: true,
-          title: 'Grant academy membership',
-          action: el('span', {}, `Sign the membership grant for ${request.displayName} (encrypted).`),
+          title: t('actions.grantAcademyMembership'),
+          action: el('span', {}, t('actions.signMembershipGrant', { name: request.displayName })),
         });
       }
     }
-    toast(`Approved — ${request.displayName} is now a member.`, 'ok');
+    toast(t('actions.approvedIsMember', { name: request.displayName }), 'ok');
     return true;
   }
 
@@ -2776,23 +2796,23 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         },
         recipients: [request.accountId],
         encrypted: true,
-        title: 'Decline academy membership',
-        action: el('span', {}, `Decline ${request.displayName}'s request for ${request.academy}.`),
+        title: t('actions.declineAcademyMembership'),
+        action: el('span', {}, t('actions.declineMemberRequest', { name: request.displayName, academy: request.academy })),
       });
     }
-    toast(`Declined — ${request.displayName} was notified.`, 'warn');
+    toast(t('actions.declinedNotified', { name: request.displayName }), 'warn');
   }
 
   function requestEnrollment(classroomId) {
     const current = state();
     const persona = getPersona(current.personaId);
     if (membershipOf(current, persona.id) !== MEMBERSHIP.ACTIVE) {
-      toast('Join the academy before requesting a class.', 'warn');
+      toast(t('actions.joinAcademyBeforeClass'), 'warn');
       return false;
     }
     const classroom = classroomById(current.classrooms ?? [], classroomId);
     if (!isEnrollable(classroom)) {
-      toast('That class is not open for enrollment yet.', 'warn');
+      toast(t('actions.classNotOpenEnrollment'), 'warn');
       return false;
     }
     const pending = (current.enrollRequests ?? []).find(
@@ -2802,7 +2822,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         entry.status === REQUEST_STATUS.PENDING,
     );
     if (pending) {
-      toast('Your enrollment request is already pending.', 'info');
+      toast(t('actions.enrollmentPending'), 'info');
       return false;
     }
     const academy = findAcademyById(current.academies ?? {}, classroom.academyId);
@@ -2831,12 +2851,12 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           context: classroom.name,
           audience,
           requestId: id,
-          text: `requested enrollment in ${classroom.name}.`,
+          text: t('actions.requestedEnrollment', { name: classroom.name }),
         },
         ...current.events,
       ],
     });
-    toast(`Enrollment requested for ${classroom.name} — awaiting approval.`, 'info');
+    toast(t('actions.enrollmentRequested', { name: classroom.name }), 'info');
     return true;
   }
 
@@ -2846,7 +2866,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     if (!request || request.status !== REQUEST_STATUS.PENDING) return false;
     const classroom = classroomById(current.classrooms ?? [], request.courseId);
     if (!authorize(ACTION.DECIDE_ENROLLMENT, classroomContext(current, classroom))) {
-      toast('Only the class teacher or academy owner can approve enrollment.', 'warn');
+      toast(t('actions.onlyTeacherOrOwnerApproveEnrollment'), 'warn');
       return false;
     }
     const already = (classroom?.studentIds ?? []).includes(request.learnerId);
@@ -2882,7 +2902,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           context: request.courseTitle,
           audience: [request.learnerId],
           courseId: request.courseId,
-          text: `approved your enrollment in ${request.courseTitle}.`,
+          text: t('actions.approvedEnrollment', { name: request.courseTitle }),
         },
         ...current.events,
       ],
@@ -2894,11 +2914,11 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         payload: capability,
         recipients: [request.learnerId],
         encrypted: true,
-        title: 'Grant class enrollment',
-        action: el('span', {}, `Sign the enrollment grant for ${request.learnerName} (encrypted).`),
+        title: t('actions.grantClassEnrollment'),
+        action: el('span', {}, t('actions.signEnrollmentGrant', { name: request.learnerName })),
       });
     }
-    toast(`Enrollment approved — ${request.learnerName} can now see ${request.courseTitle}.`, 'ok');
+    toast(t('actions.enrollmentApprovedSees', { name: request.learnerName, course: request.courseTitle }), 'ok');
     return true;
   }
 
@@ -2908,7 +2928,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     if (!request) return false;
     const classroom = classroomById(current.classrooms ?? [], request.courseId);
     if (!authorize(ACTION.DECIDE_ENROLLMENT, classroomContext(current, classroom))) {
-      toast('Only the class teacher or academy owner can decline enrollment.', 'warn');
+      toast(t('actions.onlyTeacherOrOwnerDeclineEnrollment'), 'warn');
       return false;
     }
     update({
@@ -2916,7 +2936,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         entry.id === requestId ? { ...entry, status: REQUEST_STATUS.DECLINED } : entry,
       ),
     });
-    toast(`Declined — ${request.learnerName} was notified.`, 'warn');
+    toast(t('actions.declinedNotified', { name: request.learnerName }), 'warn');
     return true;
   }
 
@@ -2944,15 +2964,15 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
 
   async function testSigner() {
     const result = await signer.request({
-      title: 'Signer check',
+      title: t('actions.signerCheck'),
       action: el('span', {}, [
-        el('strong', {}, 'Plain-text challenge'),
+        el('strong', {}, t('actions.plainTextChallenge')),
         el('br'),
         el('span', { class: 'mono' }, 'bitos.education/test'),
       ]),
     });
     toast(
-      result.approved ? 'Signature valid — your signer is working.' : 'Not signed.',
+      result.approved ? t('actions.signatureValid') : t('actions.notSigned'),
       result.approved ? 'ok' : 'warn',
     );
   }
@@ -2966,13 +2986,13 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
   }
 
   function openThread() {
-    toast('Threads are coming soon.', 'info');
+    toast(t('actions.threadsComingSoon'), 'info');
   }
 
   function postNote(text) {
     const trimmed = String(text ?? '').trim();
     if (!trimmed) {
-      toast('Write something first.', 'warn');
+      toast(t('actions.writeSomethingFirst'), 'warn');
       return;
     }
     update({
@@ -2990,17 +3010,17 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       ],
     });
     if (state().route !== '/home') navigateTo('/home');
-    toast('Posted — public to your followers.', 'ok');
+    toast(t('actions.postedPublic'), 'ok');
   }
 
   async function sendCompletion() {
     const ok = await confirm({
-      title: 'Send completion?',
+      title: t('actions.sendCompletionTitle'),
       body: [
-        "This asks BitOS Academy's organization signer to issue the Certificate to Alice.",
-        'You cannot edit this course record afterward.',
+        t('actions.sendCompletionBody1'),
+        t('actions.sendCompletionBody2'),
       ],
-      confirmLabel: 'Send completion',
+      confirmLabel: t('actions.sendCompletion'),
     });
     if (!ok) return;
 
@@ -3027,12 +3047,12 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           context: 'CS-101',
           audience: ['bob', 'nadia'],
           signId,
-          text: 'Sent completion for Alice · CS-101 to the organization signer.',
+          text: t('actions.sentCompletionFor', { learner: 'Alice', course: 'CS-101' }),
         },
         ...state().events,
       ],
     });
-    toast('Completion sent — waiting for the organization signer.', 'ok');
+    toast(t('actions.completionSentWaiting'), 'ok');
   }
 
   async function signIssue(signId, close) {
@@ -3045,16 +3065,16 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     const academy = recommendation ? findAcademyById(current.academies ?? {}, recommendation.academyId) : null;
     const identity = academy ? ensureOrgIdentity(academy) : null;
     if (!academy || !identity) {
-      toast('The academy key for this credential is not available on this device.', 'warn');
+      toast(t('actions.academyKeyUnavailable'), 'warn');
       return false;
     }
 
     const approved = await signer.request({
-      title: 'Signature request',
+      title: t('actions.signatureRequest'),
       action: el('span', {}, [
-        el('strong', {}, 'Issue credential'),
+        el('strong', {}, t('actions.issueCredential')),
         el('br'),
-        `${academy.name} Certificate → ${item.learnerName}`,
+        t('actions.certificateTo', { academy: academy.name, learner: item.learnerName }),
         el('br'),
         el('span', { class: 'mono' }, item.course ?? ''),
       ]),
@@ -3088,7 +3108,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       });
       proof = await orgSigner.signEvent(event);
     } catch (error) {
-      toast(error?.message ?? 'The credential could not be signed.', 'warn');
+      toast(error?.message ?? t('actions.credentialSignFailed'), 'warn');
       return false;
     }
     const published = await relay.publish(proof);
@@ -3104,7 +3124,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       status: 'active',
       privacyLevel: 'L1',
       expiresAt: null,
-      meta: payload.course ? `${payload.course} completion` : 'Course completion',
+      meta: payload.course ? t('actions.courseCompletionNamed', { course: payload.course }) : t('actions.courseCompletion'),
       recipient: { name: item.learnerName, handle: null, pubkey: recommendation?.studentId ?? null },
       course: payload.course || null,
       payload,
@@ -3126,7 +3146,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       deliveries: [
         {
           id: nextId('d'),
-          label: `Certificate · ${item.learnerName}`,
+          label: t('actions.certificateLabel', { name: item.learnerName }),
           state: delivered ? DELIVERY_STATE.DELIVERED : DELIVERY_STATE.PENDING,
         },
         ...current.deliveries,
@@ -3139,7 +3159,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           time: 'now',
           context: payload.course || academy.name,
           audience: 'all',
-          text: `issued a ${payload.title} to ${item.learnerName}.`,
+          text: t('actions.issuedCredential', { title: payload.title, name: item.learnerName }),
         },
         ...current.events,
       ],
@@ -3147,8 +3167,8 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     close?.();
     toast(
       delivered
-        ? `${payload.title} issued and published to relays.`
-        : 'Credential signed locally — no relay accepted it yet.',
+        ? t('actions.credentialIssuedPublished', { title: payload.title })
+        : t('actions.credentialSignedLocally'),
       delivered ? 'ok' : 'warn',
     );
     return true;
@@ -3162,18 +3182,18 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       ? findAcademyById(current.academies ?? {}, credential.academyId)
       : Object.values(current.academies ?? {}).find((entry) => entry.orgPubkey === credential.issuerPubkey);
     if (!academy || !authorize(ACTION.REVOKE_CREDENTIAL, { actor: current.personaId, academy })) {
-      toast('Only the academy owner can revoke this credential.', 'warn');
+      toast(t('actions.onlyOwnerRevokeCredential'), 'warn');
       return false;
     }
     const identity = ensureOrgIdentity(academy);
     if (!identity) {
-      toast('The academy key for this credential is not available on this device.', 'warn');
+      toast(t('actions.academyKeyUnavailable'), 'warn');
       return false;
     }
     const ok = await confirm({
-      title: `Revoke ${credential.title}?`,
-      body: 'Revocation is signed by the academy key and published, so verifiers see the new status. The learner keeps the certificate.',
-      confirmLabel: 'Revoke',
+      title: t('actions.revokeNamed', { name: credential.title }),
+      body: t('actions.revokeBody'),
+      confirmLabel: t('actions.revoke'),
     });
     if (!ok) return false;
 
@@ -3195,7 +3215,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       });
       statusProof = await localSigner(identity.secretKey).signEvent(event);
     } catch (error) {
-      toast(error?.message ?? 'The revocation could not be signed.', 'warn');
+      toast(error?.message ?? t('actions.revocationSignFailed'), 'warn');
       return false;
     }
     await relay.publish(statusProof);
@@ -3212,12 +3232,12 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           time: 'now',
           context: credential.course ?? credential.title,
           audience: 'all',
-          text: `revoked a ${credential.title}.`,
+          text: t('actions.revokedCredential', { title: credential.title }),
         },
         ...current.events,
       ],
     });
-    toast('Credential revoked and published.', 'warn');
+    toast(t('actions.credentialRevoked'), 'warn');
     return true;
   }
 
@@ -3226,9 +3246,9 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     if (!item) return;
 
     const ok = await confirm({
-      title: 'Decline issuance?',
-      body: 'Bob will see the decline and can fix the record. Nothing reaches Alice.',
-      confirmLabel: 'Decline',
+      title: t('actions.declineIssuanceTitle'),
+      body: t('actions.declineIssuanceBody'),
+      confirmLabel: t('actions.decline'),
     });
     if (!ok) return;
 
@@ -3238,29 +3258,29 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       ),
     });
     close?.();
-    toast('Declined — Bob will see this. Nothing reached Alice.', 'warn');
+    toast(t('actions.declinedBob'), 'warn');
   }
 
   async function createGrant(recipient, duration, close) {
     if (!recipient) return;
     const result = await signer.request({
-      title: 'Signature request',
+      title: t('actions.signatureRequest'),
       action: el('span', {}, [
-        'Grant access to "Bachelor of Computer Science"',
+        t('actions.grantAccessToDegree'),
         el('br'),
         `→ ${recipient.display}`,
         el('br'),
-        `Expires in ${duration}`,
+        t('actions.expiresIn', { duration }),
       ]),
     });
     if (!result.approved) {
-      toast('Not signed. Nothing was shared.', 'warn');
+      toast(t('actions.notSignedNothingShared'), 'warn');
       return;
     }
 
     update({ grants: [...state().grants, { to: recipient.display, duration }] });
     close?.();
-    toast(`Access granted to ${recipient.display} — expires in ${duration}.`, 'ok');
+    toast(t('actions.accessGranted', { name: recipient.display, duration }), 'ok');
   }
 
   function revokeGrant(index) {
@@ -3268,13 +3288,13 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     grants.splice(index, 1);
     update({ grants });
     toast(
-      'Access revoked. New verification checks will fail; already-downloaded copies cannot be recalled.',
+      t('actions.accessRevoked'),
       'warn',
     );
   }
 
   async function retryDelivery(deliveryId) {
-    toast('Retrying delivery…', 'info');
+    toast(t('actions.retryingDelivery'), 'info');
     const statuses = await relay.check();
     const reachable = statuses.filter((entry) => entry.health === 'connected').length;
     update({
@@ -3287,8 +3307,10 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     });
     toast(
       reachable
-        ? `Delivery retried — confirmed on ${reachable} relay${reachable === 1 ? '' : 's'}.`
-        : 'No relay reachable — delivery still pending.',
+        ? reachable === 1
+          ? t('actions.deliveryRetriedOne', { count: reachable })
+          : t('actions.deliveryRetriedMany', { count: reachable })
+        : t('actions.noRelayReachable'),
       reachable ? 'ok' : 'warn',
     );
   }
@@ -3305,17 +3327,17 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
   function addRelay(input) {
     const result = addRelayToList(state().relayConfig ?? [], input);
     if (result.error === 'invalid') {
-      toast('Enter a valid relay URL, e.g. wss://relay.example.com or ws://relay.local:7777.', 'warn');
+      toast(t('actions.enterValidRelayUrl'), 'warn');
       return false;
     }
     if (result.error === 'duplicate') {
-      toast('That relay is already configured.', 'info');
+      toast(t('actions.relayAlreadyConfigured'), 'info');
       return false;
     }
 
     applyRelayConfig(result.relays);
     const url = normalizeRelayUrl(input);
-    toast(`Added ${url}.`, 'ok');
+    toast(t('actions.addedRelay', { url }), 'ok');
     relay.check([url]).then(refreshRelays);
     return true;
   }
@@ -3323,11 +3345,11 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
   function removeRelay(id) {
     const current = state().relayConfig ?? [];
     if (current.length <= 1) {
-      toast('Keep at least one relay.', 'warn');
+      toast(t('actions.keepOneRelay'), 'warn');
       return false;
     }
     applyRelayConfig(removeRelayFromList(current, id));
-    toast('Relay removed.', 'info');
+    toast(t('actions.relayRemoved'), 'info');
     return true;
   }
 
@@ -3336,19 +3358,19 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     if (!entry) return;
     const mode = nextRelayMode(entry.mode);
     applyRelayConfig(setRelayModeInList(state().relayConfig, id, mode));
-    toast(`Relay set to ${relayModeLabel(mode)}.`, 'info');
+    toast(t('actions.relaySetTo', { mode: t(relayModeKey(mode)) }), 'info');
   }
 
   async function checkRelays() {
-    toast('Checking relays…', 'info');
+    toast(t('actions.checkingRelays'), 'info');
     await relay.check();
     refreshRelays();
     const statuses = relay.statuses();
     const healthy = statuses.filter((entry) => entry.health === 'connected').length;
-    toast(`${healthy}/${statuses.length} relays reachable.`, healthy ? 'ok' : 'warn');
+    toast(t('actions.relaysReachable', { healthy, total: statuses.length }), healthy ? 'ok' : 'warn');
   }
 
-  function stub(message = 'This action is not available yet.') {
+  function stub(message = t('actions.actionNotAvailable')) {
     toast(message, 'info');
   }
 
@@ -3403,6 +3425,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     uploadImage,
     setBlossomServer,
     setMode,
+    setLocale,
     refreshMyProfile,
     requestMembership,
     acceptJoin,
@@ -3438,8 +3461,8 @@ function handleTaken(handle) {
 }
 
 function handleError(reason, handle) {
-  if (reason === 'reserved') return `'${handle}' is reserved — handles like admin, verify, and org names are protected.`;
-  if (reason === 'length') return 'Handles are 3–24 characters.';
-  if (reason === 'charset') return 'Use letters and numbers only, plus dots and underscores.';
-  return 'That handle cannot be used.';
+  if (reason === 'reserved') return t('actions.handleReserved', { handle });
+  if (reason === 'length') return t('actions.handleLength');
+  if (reason === 'charset') return t('actions.handleCharset');
+  return t('actions.handleInvalid');
 }

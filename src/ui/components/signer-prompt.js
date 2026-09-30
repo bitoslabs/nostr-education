@@ -1,4 +1,5 @@
 import { el } from '../../core/dom.js';
+import { t } from '../../services/i18n/index.js';
 import { icon } from './icon.js';
 import { button, spinner } from './primitives.js';
 
@@ -22,48 +23,48 @@ export function createSignerPromptHost({ bus, overlay }) {
           icon('lucide:key-round', { size: 20, fallback: '🔑' }),
         ),
         el('span', { class: 'signer__id' }, [
-          el('span', { class: 'signer__app' }, 'BitOS Education'),
-          el('span', { class: 'signer__origin muted small' }, 'your signer · BitOS Education'),
+          el('span', { class: 'signer__app' }, t('common.appName')),
+          el('span', { class: 'signer__origin muted small' }, t('settings.signerPrompt.origin', { app: t('common.appName') })),
         ]),
         el(
           'button',
           {
             class: 'signer__close',
             type: 'button',
-            'aria-label': 'Close signature request',
+            'aria-label': t('settings.signerPrompt.close'),
             onClick: () => entry?.close(),
           },
           icon('lucide:x', { size: 18, fallback: '✕' }),
         ),
       ]),
-      el('span', { class: 'field-label signer__eyebrow' }, 'Signature request'),
+      el('span', { class: 'field-label signer__eyebrow' }, t('settings.signerPrompt.title')),
       el('h2', { class: 'signer__title' }, title),
-      el('p', { class: 'signer__lede muted' }, 'Your signer is asked to approve:'),
+      el('p', { class: 'signer__lede muted' }, t('settings.signerPrompt.askedApprove')),
       el('div', { class: 'signer-action' }, [
-        el('span', { class: 'field-label' }, 'Request details'),
+        el('span', { class: 'field-label' }, t('settings.signerPrompt.requestDetails')),
         el('div', { class: 'signer-action__body' }, action),
       ]),
       detail ? el('p', { class: 'muted small' }, detail) : null,
       el('ul', { class: 'signer__facts' }, [
-        trustFact('lucide:lock', '🔒', 'Your key never leaves your signer.'),
-        trustFact('lucide:shield-check', '🛡', 'Apps receive a signature, never your key.'),
+        trustFact('lucide:lock', '🔒', t('settings.signerPrompt.keyNeverLeaves')),
+        trustFact('lucide:shield-check', '🛡', t('settings.signerPrompt.appsReceiveSignature')),
       ]),
       footer,
     ];
 
     entry = overlay.open({
-      label: 'Signature request',
+      label: t('settings.signerPrompt.title'),
       onClose: () => resolve({ approved: false }),
       content,
     });
 
     footer.append(
-      button('Reject', { onClick: () => { resolve({ approved: false }); entry.close(); } }),
-      button([icon('lucide:check', { size: 18, fallback: '✓' }), 'Approve once'], {
+      button(t('settings.signerPrompt.reject'), { onClick: () => { resolve({ approved: false }); entry.close(); } }),
+      button([icon('lucide:check', { size: 18, fallback: '✓' }), t('settings.signerPrompt.approveOnce')], {
         variant: 'gold',
         onClick: () => {
           footer.replaceChildren(
-            el('div', { class: 'signer__waiting' }, spinner('Waiting for your signer…')),
+            el('div', { class: 'signer__waiting' }, spinner(t('settings.signerPrompt.waiting'))),
           );
           resolve({ approved: true });
           entry.close();

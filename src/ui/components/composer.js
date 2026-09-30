@@ -1,4 +1,5 @@
 import { el } from '../../core/dom.js';
+import { t } from '../../services/i18n/index.js';
 import { button } from './primitives.js';
 
 const MAX_LENGTH = 280;
@@ -16,15 +17,15 @@ export function renderComposer({ onPost, close }) {
 
   return [
     el('div', { class: 'dhead' }, [
-      el('h2', {}, 'New post'),
+      el('h2', {}, t('common.a11y.newPost')),
       button('✕', { variant: 'ghost', small: true, onClick: close }),
     ]),
-    el('label', {}, "What's happening?"),
+    el('label', {}, t('home.composerPrompt')),
     field,
-    el('p', { class: 'small muted' }, [counter, ' characters left · public to your followers']),
+    el('p', { class: 'small muted' }, [counter, t('home.charactersLeft')]),
     el('div', { class: 'dlg-foot' }, [
-      button('Cancel', { onClick: close }),
-      button('Post', { variant: 'gold', onClick: () => onPost(field.value, close) }),
+      button(t('common.actions.cancel'), { onClick: close }),
+      button(t('home.post'), { variant: 'gold', onClick: () => onPost(field.value, close) }),
     ]),
   ];
 }

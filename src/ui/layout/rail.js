@@ -8,11 +8,12 @@ import {
   homeworkForStudent,
 } from '../../domain/classroom.js';
 import { pendingRequestCount, ROLE } from '../../domain/school.js';
+import { t } from '../../services/i18n/index.js';
 import { button, widget } from '../components/primitives.js';
 
 function healthyRelays(relays) {
   const healthy = relays.filter((relay) => relay.health === 'connected').length;
-  return `${healthy} of ${relays.length} healthy`;
+  return t('nav.relaysHealthy', { healthy, total: relays.length });
 }
 
 export function renderRail({ state, app }) {
@@ -26,12 +27,18 @@ export function renderRail({ state, app }) {
       (submission) => ids.has(submission.classroomId) && submission.status === SUBMISSION_STATUS.SUBMITTED,
     ).length;
     return el('div', { class: 'rail__stack' }, [
-      widget('🏫 My classes', el('p', {}, `${classes.length} assigned`)),
-      widget('📥 To score', [
-        el('p', {}, toGrade ? `${toGrade} submission${toGrade === 1 ? '' : 's'}` : 'Nothing waiting ✓'),
-        button('Open classes', { small: true, onClick: () => app.navigate('/role') }),
+      widget(t('nav.myClasses'), el('p', {}, t('nav.classesAssigned', { count: classes.length }))),
+      widget(t('nav.toScore'), [
+        el(
+          'p',
+          {},
+          toGrade
+            ? t(toGrade === 1 ? 'nav.submissionOne' : 'nav.submissionMany', { count: toGrade })
+            : t('nav.nothingWaiting'),
+        ),
+        button(t('nav.openClasses'), { small: true, onClick: () => app.navigate('/role') }),
       ]),
-      widget('📡 Relays', relays),
+      widget(t('nav.relays'), relays),
     ]);
   }
 
@@ -40,16 +47,16 @@ export function renderRail({ state, app }) {
     const classes = academy ? classroomsForAcademy(state.classrooms ?? [], academy.id) : [];
     const requests = pendingRequestCount(state.joinRequests, state.enrollRequests);
     return el('div', { class: 'rail__stack' }, [
-      widget('🏫 Academy', el('p', {}, academy ? academy.name : 'No academy yet')),
-      widget('🧑‍🏫 Classrooms', [
-        el('p', {}, `${classes.length} classroom${classes.length === 1 ? '' : 's'}`),
-        button('Open organization', { small: true, onClick: () => app.navigate('/role') }),
+      widget(t('nav.academy'), el('p', {}, academy ? academy.name : t('nav.noAcademy'))),
+      widget(t('nav.classrooms'), [
+        el('p', {}, t(classes.length === 1 ? 'nav.classroomOne' : 'nav.classroomMany', { count: classes.length })),
+        button(t('nav.openOrganization'), { small: true, onClick: () => app.navigate('/role') }),
       ]),
-      widget('👤 Requests', [
-        el('p', {}, requests ? `${requests} waiting` : 'Nothing pending ✓'),
-        button('Review', { small: true, onClick: () => { app.setOrgTab('enrollment'); app.navigate('/role'); } }),
+      widget(t('nav.requests'), [
+        el('p', {}, requests ? t('nav.requestsWaiting', { count: requests }) : t('nav.nothingPending')),
+        button(t('nav.review'), { small: true, onClick: () => { app.setOrgTab('enrollment'); app.navigate('/role'); } }),
       ]),
-      widget('📡 Relays', relays),
+      widget(t('nav.relays'), relays),
     ]);
   }
 
@@ -61,11 +68,15 @@ export function renderRail({ state, app }) {
     state.capabilities ?? [],
   );
   return el('div', { class: 'rail__stack' }, [
-    widget('🏫 My classes', el('p', {}, `${classes.length} enrolled`)),
-    widget('📝 Homework', [
-      el('p', {}, `${homework.length} assignment${homework.length === 1 ? '' : 's'}`),
-      button('Open', { small: true, onClick: () => app.navigate('/role') }),
+    widget(t('nav.myClasses'), el('p', {}, t('nav.classesEnrolled', { count: classes.length }))),
+    widget(t('nav.homework'), [
+      el(
+        'p',
+        {},
+        t(homework.length === 1 ? 'nav.assignmentOne' : 'nav.assignmentMany', { count: homework.length }),
+      ),
+      button(t('nav.open'), { small: true, onClick: () => app.navigate('/role') }),
     ]),
-    widget('📡 Relays', relays),
+    widget(t('nav.relays'), relays),
   ]);
 }

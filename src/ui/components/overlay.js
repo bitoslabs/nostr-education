@@ -1,4 +1,5 @@
 import { el } from '../../core/dom.js';
+import { t } from '../../services/i18n/index.js';
 
 const FOCUSABLE =
   'a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])';
@@ -129,7 +130,7 @@ export function createOverlayHost({ root = document.body } = {}) {
     }
   }
 
-  function open({ content, kind = 'dialog', label = 'Dialog', onClose, closeOnBackdrop = true }) {
+  function open({ content, kind = 'dialog', label = t('common.a11y.dialog'), onClose, closeOnBackdrop = true }) {
     const isSheet = SHEET_KINDS.has(kind);
     const overlay = el('div', { class: KIND_CLASS[kind] ?? KIND_CLASS.dialog });
     const panel = el(

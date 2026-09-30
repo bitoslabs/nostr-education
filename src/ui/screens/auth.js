@@ -5,6 +5,7 @@ import { normalizeHandle, validateHandle } from '../../domain/handle.js';
 import { ROLE } from '../../domain/school.js';
 import { icon } from '../components/icon.js';
 import { button, noteBox } from '../components/primitives.js';
+import { t } from '../../services/i18n/index.js';
 
 const SIGNER_ICONS = Object.freeze({
   local: { icon: 'lucide:smartphone', fallback: '📱' },
@@ -16,20 +17,20 @@ const WELCOME_FEATURES = Object.freeze([
   {
     icon: 'lucide:fingerprint',
     fallback: '🪪',
-    title: 'One identity',
-    body: 'Sign in across academies with a single key you control.',
+    titleKey: 'auth.featureIdentityTitle',
+    bodyKey: 'auth.featureIdentityBody',
   },
   {
     icon: 'lucide:shield-check',
     fallback: '🛡',
-    title: 'Private coursework',
-    body: 'Rosters, files, and grades stay access-controlled.',
+    titleKey: 'auth.featurePrivateTitle',
+    bodyKey: 'auth.featurePrivateBody',
   },
   {
     icon: 'lucide:badge-check',
     fallback: '🎓',
-    title: 'Verifiable credentials',
-    body: 'Completion records are signed and independently checkable.',
+    titleKey: 'auth.featureCredentialsTitle',
+    bodyKey: 'auth.featureCredentialsBody',
   },
 ]);
 
@@ -38,15 +39,15 @@ const WELCOME_FEATURES = Object.freeze([
 function authBrand() {
   return el('span', { class: 'auth-brand' }, [
     el('span', { class: 'auth-brand__mark', 'aria-hidden': 'true' }, '🐝'),
-    el('span', { class: 'auth-brand__name' }, 'BitOS'),
-    el('span', { class: 'auth-brand__tag' }, 'Education'),
+    el('span', { class: 'auth-brand__name' }, t('common.brand.name')),
+    el('span', { class: 'auth-brand__tag' }, t('common.brand.tag')),
   ]);
 }
 
 function backButton(app, route = '/welcome') {
   return el('button', { class: 'auth-back', type: 'button', onClick: () => app.navigate(route) }, [
     icon('lucide:chevron-left', { size: 18, fallback: '←' }),
-    el('span', {}, 'Back'),
+    el('span', {}, t('common.actions.back')),
   ]);
 }
 
@@ -121,8 +122,8 @@ function signerChoices(name, options = SIGNER_TYPES) {
         el('input', { type: 'radio', name, value: type.id, checked: type.id === DEFAULT_SIGNER }),
         el('span', { class: 'hex-plate picker__ico' }, icon(meta.icon, { size: 18, fallback: meta.fallback })),
         el('span', { class: 'picker__body' }, [
-          el('span', { class: 'picker__title' }, type.label),
-          el('span', { class: 'picker__sub muted small' }, type.sub),
+          el('span', { class: 'picker__title' }, t('common.signer.' + type.id + '.label')),
+          el('span', { class: 'picker__sub muted small' }, t('common.signer.' + type.id + '.sub')),
         ]),
       ]);
     }),
@@ -148,10 +149,10 @@ function roleSelector(initial = ROLE_OPTIONS[0].id, { onChange, options = ROLE_O
           onChange?.(value);
         },
       },
-      option.label,
+      t('common.role.' + option.id),
     ),
   );
-  const node = el('div', { class: 'seg', role: 'group', 'aria-label': 'Account type' }, buttons);
+  const node = el('div', { class: 'seg', role: 'group', 'aria-label': t('auth.accountType') }, buttons);
   return { node, get: () => value };
 }
 
@@ -160,16 +161,16 @@ function handleAvailability(handle) {
   if (!value) return { ok: false, message: '' };
   const result = validateHandle(value);
   if (!result.valid) {
-    if (result.reason === 'reserved') return { ok: false, message: `'${result.handle}' is reserved.` };
-    if (result.reason === 'length') return { ok: false, message: 'Handles are 3–24 characters.' };
-    return { ok: false, message: 'Letters and numbers only, plus dots and underscores.' };
+    if (result.reason === 'reserved') return { ok: false, message: t('auth.handleReserved', { handle: result.handle }) };
+    if (result.reason === 'length') return { ok: false, message: t('auth.handleLength') };
+    return { ok: false, message: t('auth.handleChars') };
   }
   const taken = getPersonaIds()
     .map((id) => normalizeHandle(String(getPersona(id).handle ?? '').split('@')[0]))
     .includes(result.handle);
   return taken
-    ? { ok: false, message: `@${result.handle} is taken — try a variation.` }
-    : { ok: true, message: `✓ @${result.handle} is available.` };
+    ? { ok: false, message: t('auth.handleTaken', { handle: result.handle }) }
+    : { ok: true, message: t('auth.handleAvailable', { handle: result.handle }) };
 }
 
 /* ---------- screens ---------- */
@@ -179,9 +180,9 @@ export function renderWelcome({ app }) {
     app,
     children: [
       authHero({
-        eyebrow: 'Nostr-native academy',
-        title: 'One identity for class, work, and credentials.',
-        subtitle: 'Sign in with a key you control. Coursework stays private. Credentials verify anywhere.',
+        eyebrow: t('auth.welcomeEyebrow'),
+        title: t('auth.welcomeTitle'),
+        subtitle: t('auth.welcomeSubtitle'),
       }),
       el(
         'ul',
@@ -190,25 +191,25 @@ export function renderWelcome({ app }) {
           el('li', { class: 'auth-feature' }, [
             el('span', { class: 'hex-plate auth-feature__ico' }, icon(feature.icon, { size: 18, fallback: feature.fallback })),
             el('span', { class: 'auth-feature__txt' }, [
-              el('strong', {}, feature.title),
-              el('span', { class: 'muted small' }, feature.body),
+              el('strong', {}, t(feature.titleKey)),
+              el('span', { class: 'muted small' }, t(feature.bodyKey)),
             ]),
           ]),
         ),
       ),
       el('div', { class: 'auth-actions' }, [
-        button('Sign in', { variant: 'gold', className: 'auth-action', onClick: () => app.navigate('/signin') }),
-        button('Create account', { className: 'auth-action', onClick: () => app.navigate('/create') }),
+        button(t('common.actions.signIn'), { variant: 'gold', className: 'auth-action', onClick: () => app.navigate('/signin') }),
+        button(t('auth.createAccount'), { className: 'auth-action', onClick: () => app.navigate('/create') }),
       ]),
       el('div', { class: 'auth-alt' }, [
-        el('span', { class: 'muted small' }, 'Have an existing key?'),
-        button('Import nsec / npub', { variant: 'ghost', small: true, onClick: () => app.navigate('/nsec') }),
+        el('span', { class: 'muted small' }, t('auth.haveKey')),
+        button(t('auth.importNsecNpub'), { variant: 'ghost', small: true, onClick: () => app.navigate('/nsec') }),
       ]),
       el('div', { class: 'auth-alt' }, [
-        el('span', { class: 'muted small' }, 'Invited to an academy?'),
-        button('Open an invite link', { variant: 'ghost', small: true, onClick: () => app.navigate('/join') }),
+        el('span', { class: 'muted small' }, t('auth.invitedPrompt')),
+        button(t('auth.openInvite'), { variant: 'ghost', small: true, onClick: () => app.navigate('/join') }),
       ]),
-      noteBox('Your key stays on your device or in your signer. BitOS never receives it.'),
+      noteBox(t('auth.welcomeNote')),
     ],
   });
 }
@@ -217,10 +218,10 @@ export function renderSignIn({ app }) {
   const body = el('div', { class: 'auth-form' }, [
     formSection({
       step: '01',
-      title: 'Browser extension',
-      hint: 'Sign in with a NIP-07 extension such as Alby.',
+      title: t('auth.browserExtension'),
+      hint: t('auth.browserExtensionHint'),
       children: [
-        button('Continue with extension', {
+        button(t('auth.continueWithExtension'), {
           variant: 'gold',
           className: 'auth-cta',
           onClick: () => app.signInWithExtension(),
@@ -229,10 +230,10 @@ export function renderSignIn({ app }) {
     }),
     formSection({
       step: '02',
-      title: 'Existing key',
-      hint: 'Import an nsec or paste an npub to view an identity.',
+      title: t('auth.existingKey'),
+      hint: t('auth.existingKeyHint'),
       children: [
-        button('Import key', { className: 'auth-cta', onClick: () => app.navigate('/nsec') }),
+        button(t('auth.importKey'), { className: 'auth-cta', onClick: () => app.navigate('/nsec') }),
       ],
     }),
   ]);
@@ -242,9 +243,9 @@ export function renderSignIn({ app }) {
     backTo: '/welcome',
     children: [
       authHero({
-        eyebrow: 'Sign in',
-        title: 'Welcome back',
-        subtitle: 'Connect the signer that holds your key.',
+        eyebrow: t('common.actions.signIn'),
+        title: t('auth.welcomeBack'),
+        subtitle: t('auth.signInSubtitle'),
       }),
       body,
     ],
@@ -255,10 +256,10 @@ export function renderCreateAccount({ app }) {
   const availability = el('p', { class: 'auth-hint small', 'aria-live': 'polite', hidden: true });
   const handleInput = el('input', {
     type: 'text',
-    placeholder: 'alice',
+    placeholder: t('auth.handlePlaceholder'),
     autocomplete: 'off',
     spellcheck: 'false',
-    'aria-label': 'Handle',
+    'aria-label': t('auth.handle'),
     onInput: (event) => {
       const outcome = handleAvailability(event.target.value);
       availability.hidden = !outcome.message;
@@ -270,14 +271,14 @@ export function renderCreateAccount({ app }) {
         : 'auth-hint small';
     },
   });
-  const nameInput = el('input', { type: 'text', placeholder: 'Ada Lovelace', autocomplete: 'name' });
+  const nameInput = el('input', { type: 'text', placeholder: t('auth.namePlaceholder'), autocomplete: 'name' });
   const academyInput = el('input', {
     type: 'text',
-    placeholder: 'Northgate College',
+    placeholder: t('auth.academyPlaceholder'),
     autocomplete: 'organization',
-    'aria-label': 'Academy name',
+    'aria-label': t('auth.academyName'),
   });
-  const academyField = field('Academy name', academyInput, 'Your workspace — you become its owner.');
+  const academyField = field(t('auth.academyName'), academyInput, t('auth.academyHint'));
   const role = roleSelector(ROLE.STUDENT, {
     onChange: (roleId) => {
       academyField.style.display = roleId === ROLE.OWNER ? '' : 'none';
@@ -289,31 +290,31 @@ export function renderCreateAccount({ app }) {
   const form = el('div', { class: 'auth-form' }, [
     formSection({
       step: '01',
-      title: 'Identity',
-      hint: 'Choose how you appear across the academy.',
+      title: t('auth.identityTitle'),
+      hint: t('auth.identityHint'),
       children: [
-        field('Display name', nameInput, 'Shown on your submissions, feed, and credentials.'),
+        field(t('auth.displayName'), nameInput, t('auth.displayNameHint')),
         field(
-          'Handle (optional)',
+          t('auth.handleOptional'),
           el('div', { class: 'input-group' }, [el('span', { class: 'input-addon' }, '@'), handleInput]),
-          'A short public name other people can recognise.',
+          t('auth.handleHint'),
         ),
         availability,
-        fieldGroup('Account type', role.node, 'Learners join classes; teachers publish; owners run an academy.'),
+        fieldGroup(t('auth.accountType'), role.node, t('auth.accountTypeHint')),
         academyField,
       ],
     }),
     formSection({
       step: '02',
-      title: 'Key',
-      hint: 'Where your key lives and signs requests.',
+      title: t('auth.keyTitle'),
+      hint: t('auth.keyHint'),
       children: [
         signers,
-        noteBox('This device generates a real Nostr key. Back up your nsec — it cannot be recovered.'),
+        noteBox(t('auth.keyNote')),
       ],
     }),
     authFoot(
-      button('Create account', {
+      button(t('auth.createAccount'), {
         variant: 'gold',
         className: 'auth-cta',
         onClick: () =>
@@ -333,9 +334,9 @@ export function renderCreateAccount({ app }) {
     backTo: '/welcome',
     children: [
       authHero({
-        eyebrow: 'Create identity',
-        title: 'Create your account',
-        subtitle: 'Generate a real key, claim a handle if you want one, and publish your profile.',
+        eyebrow: t('auth.createIdentityEyebrow'),
+        title: t('auth.createAccountTitle'),
+        subtitle: t('auth.createAccountSubtitle'),
       }),
       form,
     ],
@@ -345,50 +346,50 @@ export function renderCreateAccount({ app }) {
 export function renderLoginNsec({ app }) {
   const keyInput = el('input', {
     type: 'password',
-    placeholder: 'nsec1… or npub1…',
+    placeholder: t('auth.keyPlaceholder'),
     autocomplete: 'off',
     spellcheck: 'false',
-    'aria-label': 'Secret key',
+    'aria-label': t('auth.secretKey'),
   });
   const nameInput = el('input', {
     type: 'text',
-    placeholder: 'Display name (optional)',
+    placeholder: t('auth.displayNameOptional'),
     autocomplete: 'name',
   });
 
-  const reveal = button('Reveal', {
+  const reveal = button(t('auth.reveal'), {
     variant: 'ghost',
     small: true,
     className: 'input-group__btn',
     onClick: () => {
       const hidden = keyInput.type === 'password';
       keyInput.type = hidden ? 'text' : 'password';
-      reveal.replaceChildren(hidden ? 'Hide' : 'Reveal');
+      reveal.replaceChildren(hidden ? t('auth.hide') : t('auth.reveal'));
     },
   });
 
   const form = el('div', { class: 'auth-form' }, [
     formSection({
       step: '01',
-      title: 'Import key',
-      hint: 'Paste an nsec to sign in, or an npub to view an identity.',
+      title: t('auth.importKey'),
+      hint: t('auth.importKeyHint'),
       children: [
-        noteBox('An nsec is a secret key. Only paste it into a device you trust.', 'warn'),
+        noteBox(t('auth.importKeyNote'), 'warn'),
         field(
-          'Secret key',
+          t('auth.secretKey'),
           el('div', { class: 'input-group' }, [keyInput, reveal]),
-          'An nsec signs as you; an npub opens a read-only session.',
+          t('auth.secretKeyHint'),
         ),
       ],
     }),
     formSection({
       step: '02',
-      title: 'Profile',
-      hint: 'Only used when the key is not already known on the network.',
-      children: [field('Display name', nameInput)],
+      title: t('auth.profileTitle'),
+      hint: t('auth.profileHint'),
+      children: [field(t('auth.displayName'), nameInput)],
     }),
     authFoot(
-      button('Sign in', {
+      button(t('common.actions.signIn'), {
         variant: 'gold',
         className: 'auth-cta',
         onClick: () => app.signInWithKey({ key: keyInput.value, displayName: nameInput.value }),
@@ -401,9 +402,9 @@ export function renderLoginNsec({ app }) {
     backTo: '/welcome',
     children: [
       authHero({
-        eyebrow: 'Import identity',
-        title: 'Sign in with a key',
-        subtitle: 'Use an existing nsec or npub to control your identity.',
+        eyebrow: t('auth.importIdentityEyebrow'),
+        title: t('auth.signInWithKeyTitle'),
+        subtitle: t('auth.signInWithKeySubtitle'),
       }),
       form,
     ],

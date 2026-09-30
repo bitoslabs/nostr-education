@@ -3,7 +3,8 @@ import { getPersona } from '../../data/personas.js';
 import { SUBMISSION_STATUS, classroomsForTeacher } from '../../domain/classroom.js';
 import { isActionNeededFor } from '../../domain/feed.js';
 import { identitySecondary } from '../../domain/identity.js';
-import { ROLE, roleSpaceLabel } from '../../domain/school.js';
+import { ROLE } from '../../domain/school.js';
+import { t } from '../../services/i18n/index.js';
 import { icon } from '../components/icon.js';
 import { avatar, button } from '../components/primitives.js';
 
@@ -34,26 +35,26 @@ export function renderNav({ state, app }) {
   const badge = badgeCount(state);
 
   const items = [
-    { route: '/home', label: 'Home', icon: 'lucide:house', fallback: '◉' },
+    { route: '/home', label: t('nav.home'), icon: 'lucide:house', fallback: '◉' },
     {
       route: '/role',
-      label: roleSpaceLabel(persona.role),
+      label: t('common.roleSpace.' + persona.role),
       icon: ROLE_ICON[persona.role] ?? 'lucide:layout-grid',
       fallback: '▣',
       badge,
     },
-    { route: '/credentials', label: 'Credentials', icon: 'lucide:id-card', fallback: '◎' },
-    { route: '/discover', label: 'Discover', icon: 'lucide:search', fallback: '⌕' },
-    { route: '/notifications', label: 'Notifications', icon: 'lucide:bell', fallback: '🔔' },
-    { route: '/settings', label: 'Settings', icon: 'lucide:settings', fallback: '⚙' },
+    { route: '/credentials', label: t('nav.credentials'), icon: 'lucide:id-card', fallback: '◎' },
+    { route: '/discover', label: t('nav.discover'), icon: 'lucide:search', fallback: '⌕' },
+    { route: '/notifications', label: t('nav.notifications'), icon: 'lucide:bell', fallback: '🔔' },
+    { route: '/settings', label: t('nav.settings'), icon: 'lucide:settings', fallback: '⚙' },
   ];
 
-  return el('nav', { class: 'nav', 'aria-label': 'Primary' }, [
+  return el('nav', { class: 'nav', 'aria-label': t('common.a11y.primaryNav') }, [
     el('div', { class: 'brand' }, [
       el('span', { 'aria-hidden': 'true' }, '🐝'),
-      el('span', {}, 'BitOS Education'),
+      el('span', {}, t('common.appName')),
     ]),
-    button('＋ New post', { variant: 'gold', className: 'navbtn--gold', onClick: () => app.openComposer() }),
+    button(`＋ ${t('common.a11y.newPost')}`, { variant: 'gold', className: 'navbtn--gold', onClick: () => app.openComposer() }),
     ...items.map((item) => navButton(item, state.route, app)),
     el('div', { class: 'navsep' }),
     el(
@@ -63,13 +64,13 @@ export function renderNav({ state, app }) {
         type: 'button',
         disabled: true,
         'aria-disabled': 'true',
-        title: 'Coming soon',
+        title: t('nav.comingSoon'),
       },
-      [el('span', { class: 'navbtn__ico' }, icon('lucide:zap', { size: 18, fallback: '⚡' })), 'Bitz'],
+      [el('span', { class: 'navbtn__ico' }, icon('lucide:zap', { size: 18, fallback: '⚡' })), t('nav.bitz')],
     ),
     el(
       'button',
-      { class: 'navme', type: 'button', 'aria-label': 'Profile and settings', onClick: () => app.navigate('/settings') },
+      { class: 'navme', type: 'button', 'aria-label': t('common.a11y.profileSettings'), onClick: () => app.navigate('/settings') },
       [
         avatar(persona, 34),
         el('span', { class: 'navme__txt' }, [
