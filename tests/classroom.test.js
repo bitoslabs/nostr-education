@@ -36,6 +36,7 @@ import {
   subjectInUse,
   subjectsForAcademy,
   submissionFor,
+  submissionIndex,
   submissionStatusBadge,
   submissionsForClassroom,
   submissionsForHomework,
@@ -81,6 +82,28 @@ test('submission lookups find the latest version per student', () => {
   assert.equal(submissionsForHomework(SUBMISSIONS, 'hw1').length, 2);
   assert.equal(submissionFor(SUBMISSIONS, 'hw1', 'alice').id, 's1');
   assert.equal(submissionFor(SUBMISSIONS, 'hw1', 'nobody'), null);
+});
+
+test('submissionIndex matches submissionFor, latest record wins', () => {
+  const withRegrade = [
+    ...SUBMISSIONS,
+    { id: 's3', homeworkId: 'hw1', studentId: 'alice', status: 'graded', score: 90, maxScore: 100 },
+    { id: 's4', homeworkId: 'hw3', studentId: 'alice', status: 'submitted', score: null, maxScore: 100 },
+  ];
+  const lookup = submissionIndex(withRegrade);
+  assert.equal(lookup('hw1', 'alice').id, 's3');
+  assert.equal(lookup('hw3', 'alice').id, 's4');
+  assert.equal(lookup('hw1', 'carol').id, 's2');
+  for (const homeworkId of ['hw1', 'hw3']) {
+    for (const studentId of ['alice', 'carol', 'nobody']) {
+      assert.equal(
+        lookup(homeworkId, studentId),
+        submissionFor(withRegrade, homeworkId, studentId),
+        `${homeworkId}/${studentId} should resolve identically`,
+      );
+    }
+  }
+  assert.equal(submissionIndex([])('hw1', 'alice'), null);
 });
 
 test('isValidScore bounds a numeric score to the maximum', () => {

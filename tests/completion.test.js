@@ -59,6 +59,29 @@ test('evaluateCompletion checks the minimum average and graded coverage', () => 
   assert.equal(none.gradedCount, 0);
 });
 
+test('evaluateCompletion accepts a prebuilt submission index', () => {
+  const submissions = [
+    { id: 's1', homeworkId: 'h1', studentId: 'a', status: 'graded', score: 80, maxScore: 100 },
+    { id: 's2', homeworkId: 'h2', studentId: 'a', status: 'graded', score: 90, maxScore: 100 },
+  ];
+  const lookup = (homeworkId, studentId) =>
+    submissions.find((entry) => entry.homeworkId === homeworkId && entry.studentId === studentId) ?? null;
+  const withIndex = evaluateCompletion({
+    policy: { minAverage: 70, requireAllHomework: true },
+    homework,
+    lookupSubmission: lookup,
+    studentId: 'a',
+  });
+  const withoutIndex = evaluateCompletion({
+    policy: { minAverage: 70, requireAllHomework: true },
+    homework,
+    submissions,
+    studentId: 'a',
+  });
+  assert.equal(withIndex.eligible, true);
+  assert.deepEqual(withIndex, withoutIndex);
+});
+
 test('completionBadge reflects eligibility', () => {
   assert.equal(completionBadge({ eligible: true }).tone, 'ok');
   assert.equal(completionBadge({ eligible: false, gradedCount: 0 }).tone, 'muted');

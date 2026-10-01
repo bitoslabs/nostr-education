@@ -37,7 +37,7 @@ export default {
   reviseResubmit: 'ແກ້ໄຂ ແລະ ສົ່ງຄືນ',
   resubmit: 'ສົ່ງຄືນ',
   submitNewVersion: 'ສົ່ງເວີຊັນໃໝ່',
-  submitHomework: 'ສົ່ງການບ້ານ',
+  submitHomework: 'ສົ່ງວຽກບ້ານ',
   refreshHomework: 'ໂຫຼດຄະແນນໃໝ່',
   homeworkMeta: '{title} · ກຳນົດ {due} · ຈາກຄະແນນເຕັມ {maxScore}',
   dueMeta: 'ກຳນົດ {due}',

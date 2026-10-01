@@ -181,7 +181,7 @@ export default {
   submitDueMeta: 'ກຳນົດ {due} · ຈາກຄະແນນເຕັມ {maxScore}',
   submitVersionNote: 'ການສົ່ງຈະສ້າງເວີຊັນ {next}. ເວີຊັນ {current} ຢູ່ໃນປະຫວັດຕໍ່ໄປ.',
   submitNewVersion: 'ສົ່ງເວີຊັນໃໝ່',
-  submitHomework: 'ສົ່ງການບ້ານ',
+  submitHomework: 'ສົ່ງວຽກບ້ານ',
   errAnswerRequired: 'ຂຽນຄຳຕອບຂອງທ່ານກ່ອນສົ່ງ.',
   ariaScore: 'ຄະແນນ',
   placeholderFeedback: 'ຄຳຕິຊົມສຳລັບຜູ້ຮຽນ (ບໍ່ບັງຄັບ)',

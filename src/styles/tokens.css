@@ -79,3 +79,9 @@
   --nav-w: 232px;
   --feed-w: 600px;
 }
+
+/* Lao locale: Chanthavong covers Lao script, which Inter/Space Grotesk lack. */
+:root[lang='lo'] {
+  --font: 'Chanthavong', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --display: 'Chanthavong', 'Space Grotesk', 'Inter', system-ui, sans-serif;
+}

@@ -14,7 +14,7 @@ import {
   reviewCounts,
   reviewQueue,
   scorePercent,
-  submissionFor,
+  submissionIndex,
   submissionStatusBadge,
   submissionsForClassroom,
   subjectById,
@@ -115,6 +115,18 @@ export function renderTeaching({ app, state }) {
   return bindScreen(state, node, render);
 }
 
+// Typing into a search box rebuilds table rows; coalesce the keystrokes so a
+// long query does not re-render per character.
+const SEARCH_DEBOUNCE_MS = 150;
+
+function debounceDraw(draw) {
+  let timer = null;
+  return () => {
+    clearTimeout(timer);
+    timer = setTimeout(draw, SEARCH_DEBOUNCE_MS);
+  };
+}
+
 function createAcademyCard(app) {
   return el('div', { class: 'card' }, [
     el('h3', {}, t('common.workspace.createTitle')),
@@ -141,6 +153,7 @@ function scopedClassrooms(state, persona) {
 
 // One row per learner per class, with their submission progress and average.
 function scopedRoster(state, persona) {
+  const lookup = submissionIndex(state.submissions ?? []);
   const entries = [];
   for (const room of scopedClassrooms(state, persona)) {
     const homework = homeworkForClassroom(state.homework ?? [], room.id).filter(
@@ -149,7 +162,7 @@ function scopedRoster(state, persona) {
     const subject = subjectById(state.subjects ?? [], room.subjectId);
     for (const studentId of classroomRoster(state, room)) {
       const submissions = homework
-        .map((item) => submissionFor(state.submissions ?? [], item.id, studentId))
+        .map((item) => lookup(item.id, studentId))
         .filter(Boolean);
       const graded = submissions.filter((submission) => submission.status === SUBMISSION_STATUS.GRADED);
       entries.push({
@@ -365,9 +378,11 @@ function studentsBody({
   ]);
   const listWrap = el('div', { class: 'dtable-wrap' }, table);
 
+  // The roster is computed once per snapshot in `render`; filtering and sorting
+  // the cached entries keeps each keystroke off the submission index rebuild.
   const draw = () => {
     const persona = getPersona(state.val.personaId);
-    const entries = filterRoster(scopedRoster(state.val, persona), {
+    const entries = filterRoster(roster, {
       query: getQuery(),
       sort: getSort(),
       classId: getClass(),
@@ -439,10 +454,10 @@ function studentsBody({
       draw();
     });
   }
-  queryInput.addEventListener('input', () => {
+  queryInput.addEventListener('input', debounceDraw(() => {
     setQuery(queryInput.value);
     draw();
-  });
+  }));
 
   draw();
 
@@ -484,6 +499,7 @@ function rosterAccordion(state, viewer, students) {
 }
 
 function classCard(state, app, room, viewer) {
+  const lookup = submissionIndex(state.submissions ?? []);
   const subject = subjectById(state.subjects ?? [], room.subjectId);
   const homework = homeworkForClassroom(state.homework ?? [], room.id);
   const students = classroomRoster(state, room);
@@ -507,19 +523,19 @@ function classCard(state, app, room, viewer) {
     ]),
     rosterAccordion(state, viewer, students),
     ...(homework.length
-      ? homework.map((item) => homeworkAccordion(state, app, item, students, viewer))
+      ? homework.map((item) => homeworkAccordion(state, app, item, students, viewer, lookup))
       : [emptyState(t('teaching.emptyHomework'))]),
-    completionAccordion(state, app, room, homework, students, viewer),
+    completionAccordion(state, app, room, homework, students, viewer, lookup),
   ]);
 }
 
 // Collapse per-class detail so the class list stays scannable; expand to work.
-function completionAccordion(state, app, room, homework, students, viewer) {
+function completionAccordion(state, app, room, homework, students, viewer, lookup) {
   const rows = students.map((studentId) => {
     const result = evaluateCompletion({
       policy: room.completion,
       homework,
-      submissions: state.submissions ?? [],
+      lookupSubmission: lookup,
       studentId,
     });
     const badge = completionBadge(result);
@@ -563,13 +579,18 @@ function completionAccordion(state, app, room, homework, students, viewer) {
   ]);
 }
 
-function homeworkAccordion(state, app, item, students, viewer) {
+function homeworkAccordion(state, app, item, students, viewer, lookup) {
   const status = homeworkStatusBadge(item.status);
-  const graded = students.filter(
-    (studentId) => submissionFor(state.submissions ?? [], item.id, studentId)?.status === SUBMISSION_STATUS.GRADED,
+  // Resolve each learner's submission once; the graded count and the rows share
+  // the same lookups instead of scanning the record set twice.
+  const submissionsByStudent = students.map((studentId) => ({
+    studentId,
+    submission: lookup(item.id, studentId),
+  }));
+  const graded = submissionsByStudent.filter(
+    ({ submission }) => submission?.status === SUBMISSION_STATUS.GRADED,
   ).length;
-  const rows = students.map((studentId) => {
-    const submission = submissionFor(state.submissions ?? [], item.id, studentId);
+  const rows = submissionsByStudent.map(({ studentId, submission }) => {
     const token = submissionStatusBadge(submission);
     const isGraded = submission?.status === SUBMISSION_STATUS.GRADED;
     return row([
@@ -763,10 +784,10 @@ function assessmentBody({ tab, state, app, queue, getQuery, setQuery, getClass, 
     setClass(classSelect.value);
     draw();
   });
-  search.addEventListener('input', () => {
+  search.addEventListener('input', debounceDraw(() => {
     setQuery(search.value);
     draw();
-  });
+  }));
 
   draw();
 
@@ -791,6 +812,7 @@ function gradebookBody({ state, app, persona, getQuery, setQuery }) {
   );
   const students = classroomRoster(snapshot, room);
   const submissions = snapshot.submissions ?? [];
+  const lookup = submissionIndex(submissions);
   const classAverage = averagePercent(submissionsForClassroom(submissions, room.id));
 
   const picker =
@@ -821,7 +843,7 @@ function gradebookBody({ state, app, persona, getQuery, setQuery }) {
     (count, studentId) =>
       count +
       homework.filter(
-        (item) => submissionFor(submissions, item.id, studentId)?.status === SUBMISSION_STATUS.GRADED,
+        (item) => lookup(item.id, studentId)?.status === SUBMISSION_STATUS.GRADED,
       ).length,
     0,
   );
@@ -872,8 +894,10 @@ function gradebookBody({ state, app, persona, getQuery, setQuery }) {
     tbody.replaceChildren(
       ...(visible.length
         ? visible.map((studentId) => {
-            const cells = homework.map((item) => {
-              const submission = submissionFor(submissions, item.id, studentId);
+            // One lookup per cell feeds both the chip and the row average.
+            const rowSubmissions = homework.map((item) => lookup(item.id, studentId));
+            const cells = rowSubmissions.map((submission, index) => {
+              const item = homework[index];
               const graded = submission?.status === SUBMISSION_STATUS.GRADED;
               const tooltip = `${item.title} · ${
                 submission ? `${submission.score ?? '—'}/${submission.maxScore ?? '—'}` : t('common.badge.notSubmitted')
@@ -901,9 +925,7 @@ function gradebookBody({ state, app, persona, getQuery, setQuery }) {
               }
               return el('td', { class: 'cell-score' }, cell);
             });
-            const average = averagePercent(
-              homework.map((item) => submissionFor(submissions, item.id, studentId)).filter(Boolean),
-            );
+            const average = averagePercent(rowSubmissions.filter(Boolean));
             return el('tr', {}, [
               el('td', {}, el('span', { class: 'who' }, learnerDisplayName(snapshot, persona, studentId))),
               ...cells,
@@ -918,10 +940,10 @@ function gradebookBody({ state, app, persona, getQuery, setQuery }) {
     );
   };
 
-  queryInput.addEventListener('input', () => {
+  queryInput.addEventListener('input', debounceDraw(() => {
     setQuery(queryInput.value);
     draw();
-  });
+  }));
   draw();
 
   return [toolbar, summaryWrap, legend, listWrap];

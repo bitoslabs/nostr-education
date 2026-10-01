@@ -193,7 +193,7 @@ export default {
   writeAnswerFirst: 'ຂຽນຄຳຕອບຂອງທ່ານກ່ອນ.',
   submittedVersionLate: 'ສົ່ງເວີຊັນ {version} ຂອງ “{title}” ຫຼັງກຳນົດ.',
   submittedVersion: 'ສົ່ງເວີຊັນ {version} ຂອງ “{title}”.',
-  submitHomework: 'ສົ່ງການບ້ານ',
+  submitHomework: 'ສົ່ງວຽກບ້ານ',
   submitVersionEncrypted: 'ສົ່ງເວີຊັນ {version} ຂອງ “{title}” (ເຂົ້າລະຫັດ).',
   submittedLateToast: 'ສົ່ງເວີຊັນ {version} (ຊ້າ) — ຄູຂອງທ່ານຈະໃຫ້ຄະແນນ.',
   submittedToast: 'ສົ່ງເວີຊັນ {version} — ຄູຂອງທ່ານຈະໃຫ້ຄະແນນ.',

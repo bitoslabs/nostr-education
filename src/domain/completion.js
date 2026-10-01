@@ -1,4 +1,4 @@
-import { HOMEWORK_STATUS, SUBMISSION_STATUS } from './classroom.js';
+import { HOMEWORK_STATUS, SUBMISSION_STATUS, submissionIndex } from './classroom.js';
 
 export const DEFAULT_COMPLETION = Object.freeze({ minAverage: 0, requireAllHomework: true });
 
@@ -11,15 +11,12 @@ export function normalizePolicy(policy = {}) {
   };
 }
 
-export function evaluateCompletion({ policy, homework = [], submissions = [], studentId } = {}) {
+export function evaluateCompletion({ policy, homework = [], submissions = [], lookupSubmission, studentId } = {}) {
+  const lookup = lookupSubmission ?? submissionIndex(submissions);
   const normalized = normalizePolicy(policy);
   const published = homework.filter((item) => item.status !== HOMEWORK_STATUS.DRAFT);
   const graded = published
-    .map((item) =>
-      submissions.find(
-        (entry) => entry.homeworkId === item.id && entry.studentId === studentId,
-      ),
-    )
+    .map((item) => lookup(item.id, studentId))
     .filter((entry) => entry && entry.status === SUBMISSION_STATUS.GRADED && Number(entry.maxScore) > 0);
 
   const average = graded.length

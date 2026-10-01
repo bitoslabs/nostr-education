@@ -9,7 +9,7 @@ import {
   homeworkForClassroom,
   homeworkStatusBadge,
   isHomeworkOpen,
-  submissionFor,
+  submissionIndex,
   submissionStatusBadge,
   subjectById,
 } from '../../domain/classroom.js';
@@ -173,10 +173,13 @@ function classCards(state, app, persona) {
   if (!classrooms.length) {
     return [emptyState(t('education.emptyClasses'))];
   }
-  return classrooms.map((room) => classCard(state, app, persona, room));
+  // One submission index for the whole screen: every class card and homework
+  // row resolves scores through it instead of rescanning the record set.
+  const lookup = submissionIndex(state.submissions ?? []);
+  return classrooms.map((room) => classCard(state, app, persona, room, lookup));
 }
 
-function classCard(state, app, persona, room) {
+function classCard(state, app, persona, room, lookup) {
   const subject = subjectById(state.subjects ?? [], room.subjectId);
   const teacher = room.teacherId ? getPersona(room.teacherId) : null;
   const homework = homeworkForClassroom(state.homework ?? [], room.id).filter(
@@ -185,7 +188,7 @@ function classCard(state, app, persona, room) {
   const completion = evaluateCompletion({
     policy: room.completion,
     homework,
-    submissions: state.submissions ?? [],
+    lookupSubmission: lookup,
     studentId: persona.id,
   });
   const badge = completionBadge(completion);
@@ -210,13 +213,13 @@ function classCard(state, app, persona, room) {
         ? el('p', {}, statusBadge(badgeLabel, badge.tone))
         : null,
     ...(homework.length
-      ? homework.map((item) => homeworkRow(state, app, persona, item))
+      ? homework.map((item) => homeworkRow(state, app, persona, item, lookup))
       : [emptyState(t('education.emptyHomework'))]),
   ]);
 }
 
-function homeworkRow(state, app, persona, item) {
-  const submission = submissionFor(state.submissions ?? [], item.id, persona.id);
+function homeworkRow(state, app, persona, item, lookup) {
+  const submission = lookup(item.id, persona.id);
   const token = submissionStatusBadge(submission);
   const status = homeworkStatusBadge(item.status);
   const graded = submission?.status === SUBMISSION_STATUS.GRADED;

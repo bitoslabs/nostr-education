@@ -167,11 +167,24 @@ export function submissionsForHomework(submissions = [], homeworkId) {
 }
 
 export function submissionFor(submissions = [], homeworkId, studentId) {
-  return (
-    [...submissions]
-      .reverse()
-      .find((submission) => submission.homeworkId === homeworkId && submission.studentId === studentId) ?? null
-  );
+  for (let i = submissions.length - 1; i >= 0; i -= 1) {
+    const submission = submissions[i];
+    if (submission.homeworkId === homeworkId && submission.studentId === studentId) return submission;
+  }
+  return null;
+}
+
+// Latest submission per homework+student, pre-resolved into a Map so matrix and
+// roster renders stay O(cells) instead of rescanning the whole record set per
+// lookup. Forward iteration makes the last record win, matching `submissionFor`.
+export function submissionIndex(submissions = []) {
+  const latest = new Map();
+  for (const submission of submissions) {
+    latest.set(`${submission.homeworkId}::${submission.studentId}`, submission);
+  }
+  return function lookupSubmission(homeworkId, studentId) {
+    return latest.get(`${homeworkId}::${studentId}`) ?? null;
+  };
 }
 
 export function versionsFor(submissionVersions = [], submissionId) {
