@@ -51,9 +51,9 @@ export function onLocaleChange(listener) {
 
 export function setLocale(locale) {
   const next = DICTIONARIES[locale] ? locale : FALLBACK_LOCALE;
+  applyDocumentLang(next);
   if (next === currentLocale) return next;
   currentLocale = next;
-  applyDocumentLang(next);
   applyStaticTranslations();
   listeners.forEach((listener) => listener(next));
   return next;

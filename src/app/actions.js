@@ -323,6 +323,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
             type: 'member',
             author: 'academy',
             time: 'now',
+            occurredAt: new Date().toISOString(),
             context: classroom?.name ?? academy?.name ?? t('actions.academyFallback'),
             audience: [persona.id],
             text: classroom
@@ -399,6 +400,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
             type: 'member',
             author: 'academy',
             time: 'now',
+            occurredAt: new Date().toISOString(),
             context: classroom.name,
             audience: [persona.id],
             text: t('actions.enrolledIn', { name: classroom.name }),
@@ -462,6 +464,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
               type: 'joinreq',
               author: persona.id,
               time: 'now',
+              occurredAt: new Date().toISOString(),
               context: academy?.name ?? t('actions.academyFallback'),
               audience: [academy?.ownerId ?? 'nadia'],
               requestId: joinId,
@@ -1118,6 +1121,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
               type: 'academy',
               author: pubkey,
               time: 'now',
+              occurredAt: new Date().toISOString(),
               context: academy.name,
               audience: 'all',
               text: t('actions.createdAcademyBecameOwner', { name: academy.name }),
@@ -1290,6 +1294,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'academy',
           author: persona.id,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: academyName,
           audience: 'all',
           text: t('actions.createdAcademyBecameOwner', { name: academyName }),
@@ -1352,6 +1357,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'academy',
           author: current.personaId,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: nextName,
           audience: 'all',
           text: t('actions.updatedAcademyProfile', { name: nextName }),
@@ -1398,6 +1404,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'invite',
           author: current.personaId,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: academy.name,
           audience: [normalizedTarget],
           text: t('actions.invitedToTeach', { label, academy: academy.name }),
@@ -1676,6 +1683,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'course',
           author: current.personaId,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: academy.name,
           audience: 'all',
           text: t('actions.addedSubject', { name: subjectName }),
@@ -1716,6 +1724,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'course',
           author: current.personaId,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: academy.name,
           audience: 'all',
           text: t('actions.updatedSubject', { name: nextName }),
@@ -1761,6 +1770,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'course',
           author: current.personaId,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: academy.name,
           audience: 'all',
           text: t('actions.removedSubject', { name: subject.name }),
@@ -1833,6 +1843,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'course',
           author: current.personaId,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: subject.name,
           audience: 'all',
           text: t(assigned ? 'actions.createdClassroom' : 'actions.createdClassroomInvitedTeacher', { name: className, subject: subject.name }),
@@ -1961,6 +1972,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'course',
           author: current.personaId,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: nextSubject.name,
           audience: 'all',
           text: t('actions.updatedClassroom', { name: nextName }),
@@ -1996,6 +2008,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'course',
           author: current.personaId,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: classroom.name,
           audience: 'all',
           text: message,
@@ -2066,6 +2079,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'course',
           author: current.personaId,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: classroom.name,
           audience: 'all',
           text: t('actions.removedClassroom', { name: classroom.name }),
@@ -2108,6 +2122,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'academy',
           author: current.personaId,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: classroom.name,
           audience: 'all',
           text: t('actions.updatedCompletionRules', { name: classroom.name, version: updated.completionVersion }),
@@ -2191,6 +2206,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'completion',
           author: persona.id,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: classroom.name,
           audience: [studentId, academy?.ownerId].filter(Boolean),
           text: t('actions.recommendedForCompletion', { learner: learner.displayName, name: classroom.name }),
@@ -2243,6 +2259,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'invite',
           author: current.personaId,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: classroom.name,
           audience: [normalized],
           text: t('actions.invitedToClassAsRole', { label, name: classroom.name, role: t(inviteRoleKey(role)) }),
@@ -2403,6 +2420,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'homework',
           author: persona.id,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: `${subject?.name ?? classroom.name} ▸ ${classroom.name}`,
           audience: 'all',
           text: publish
@@ -2569,6 +2587,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'submission',
           author: persona.id,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: item.title,
           audience: [item.createdBy],
           homeworkId,
@@ -2680,6 +2699,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'grade',
           author: persona.id,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: submission.homeworkId,
           audience: [submission.studentId],
           homeworkId: submission.homeworkId,
@@ -2759,6 +2779,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'revision',
           author: persona.id,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: homeworkItem?.title ?? classroom?.name ?? t('actions.homeworkFallback'),
           audience: [submission.studentId],
           homeworkId: submission.homeworkId,
@@ -2821,6 +2842,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'homework',
           author: current.personaId,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: `${classroom?.name ?? t('actions.classFallback')} ▸ ${nextTitle}`,
           audience: 'all',
           text: t('actions.updatedHomeworkEvent', { title: nextTitle, due: updated.due, max }),
@@ -2859,6 +2881,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'homework',
           author: current.personaId,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: classroom?.name ?? t('actions.classFallback'),
           audience: 'all',
           text: message,
@@ -2930,6 +2953,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'homework',
           author: current.personaId,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: classroom?.name ?? t('actions.classFallback'),
           audience: 'all',
           text: t('actions.removedHomework', { title: item.title }),
@@ -2996,6 +3020,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'handle',
           author: persona.id,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           audience: 'all',
           text: t('actions.claimedHandle', { handle: result.handle }),
         },
@@ -3046,6 +3071,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'joinreq',
           author: persona.id,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: academyName,
           audience: academy?.ownerId ? [academy.ownerId] : [],
           requestId: request.id,
@@ -3092,6 +3118,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'member',
           author: 'academy',
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: request.academy ?? t('actions.academyFallback'),
           audience: [request.accountId],
           text: t('actions.approvedMembershipWelcome'),
@@ -3210,6 +3237,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'enrollreq',
           author: persona.id,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: classroom.name,
           audience,
           requestId: id,
@@ -3261,6 +3289,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'course',
           author: current.personaId,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: request.courseTitle,
           audience: [request.learnerId],
           courseId: request.courseId,
@@ -3324,6 +3353,26 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     update({ lastCreated: null });
   }
 
+  // Per-person feed card state. Dismissing an informational card also marks it
+  // read; action-needed cards are derived from live records and are not
+  // dismissible, so a required task cannot be hidden (docs/architecture/home-feed.md).
+  function dismissFeedEvent(eventKey) {
+    const current = state();
+    const personaId = current.personaId;
+    if (!personaId || eventKey == null) return;
+    const mine = current.feedStates?.[personaId] ?? {};
+    const at = new Date().toISOString();
+    update({
+      feedStates: {
+        ...(current.feedStates ?? {}),
+        [personaId]: {
+          ...mine,
+          [eventKey]: { readAt: mine[eventKey]?.readAt ?? at, dismissedAt: at },
+        },
+      },
+    });
+  }
+
   async function testSigner() {
     const result = await signer.request({
       title: t('actions.signerCheck'),
@@ -3337,6 +3386,38 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       result.approved ? t('actions.signatureValid') : t('actions.notSigned'),
       result.approved ? 'ok' : 'warn',
     );
+  }
+
+  // Marking a card read is per person and only affects For-you ranking
+  // (-15). It never hides a card and never mutates the source record.
+  function readFeedEvent(eventKey) {
+    const current = state();
+    const personaId = current.personaId;
+    if (!personaId || eventKey == null) return;
+    const mine = current.feedStates?.[personaId] ?? {};
+    if (mine[eventKey]?.readAt) return;
+    update({
+      feedStates: {
+        ...(current.feedStates ?? {}),
+        [personaId]: {
+          ...mine,
+          [eventKey]: { ...mine[eventKey], readAt: new Date().toISOString() },
+        },
+      },
+    });
+  }
+
+  // Muting an actor is a per-person preference: it drops their cards from the
+  // For-you tab only and never affects authorization or required tasks.
+  function muteAuthor(actorId) {
+    const current = state();
+    const personaId = current.personaId;
+    if (!personaId || !actorId || actorId === personaId) return;
+    const muted = current.feedMutes?.[personaId] ?? [];
+    if (muted.includes(actorId)) return;
+    update({
+      feedMutes: { ...(current.feedMutes ?? {}), [personaId]: [...muted, actorId] },
+    });
   }
 
   function like(eventId) {
@@ -3364,6 +3445,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'social',
           author: state().personaId,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           audience: 'all',
           text: trimmed,
           counts: { likes: 0, bitz: 0, replies: 0 },
@@ -3406,6 +3488,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'completion',
           author: 'bob',
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: 'CS-101',
           audience: ['bob', 'nadia'],
           signId,
@@ -3519,6 +3602,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'issued',
           author: identity.pubkey,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: payload.course || academy.name,
           audience: 'all',
           text: t('actions.issuedCredential', { title: payload.title, name: item.learnerName }),
@@ -3592,6 +3676,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           type: 'issued',
           author: identity.pubkey,
           time: 'now',
+          occurredAt: new Date().toISOString(),
           context: credential.course ?? credential.title,
           audience: 'all',
           text: t('actions.revokedCredential', { title: credential.title }),
@@ -3802,6 +3887,9 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     canDecideEnrollment,
     canDecideJoin,
     dismissCreated,
+    dismissFeedEvent,
+    readFeedEvent,
+    muteAuthor,
     testSigner,
     like,
     openThread,

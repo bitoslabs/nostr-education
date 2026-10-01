@@ -358,6 +358,7 @@ export function applyRecord(state, record) {
                 type: 'member',
                 author: 'academy',
                 time: 'now',
+                occurredAt: new Date().toISOString(),
                 context: academy?.name ?? '',
                 audience: [record.memberId],
                 memberStatus: status,

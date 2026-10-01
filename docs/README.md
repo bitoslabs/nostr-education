@@ -16,6 +16,7 @@ alternate/error journeys.
 7. [Membership and invitation flow](membership-flow.md) — user-visible states from a public link through owner approval.
 8. [Homework submission flow and event plan](architecture/submission-events-plan.md) — append-only submission and assessment events that back the [User flows](user-flows.md) submission loop.
 9. [Nostr-native mode (server optional)](architecture/nostr-native.md) — when the API can be dropped, and the signed-capability, gift-wrap, and relay requirements.
+10. [Home feed implementation spec](architecture/home-feed.md) — features, queries, ranking, data model, privacy rules, tasks, and acceptance checks.
 
 The following files are earlier design explorations, not the implementation contract:
 

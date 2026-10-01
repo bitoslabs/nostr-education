@@ -115,7 +115,7 @@ const store = createStore({
   }),
   relays: [],
   following: persisted.following ?? {},
-  locale: persisted.locale ?? 'en',
+  locale: persisted.locale ?? 'lo',
   joinRequests: persisted.joinRequests ?? [],
   enrollRequests: persisted.enrollRequests ?? [],
   events: [],
@@ -129,6 +129,12 @@ const store = createStore({
   lastCreated: null,
   route: '/home',
   feedTab: 'foryou',
+  // Read/dismiss state per persona. Events themselves are session-local, so
+  // this stays in memory too — it must not imply cross-device persistence.
+  feedStates: {},
+  // Per-person muted actors for the For-you tab; a preference, never an
+  // authorization change (docs/architecture/home-feed.md).
+  feedMutes: {},
   roleTab: 'classes',
   orgTab: 'overview',
   settingsSection: null,

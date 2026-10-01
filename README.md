@@ -13,6 +13,7 @@ Design context lives in [`docs/`](./docs) (index: [`docs/README.md`](./docs/READ
 - [`docs/architecture.md`](./docs/architecture.md) — code structure and conventions
 - [`docs/architecture/`](./docs/architecture) — implementation plan, data model, Nostr events
 - [`docs/architecture/progress.md`](./docs/architecture/progress.md) — build progress and next task
+- [`docs/architecture/home-feed.md`](./docs/architecture/home-feed.md) — proposed home feed implementation spec
 
 When an exploration contradicts `school-system.md`, the system design wins.
 

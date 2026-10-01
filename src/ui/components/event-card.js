@@ -22,7 +22,16 @@ const BADGES = Object.freeze({
   handle: { key: 'home.badgeHandleClaimed', tone: 'ok', audience: 'all' },
 });
 
-export function eventCard(event, { persona, actions, enrollments = [] } = {}) {
+// Reason codes attached by the For-you ranking, localized for the why-line.
+const REASON_KEYS = Object.freeze({
+  'your-class': 'home.reasonYourClass',
+  followed: 'home.reasonFollowed',
+  'your-academy': 'home.reasonYourAcademy',
+  recent: 'home.reasonRecent',
+  read: 'home.reasonRead',
+});
+
+export function eventCard(event, { persona, actions, enrollments = [], onDismiss, onMuteAuthor } = {}) {
   const author = getPersona(event.author);
   const children = [
     el('div', { class: 'crow' }, [
@@ -37,6 +46,13 @@ export function eventCard(event, { persona, actions, enrollments = [] } = {}) {
 
   children.push(el('p', { class: 'cbody' }, eventText(event)));
 
+  // Transparent relevance: the For-you tab states why a card is shown.
+  const reasons = event.ranking?.reasons ?? [];
+  if (reasons.length) {
+    const labels = reasons.map((code) => REASON_KEYS[code]).filter(Boolean).map((key) => t(key));
+    if (labels.length) children.push(el('p', { class: 'muted small' }, t('home.why', { reasons: labels.join(' · ') })));
+  }
+
   if (event.quote) children.push(el('blockquote', { class: 'quote' }, `"${event.quote}"`));
   if (event.files?.length) {
     children.push(el('div', { class: 'files' }, event.files.map((file) => fileChip(file))));
@@ -46,6 +62,20 @@ export function eventCard(event, { persona, actions, enrollments = [] } = {}) {
   if (event.type === 'social') actionRow.append(engagementBar(event, actions));
   const action = actionFor(event, { persona, actions, enrollments });
   if (action) actionRow.append(action);
+  // Informational cards only: required tasks are derived from live records and
+  // cannot be dismissed from the feed.
+  if (onDismiss) {
+    actionRow.append(
+      button(t('home.dismiss'), { small: true, onClick: () => onDismiss(event) }),
+    );
+  }
+  // Person-authored cards offer "show less" (a per-person mute of the author,
+  // affecting the For-you tab only).
+  if (onMuteAuthor && event.type === 'social' && event.author !== persona?.id) {
+    actionRow.append(
+      button(t('home.muteAuthor'), { small: true, onClick: () => onMuteAuthor(event.author) }),
+    );
+  }
   children.push(actionRow);
 
   return el('article', { class: 'card' }, children);

@@ -38,3 +38,5 @@ coverage/
 .DS_Store
 Thumbs.db
 *.swp
+
+deploy.sh
