@@ -39,6 +39,8 @@ const walk = async (dir, filter) => {
 
 const assets = [
   './index.html',
+  './manifest.webmanifest',
+  ...(await walk('assets', (name) => /\.(png|svg|ico|webmanifest)$/i.test(name))),
   ...(await walk('src', (name) => name.endsWith('.js') || name.endsWith('.css'))),
   ...(await walk('vendor', (name) => name.endsWith('.js'))),
 ];

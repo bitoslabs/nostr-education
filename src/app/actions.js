@@ -861,6 +861,41 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     return Boolean(result);
   }
 
+  // Resolve any npub/hex reference to its kind-0 profile from relays. Used by
+  // the About page to credit the owner (bitos.space) and read their Lightning
+  // address for donations. Read-only: it never publishes or touches the session.
+  function resolveProfile(reference) {
+    const decoded = decodeKey(reference);
+    const pubkey = decoded?.pubkey ?? null;
+    const npub = pubkey ? encodeNpub(pubkey) : String(reference ?? '');
+    if (!pubkey) return Promise.resolve({ pubkey: null, npub, profile: null });
+    return new Promise((resolve) => {
+      let settled = false;
+      let sub = null;
+      let best = null;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        sub?.close?.();
+        resolve({ pubkey, npub, profile: best });
+      };
+      const timer = setTimeout(finish, 7000);
+      sub = relay.subscribe([{ kinds: [KIND.PROFILE], authors: [pubkey], limit: 1 }], {
+        onEvent: (event) => {
+          if (event.pubkey !== pubkey) return;
+          const meta = parseProfileMeta(event.content);
+          if (!meta) return;
+          if (!best || (event.created_at ?? 0) >= (best.createdAt ?? 0)) {
+            best = { ...meta, createdAt: event.created_at ?? 0 };
+          }
+          finish();
+        },
+        onEose: finish,
+      });
+    });
+  }
+
   function recipientPubkey(target) {
     return decodeKey(target)?.pubkey ?? null;
   }
@@ -3878,6 +3913,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     setMode,
     setLocale,
     refreshMyProfile,
+    resolveProfile,
     requestMembership,
     acceptJoin,
     declineJoin,

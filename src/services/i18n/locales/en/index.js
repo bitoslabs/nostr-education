@@ -1,3 +1,4 @@
+import about from './about.js';
 import actions from './actions.js';
 import auth from './auth.js';
 import common from './common.js';
@@ -12,6 +13,7 @@ import settings from './settings.js';
 import teaching from './teaching.js';
 
 export const en = {
+  about,
   actions,
   auth,
   common,

@@ -1,0 +1,30 @@
+export default {
+  title: 'BitOS Education',
+  tagline: 'Nostr-native education identity and credentials.',
+  whatTitle: 'What is BitOS Education?',
+  whatBody:
+    'A dark social shell that hosts the education workflow — one shell, three roles (owner, teacher, learner) — where real Nostr keys sign and educational records travel as signed events on relays.',
+  protocolNote:
+    'Built on open protocols. Identity is a keypair, credentials are verifiable events, and nothing here locks your data to one server.',
+  owner: 'Owner',
+  contributor: 'Core contributor',
+  core: 'core',
+  loading: 'Looking up profile…',
+  copyNpub: 'Copy npub',
+  npubCopied: 'npub copied.',
+  viewOnNostr: 'View on Nostr',
+  website: 'bitos.space',
+  source: 'Source code',
+  donate: 'Donate',
+  sats: 'sats',
+  supportBody: 'BitOS is open and independent. You can support the maintainer by sending sats:',
+  lightningAddress: 'Lightning address',
+  copyAddress: 'Copy address',
+  addressCopied: 'Lightning address copied.',
+  openWallet: 'Open wallet',
+  lookingUp: 'Looking up the owner’s Lightning address from relays…',
+  noAddress:
+    'No Lightning address is published for the owner yet. You can still zap them on Nostr:',
+  zapOnNostr: 'Zap on Nostr',
+  footer: '© 2026 BitOS · made by plebs, for plebs',
+};

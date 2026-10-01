@@ -7,7 +7,6 @@ export default {
   settings: 'ການຕັ້ງຄ່າ',
   profile: 'ໂປຣໄຟລ໌',
   comingSoon: 'ໄວໆນີ້',
-  bitz: 'Bitz',
   relaysHealthy: '{healthy} ຈາກ {total} ປົກກະຕິ',
   myClasses: '🏫 ຫ້ອງຮຽນຂອງຂ້ອຍ',
   toScore: '📥 ລໍຖ້າໃຫ້ຄະແນນ',

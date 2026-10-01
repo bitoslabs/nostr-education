@@ -4,6 +4,7 @@ import { DEFAULT_SIGNER, ROLE_OPTIONS, SIGNER_TYPES } from '../../domain/account
 import { normalizeHandle, validateHandle } from '../../domain/handle.js';
 import { ROLE } from '../../domain/school.js';
 import { icon } from '../components/icon.js';
+import { beeLogo } from '../components/logo.js';
 import { button, noteBox } from '../components/primitives.js';
 import { t } from '../../services/i18n/index.js';
 
@@ -38,7 +39,7 @@ const WELCOME_FEATURES = Object.freeze([
 
 function authBrand() {
   return el('span', { class: 'auth-brand' }, [
-    el('span', { class: 'auth-brand__mark', 'aria-hidden': 'true' }, '🐝'),
+    beeLogo(28, 'bee-float'),
     el('span', { class: 'auth-brand__name' }, t('common.brand.name')),
     el('span', { class: 'auth-brand__tag' }, t('common.brand.tag')),
   ]);

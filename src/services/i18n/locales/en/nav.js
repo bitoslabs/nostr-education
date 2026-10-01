@@ -7,7 +7,6 @@ export default {
   settings: 'Settings',
   profile: 'Profile',
   comingSoon: 'Coming soon',
-  bitz: 'Bitz',
   relaysHealthy: '{healthy} of {total} healthy',
   myClasses: '🏫 My classes',
   toScore: '📥 To score',

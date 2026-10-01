@@ -1,0 +1,30 @@
+export default {
+  title: 'BitOS Education',
+  tagline: 'ເອກະລັກ ແລະ ໃບຢັ້ງຢືນການສຶກສາທີ່ເປັນ Native Nostr.',
+  whatTitle: 'BitOS Education ແມ່ນຫຍັງ?',
+  whatBody:
+    'ເປືອກສັງຄົມສີມືດທີ່ໃຫ້ບໍລິການຂະບວນການສຶກສາ — ເປືອກດຽວ ສາມບົດບາດ (ເຈົ້າຂອງ, ຄູ, ນັກຮຽນ) — ບ່ອນທີ່ກະແຈ Nostr ຈິງເຊັນ ແລະ ບັນທຶກການສຶກສາເດີນທາງເປັນເຫດການທີ່ເຊັນແລ້ວເທິງຣີເລ.',
+  protocolNote:
+    'ສ້າງຢູ່ເທິງໂປໂຕຄອນເປີດ. ເອກະລັກແມ່ນຄູ່ກະແຈ, ໃບຢັ້ງຢືນແມ່ນເຫດການທີ່ກວດສອບໄດ້, ແລະ ບໍ່ມີຫຍັງລັອກຂໍ້ມູນຂອງທ່ານໄວ້ກັບເຊີບເວີດຽວ.',
+  owner: 'ເຈົ້າຂອງ',
+  contributor: 'ຜູ້ປະກອບສ່ວນຫຼັກ',
+  core: 'ຫຼັກ',
+  loading: 'ກຳລັງຄົ້ນຫາໂປຣໄຟລ໌…',
+  copyNpub: 'ສຳເນົາ npub',
+  npubCopied: 'ສຳເນົາ npub ແລ້ວ.',
+  viewOnNostr: 'ເບິ່ງເທິງ Nostr',
+  website: 'bitos.space',
+  source: 'ລະຫັດແຫຼ່ງ',
+  donate: 'ບໍລິຈາກ',
+  sats: 'sats',
+  supportBody: 'BitOS ເປັນໂປຣແກຣມເປີດ ແລະ ເປັນເອກະລາດ. ທ່ານສາມາດສະໜັບສະໜູນຜູ້ດູແລໂດຍການສົ່ງ sats:',
+  lightningAddress: 'ທີ່ຢູ່ Lightning',
+  copyAddress: 'ສຳເນົາທີ່ຢູ່',
+  addressCopied: 'ສຳເນົາທີ່ຢູ່ Lightning ແລ້ວ.',
+  openWallet: 'ເປີດກະເປົາ',
+  lookingUp: 'ກຳລັງຄົ້ນຫາທີ່ຢູ່ Lightning ຂອງເຈົ້າຂອງຈາກຣີເລ…',
+  noAddress:
+    'ຍັງບໍ່ມີການເຜີຍແຜ່ທີ່ຢູ່ Lightning ຂອງເຈົ້າຂອງ. ທ່ານຍັງສາມາດ zap ເຂົາເຈົ້າເທິງ Nostr ໄດ້:',
+  zapOnNostr: 'Zap ເທິງ Nostr',
+  footer: '© 2026 BitOS · ສ້າງໂດຍ plebs, ເພື່ອ plebs',
+};

@@ -10,6 +10,7 @@ import {
 import { REQUEST_STATUS, ROLE } from '../../domain/school.js';
 import { t } from '../../services/i18n/index.js';
 import { icon } from '../components/icon.js';
+import { beeLogo } from '../components/logo.js';
 import { button, noteBox, spinner } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
 
@@ -79,7 +80,7 @@ export function renderJoin({ app, scope, state }) {
 
 function brand() {
   return el('span', { class: 'auth-brand' }, [
-    el('span', { class: 'auth-brand__mark', 'aria-hidden': 'true' }, '🐝'),
+    beeLogo(28, 'bee-float'),
     el('span', { class: 'auth-brand__name' }, t('common.brand.name')),
     el('span', { class: 'auth-brand__tag' }, t('common.brand.tag')),
   ]);

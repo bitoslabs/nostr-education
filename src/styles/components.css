@@ -2836,3 +2836,169 @@ button.chip:hover {
     height: 140px;
   }
 }
+
+/* ---------- Bee mascot logo (ui/components/logo.js) ---------- */
+.bee-svg {
+  flex-shrink: 0;
+  display: block;
+}
+
+.bee-svg .bee-wing {
+  transform-origin: 50% 50%;
+  animation: wing-flap 0.08s ease-in-out infinite alternate;
+}
+
+@keyframes wing-flap {
+  from {
+    transform: scaleY(1);
+  }
+  to {
+    transform: scaleY(0.3);
+  }
+}
+
+.bee-float {
+  animation: bee-float 3s ease-in-out infinite;
+}
+
+@keyframes bee-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-5deg);
+  }
+  50% {
+    transform: translateY(-8px) rotate(5deg);
+  }
+}
+
+.bee-fly {
+  animation: bee-fly 8s linear infinite;
+}
+
+@keyframes bee-fly {
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  25% {
+    transform: translate(20px, -15px) rotate(15deg);
+  }
+  50% {
+    transform: translate(40px, 5px) rotate(-10deg);
+  }
+  75% {
+    transform: translate(20px, -10px) rotate(20deg);
+  }
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+}
+
+[data-motion='reduced'] .bee-svg .bee-wing,
+[data-motion='reduced'] .bee-float,
+[data-motion='reduced'] .bee-fly {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bee-svg .bee-wing,
+  .bee-float,
+  .bee-fly {
+    animation: none;
+  }
+}
+
+/* ---------- About page ---------- */
+.about-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  padding: 8px 0 2px;
+}
+
+.about-hero .bee-svg {
+  filter: drop-shadow(0 0 24px rgba(247, 147, 26, 0.35));
+  margin-bottom: 8px;
+}
+
+.about-name {
+  margin: 0;
+  font-size: 1.6rem;
+}
+
+.about-tagline {
+  margin: 0;
+}
+
+.about-owner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  margin-top: 10px;
+}
+
+.about-owner__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.about-owner__body strong {
+  font-size: 0.95rem;
+}
+
+.about-owner__body span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.about-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.about-lead {
+  margin: 0;
+}
+
+.about-ln {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-inner);
+  min-width: 0;
+}
+
+.about-ln__label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.about-ln__addr {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.about-ln.is-loading .about-ln__addr {
+  color: var(--muted);
+}
+
+.about-foot {
+  text-align: center;
+  margin: 4px 0 24px;
+}

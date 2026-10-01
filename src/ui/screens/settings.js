@@ -85,7 +85,7 @@ function hubView(state, app) {
     el('span', { class: 'field-label' }, t('settings.support')),
     el('div', { class: 'list-divide' }, [
       plainRow('lucide:circle-help', '❓', t('settings.helpAndSupport'), () => app.stub(t('settings.helpComingSoon'))),
-      plainRow('lucide:info', 'ℹ', t('settings.about'), () => app.stub(t('settings.aboutVersion'))),
+      plainRow('lucide:info', 'ℹ', t('settings.about'), () => app.navigate('/about')),
     ]),
   ];
 }

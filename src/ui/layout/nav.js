@@ -6,6 +6,7 @@ import { identitySecondary } from '../../domain/identity.js';
 import { ROLE, normalizeRole } from '../../domain/school.js';
 import { t } from '../../services/i18n/index.js';
 import { icon } from '../components/icon.js';
+import { beeLogo } from '../components/logo.js';
 import { avatar, button } from '../components/primitives.js';
 
 const ROLE_ICON = Object.freeze({
@@ -52,24 +53,10 @@ export function renderNav({ state, app }) {
   ];
 
   return el('nav', { class: 'nav', 'aria-label': t('common.a11y.primaryNav') }, [
-    el('div', { class: 'brand' }, [
-      el('span', { 'aria-hidden': 'true' }, '🐝'),
-      el('span', {}, t('common.appName')),
-    ]),
+    el('div', { class: 'brand' }, [beeLogo(26, 'bee-float'), el('span', {}, t('common.appName'))]),
     button(`＋ ${t('common.a11y.newPost')}`, { variant: 'gold', className: 'navbtn--gold', onClick: () => app.openComposer() }),
     ...items.map((item) => navButton(item, state.route, app)),
     el('div', { class: 'navsep' }),
-    el(
-      'button',
-      {
-        class: 'navbtn',
-        type: 'button',
-        disabled: true,
-        'aria-disabled': 'true',
-        title: t('nav.comingSoon'),
-      },
-      [el('span', { class: 'navbtn__ico' }, icon('lucide:zap', { size: 18, fallback: '⚡' })), t('nav.bitz')],
-    ),
     el(
       'button',
       { class: 'navme', type: 'button', 'aria-label': t('common.a11y.profileSettings'), onClick: () => app.navigate('/settings') },

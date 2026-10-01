@@ -49,6 +49,7 @@ import { createOverlayHost } from './ui/components/overlay.js';
 import { createSignerPromptHost } from './ui/components/signer-prompt.js';
 import { createToastHost } from './ui/components/toast.js';
 import { createShell } from './ui/layout/shell.js';
+import { renderAbout } from './ui/screens/about.js';
 import {
   isAuthRoute,
   renderCreateAccount,
@@ -507,10 +508,17 @@ const screens = Object.freeze({
   '/verify/*': renderVerify,
   '/join': renderJoin,
   '/join/*': renderJoin,
+  '/about': renderAbout,
 });
 
 function isJoinRoute(path) {
   return path === '/join' || path.startsWith('/join/');
+}
+
+// Public static pages that do not require a session (reachable while signed
+// out, for example from a pitch or an onboarding link).
+function isPublicRoute(path) {
+  return path === '/about';
 }
 
 let activeScope = null;
@@ -518,7 +526,7 @@ let activeScope = null;
 function mount(render, path) {
   const state = store.getState();
 
-  if (!state.authed && !isAuthRoute(path) && !isJoinRoute(path)) {
+  if (!state.authed && !isAuthRoute(path) && !isJoinRoute(path) && !isPublicRoute(path)) {
     navigate('/welcome');
     return;
   }
