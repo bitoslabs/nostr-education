@@ -78,11 +78,22 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  width: 100%;
   padding: 4px 8px 16px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
   font-family: var(--display);
   font-weight: 700;
   font-size: 18px;
   flex-wrap: wrap;
+}
+
+.brand:hover {
+  opacity: 0.85;
 }
 
 .navbtn {

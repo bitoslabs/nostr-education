@@ -53,7 +53,16 @@ export function renderNav({ state, app }) {
   ];
 
   return el('nav', { class: 'nav', 'aria-label': t('common.a11y.primaryNav') }, [
-    el('div', { class: 'brand' }, [beeLogo(26, 'bee-float'), el('span', {}, t('common.appName'))]),
+    el(
+      'button',
+      {
+        class: 'brand',
+        type: 'button',
+        'aria-label': t('nav.home'),
+        onClick: () => app.navigate('/home'),
+      },
+      [beeLogo(26, 'bee-float'), el('span', {}, t('common.appName'))],
+    ),
     button(`＋ ${t('common.a11y.newPost')}`, { variant: 'gold', className: 'navbtn--gold', onClick: () => app.openComposer() }),
     ...items.map((item) => navButton(item, state.route, app)),
     el('div', { class: 'navsep' }),
