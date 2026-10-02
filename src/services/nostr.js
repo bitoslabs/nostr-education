@@ -5,6 +5,7 @@ import { BunkerSigner } from 'nostr-tools/nip46';
 
 export const DEFAULT_RELAYS = Object.freeze([
   'wss://nostr-01.yakihonne.com',
+  'wss://relay.bitos.space',
   'wss://relay.damus.io',
   'wss://nos.lol',
   'wss://relay.nostr.band',
