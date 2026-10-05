@@ -28,6 +28,8 @@ import {
   isValidScore,
   latestAssessmentRevision,
   latestVersion,
+  nextPendingSubmission,
+  pendingQueue,
   publishedClassrooms,
   reviewCounts,
   reviewQueue,
@@ -183,6 +185,24 @@ test('reviewQueue joins submissions to scoped homework and classrooms', () => {
   const queue = reviewQueue(submissions, homework, classrooms);
   assert.deepEqual(queue.map((entry) => entry.submission.id), ['s1', 's2']);
   assert.deepEqual(reviewCounts(queue), { pending: 1, graded: 1 });
+});
+
+test('pendingQueue is oldest-first and nextPendingSubmission advances through it', () => {
+  const queue = reviewQueue(
+    [
+      { id: 's3', homeworkId: 'hw1', classroomId: 'cls1', status: 'submitted', submittedAt: '2026-01-03T00:00:00Z' },
+      { id: 's1', homeworkId: 'hw1', classroomId: 'cls1', status: 'submitted', submittedAt: '2026-01-01T00:00:00Z' },
+      { id: 's2', homeworkId: 'hw1', classroomId: 'cls1', status: 'graded', submittedAt: '2026-01-02T00:00:00Z' },
+      { id: 's4', homeworkId: 'hw1', classroomId: 'cls1', status: 'submitted', submittedAt: '2026-01-04T00:00:00Z' },
+    ],
+    [{ id: 'hw1', classroomId: 'cls1', title: 'A1' }],
+    [{ id: 'cls1', name: 'Algebra' }],
+  );
+
+  assert.deepEqual(pendingQueue(queue).map((entry) => entry.submission.id), ['s1', 's3', 's4']);
+  assert.equal(nextPendingSubmission(queue, 's1'), 's3');
+  assert.equal(nextPendingSubmission(queue, 's4'), null);
+  assert.equal(nextPendingSubmission(queue, 's2'), 's1', 'a graded item falls back to the first pending');
 });
 
 test('gradebook helpers average graded work per class', () => {

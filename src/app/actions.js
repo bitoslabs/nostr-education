@@ -23,7 +23,7 @@ import {
 import { normalizeBlossomServer, uploadBlob } from '../services/blossom.js';
 import { wrapForRecipient } from '../services/giftwrap.js';
 import { RECORD_TYPES, applyRecord, toPublicRecord } from '../domain/records.js';
-import { CAPABILITY, createCapability } from '../domain/capability.js';
+import { CAPABILITY, createCapability, isCapabilityActive } from '../domain/capability.js';
 import { normalizeRubric, rubricMax, scoresComplete, scoresTotal } from '../domain/rubric.js';
 import { credentialPayload, credentialProofContent, revocationPayload } from '../domain/credential.js';
 import { ACTION, authorize } from '../domain/authorization.js';
@@ -160,6 +160,11 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     update({ gradebookClassId: gradebookClassId ?? null });
   }
 
+  // Inline review workspace: the submission currently open in the detail pane.
+  function setReviewSelection(reviewSelectedId) {
+    update({ reviewSelectedId: reviewSelectedId ?? null });
+  }
+
   async function copyText(text, label = t('common.actions.copied')) {
     try {
       await navigator.clipboard.writeText(String(text));
@@ -230,6 +235,42 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         ...enrolledAccountIds(current?.capabilities ?? [], classroom?.id),
       ].filter(Boolean)),
     ];
+  }
+
+  // Who may grade a submission: the homework author, the assigned class
+  // teacher, and the academy owner. Targeting only `createdBy` meant an assigned
+  // teacher never received work for homework the owner had posted. The
+  // submitter's own key is included so their other devices refetch their work.
+  function submissionRecipients(current, classroom, item) {
+    const academy = classroom ? findAcademyById(current.academies ?? {}, classroom.academyId) : null;
+    // Teachers assigned by a signed capability (joined through a link, or on a
+    // device that never saw the class record's teacherId) must be addressed too.
+    const assignedTeachers = (current?.capabilities ?? [])
+      .filter(
+        (cap) =>
+          cap?.kind === CAPABILITY.TEACHER_ASSIGNMENT &&
+          cap.classroomId === classroom?.id &&
+          isCapabilityActive(cap),
+      )
+      .map((cap) => cap.accountId);
+    return [
+      ...new Set(
+        [
+          item?.createdBy,
+          classroom?.teacherId,
+          academy?.ownerId,
+          current?.personaId,
+          ...assignedTeachers,
+        ].filter(Boolean),
+      ),
+    ];
+  }
+
+  // A score or revision reaches the learner and the grader's own other devices.
+  // Without the grader's own key the record is never addressed back to them, so
+  // a teacher who grades on one device cannot refetch the score on another.
+  function assessmentRecipients(current, submission) {
+    return [...new Set([submission?.studentId, current?.personaId].filter(Boolean))];
   }
 
   function normalizeInviteTarget(raw) {
@@ -2638,7 +2679,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       type: RECORD_TYPES.SUBMISSION_VERSION,
       id: versionRecord.id,
       payload: versionRecord,
-      recipients: [item.createdBy],
+      recipients: submissionRecipients(current, classroom, item),
       encrypted: true,
       head: headAddress('submission', submission.id, persona.id),
       title: t('actions.submitHomework'),
@@ -2747,7 +2788,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       type: RECORD_TYPES.ASSESSMENT_REVISION,
       id: revisionRecord.id,
       payload: revisionRecord,
-      recipients: [submission.studentId],
+      recipients: assessmentRecipients(current, submission),
       encrypted: true,
       head: headAddress('assessment', submission.id, persona.id),
       title: t('actions.sendScore'),
@@ -2829,7 +2870,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       type: RECORD_TYPES.ASSESSMENT_REVISION,
       id: revisionRecord.id,
       payload: revisionRecord,
-      recipients: [submission.studentId],
+      recipients: assessmentRecipients(current, submission),
       encrypted: true,
       head: headAddress('assessment', submission.id, persona.id),
       title: t('actions.requestRevision'),
@@ -3863,6 +3904,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     setOrgTab,
     setSettingsSection,
     setGradebookClass,
+    setReviewSelection,
     copyText,
     signInWithExtension,
     createAccount,

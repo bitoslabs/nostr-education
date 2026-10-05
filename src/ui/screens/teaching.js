@@ -5,12 +5,14 @@ import { getPersona } from '../../data/personas.js';
 import {
   HOMEWORK_STATUS,
   SUBMISSION_STATUS,
+  assessmentRevisionsFor,
   averagePercent,
   classroomsForAcademy,
   classroomsForTeacher,
   enrolledAccountIds,
   homeworkForClassroom,
   homeworkStatusBadge,
+  pendingQueue,
   reviewCounts,
   reviewQueue,
   scorePercent,
@@ -18,10 +20,12 @@ import {
   submissionStatusBadge,
   submissionsForClassroom,
   subjectById,
+  versionsFor,
 } from '../../domain/classroom.js';
 import { completionBadge, evaluateCompletion } from '../../domain/completion.js';
 import { ROLE } from '../../domain/school.js';
 import { t } from '../../services/i18n/index.js';
+import { renderGradeSubmission } from '../components/classroom-dialogs.js';
 import { button, dateMeta, emptyState, pageTitle, row, tabs, timeStamp } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
 import { learnerDisplayName } from '../private-name-view.js';
@@ -654,8 +658,13 @@ function homeworkAccordion(state, app, item, students, viewer, lookup) {
 }
 
 function assessmentBody({ tab, state, app, queue, getQuery, setQuery, getClass, setClass }) {
-  const wanted = tab === 'graded' ? SUBMISSION_STATUS.GRADED : SUBMISSION_STATUS.SUBMITTED;
-  const base = queue.filter((entry) => entry.submission.status === wanted);
+  // The review tab is an inline master–detail workspace (no modal); the graded
+  // tab stays a table of history.
+  if (tab !== 'graded') {
+    return reviewWorkspace({ state, app, queue, getQuery, setQuery, getClass, setClass });
+  }
+  const wanted = SUBMISSION_STATUS.GRADED;
+  const base = queue.filter((entry) => entry.submission.status === SUBMISSION_STATUS.GRADED);
   const classes = [
     ...new Map(
       base
@@ -796,6 +805,167 @@ function assessmentBody({ tab, state, app, queue, getQuery, setQuery, getClass, 
     el('div', { class: 'toolbar' }, [classSelect, search]),
     listWrap,
   ];
+}
+
+// Inline review workspace: the pending queue on the left, the selected
+// submission and its scoring form on the right. No modal, so a teacher can move
+// through a class with the list, Prev/Next, and "Save & next".
+function reviewWorkspace({ state, app, queue, getQuery, setQuery, getClass, setClass }) {
+  const persona = getPersona(state.val.personaId);
+  const pending = pendingQueue(queue);
+  const counts = reviewCounts(queue);
+  const done = counts.graded;
+  const total = counts.pending + counts.graded;
+
+  const classes = [
+    ...new Map(
+      pending
+        .filter((entry) => entry.classroom?.id)
+        .map((entry) => [entry.classroom.id, entry.classroom.name]),
+    ).entries(),
+  ];
+  const classSelect = el(
+    'select',
+    { 'aria-label': t('teaching.filterClass') },
+    [
+      el('option', { value: 'all', selected: getClass() === 'all' }, t('teaching.allClasses')),
+      ...classes.map(([id, name]) => el('option', { value: id, selected: id === getClass() }, name)),
+    ],
+  );
+  const search = el('input', {
+    type: 'search',
+    placeholder: t('teaching.assessmentSearch'),
+    'aria-label': t('teaching.assessmentSearch'),
+    value: getQuery(),
+  });
+
+  const summaryWrap = el('div', { class: 'statgrid' });
+  const listWrap = el('div', { class: 'review-list' });
+  const detailWrap = el('div', { class: 'review-detail' });
+  const split = el('div', { class: 'review-split' }, [listWrap, detailWrap]);
+
+  const matches = () => {
+    const needle = String(getQuery()).trim().toLowerCase();
+    return pending.filter((entry) => {
+      if (getClass() !== 'all' && entry.classroom?.id !== getClass()) return false;
+      if (!needle) return true;
+      const learner = getPersona(entry.submission.studentId);
+      return [
+        learnerDisplayName(state.val, persona, entry.submission.studentId),
+        learner.displayName,
+        entry.homework?.title,
+        entry.classroom?.name,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(needle));
+    });
+  };
+
+  const draw = () => {
+    const visible = matches();
+    const late = visible.filter((entry) => entry.submission.late).length;
+    summaryWrap.replaceChildren(
+      rosterStat(String(visible.length), t('teaching.statPending')),
+      rosterStat(String(late), t('teaching.statLate')),
+      rosterStat(String(new Set(visible.map((entry) => entry.classroom?.id)).size), t('teaching.statClasses')),
+      rosterStat(`${done}/${total}`, t('teaching.statGraded')),
+    );
+
+    const selectedId = visible.some((entry) => entry.submission.id === state.val.reviewSelectedId)
+      ? state.val.reviewSelectedId
+      : null;
+    split.classList.toggle('is-detail-open', Boolean(selectedId));
+    listWrap.replaceChildren(
+      ...(visible.length
+        ? visible.map((entry) =>
+            reviewListItem(state, persona, entry, entry.submission.id === selectedId, app),
+          )
+        : [emptyState(t('teaching.emptyReview'))]),
+    );
+
+    if (!selectedId) {
+      detailWrap.replaceChildren(emptyState(t('teaching.reviewPick')));
+      return;
+    }
+    const index = visible.findIndex((entry) => entry.submission.id === selectedId);
+    detailWrap.replaceChildren(reviewDetail({ state, app, persona, visible, index }));
+  };
+
+  classSelect.addEventListener('change', () => {
+    setClass(classSelect.value);
+    draw();
+  });
+  search.addEventListener('input', debounceDraw(() => {
+    setQuery(search.value);
+    draw();
+  }));
+  draw();
+
+  return [summaryWrap, el('div', { class: 'toolbar' }, [classSelect, search]), split];
+}
+
+function reviewListItem(state, persona, entry, selected, app) {
+  const submission = entry.submission;
+  const submitted = formatDate(submission.submittedAt ?? submission.submittedEventAt);
+  return el(
+    'button',
+    {
+      class: `review-item${selected ? ' is-on' : ''}`,
+      type: 'button',
+      'aria-current': selected ? 'true' : null,
+      onClick: () => app.setReviewSelection(submission.id),
+    },
+    [
+      el('span', { class: 'review-item__top' }, [
+        el('span', { class: 'review-item__name' }, learnerDisplayName(state.val, persona, submission.studentId)),
+        submission.late ? statusBadge(t('teaching.late'), 'warn') : null,
+      ]),
+      el(
+        'span',
+        { class: 'review-item__meta muted small' },
+        [entry.homework?.title, entry.classroom?.name].filter(Boolean).join(' · '),
+      ),
+      submitted ? el('span', { class: 'review-item__time muted small' }, submitted) : null,
+    ],
+  );
+}
+
+function reviewDetail({ state, app, persona, visible, index }) {
+  const entry = visible[index];
+  const submission = entry.submission;
+  const prev = index > 0 ? visible[index - 1].submission.id : null;
+  const next = index < visible.length - 1 ? visible[index + 1].submission.id : null;
+
+  const head = el('div', { class: 'review-detail__head' }, [
+    el(
+      'button',
+      {
+        class: 'icon-btn review-back',
+        type: 'button',
+        'aria-label': t('teaching.reviewBack'),
+        onClick: () => app.setReviewSelection(null),
+      },
+      '‹',
+    ),
+    button(t('teaching.prev'), { small: true, disabled: !prev, onClick: () => prev && app.setReviewSelection(prev) }),
+    el('span', { class: 'muted small' }, t('teaching.reviewPosition', { index: index + 1, total: visible.length })),
+    button(t('teaching.next'), { small: true, disabled: !next, onClick: () => next && app.setReviewSelection(next) }),
+  ]);
+
+  const form = renderGradeSubmission({
+    submission,
+    homeworkItem: entry.homework ?? { title: t('actions.homeworkFallback'), maxScore: submission.maxScore ?? 100 },
+    learnerName: learnerDisplayName(state.val, persona, submission.studentId),
+    versions: versionsFor(state.val.submissionVersions ?? [], submission.id),
+    revisions: assessmentRevisionsFor(state.val.assessmentRevisions ?? [], submission.id),
+    actions: app,
+    onOpenFile: (file) => app.openFileViewer(file),
+    nextSubmissionId: next,
+    onNext: (id) => app.setReviewSelection(id),
+    close: () => app.setReviewSelection(null),
+  });
+
+  return el('div', { class: 'review-detail__body' }, [head, form]);
 }
 
 function gradebookBody({ state, app, persona, getQuery, setQuery }) {

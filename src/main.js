@@ -140,6 +140,7 @@ const store = createStore({
   orgTab: 'overview',
   settingsSection: null,
   gradebookClassId: null,
+  reviewSelectedId: null,
   membership: MEMBERSHIP.NONE,
 });
 

@@ -308,6 +308,31 @@ export function reviewCounts(queue = []) {
   return { pending, graded };
 }
 
+function submissionTime(submission) {
+  const parsed = Date.parse(submission?.submittedAt ?? submission?.submittedEventAt ?? '');
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+// The grading backlog, oldest first, so a teacher clears a large class in the
+// order learners submitted instead of newest-first (which leaves early work
+// buried under later work).
+export function pendingQueue(queue = []) {
+  return queue
+    .filter((entry) => entry.submission?.status === SUBMISSION_STATUS.SUBMITTED)
+    .sort((left, right) => submissionTime(left.submission) - submissionTime(right.submission));
+}
+
+// The submission to open after the current one when the teacher taps
+// "Save & next". Falls back to the first pending item when the current one is no
+// longer pending (already graded or filtered out).
+export function nextPendingSubmission(queue = [], currentId = null) {
+  const pending = pendingQueue(queue);
+  if (!pending.length) return null;
+  const index = pending.findIndex((entry) => entry.submission.id === currentId);
+  if (index < 0) return pending[0].submission.id;
+  return pending[index + 1]?.submission.id ?? null;
+}
+
 export function submissionsForClassroom(submissions = [], classroomId) {
   return submissions.filter((submission) => submission.classroomId === classroomId);
 }

@@ -813,6 +813,8 @@ export function renderGradeSubmission({
   revisions = [],
   actions,
   onOpenFile,
+  nextSubmissionId = null,
+  onNext,
   close,
 }) {
   const error = errorLine();
@@ -870,7 +872,13 @@ export function renderGradeSubmission({
       ])
     : el('div', {}, [el('label', {}, t('teaching.scoreRange', { max: maxScore })), score]);
 
-  const saveScore = () => {
+  // After a successful save, advance to the next pending submission when the
+  // teacher asked for it; otherwise just close.
+  const finishSave = (advance) => {
+    if (advance && nextSubmissionId && onNext) onNext(nextSubmissionId);
+    else close();
+  };
+  const saveScore = (advance = false) => {
     if (usesRubric) {
       if (rubricInputs.some((input) => input.value === '')) {
         error.textContent = t('teaching.errScoreAllCriteria');
@@ -883,8 +891,11 @@ export function renderGradeSubmission({
         scores: sheet,
         feedback: feedback.value,
       });
-      if (ok) close();
-      else error.textContent = t('teaching.errRubricScores');
+      if (!ok) {
+        error.textContent = t('teaching.errRubricScores');
+        return;
+      }
+      finishSave(advance);
       return;
     }
     const ok = actions.gradeSubmission({
@@ -892,8 +903,11 @@ export function renderGradeSubmission({
       score: score.value,
       feedback: feedback.value,
     });
-    if (ok) close();
-    else error.textContent = t('teaching.errScoreRange', { max: maxScore });
+    if (!ok) {
+      error.textContent = t('teaching.errScoreRange', { max: maxScore });
+      return;
+    }
+    finishSave(advance);
   };
 
   const requestRevision = () => {
@@ -963,7 +977,13 @@ export function renderGradeSubmission({
     error,
     el('div', { class: 'dlg-foot' }, [
       button(t('teaching.requestRevision'), { onClick: requestRevision }),
-      button(t('teaching.saveScore'), { variant: 'gold', onClick: saveScore }),
+      nextSubmissionId
+        ? button(t('teaching.saveScore'), { onClick: () => saveScore(false) })
+        : null,
+      button(nextSubmissionId ? t('teaching.saveAndNext') : t('teaching.saveScore'), {
+        variant: 'gold',
+        onClick: () => saveScore(Boolean(nextSubmissionId)),
+      }),
     ]),
   ]);
 }

@@ -2660,6 +2660,86 @@ button.chip:hover {
   color: var(--accent);
 }
 
+/* ---------- inline review workspace (master–detail) ---------- */
+.review-split {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 72vh;
+  overflow: auto;
+}
+
+.review-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+.review-item:hover {
+  border-color: var(--border-hi);
+}
+
+.review-item.is-on {
+  border-color: var(--accent);
+  background: var(--bg-1);
+}
+
+.review-item__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.review-item__name {
+  font-weight: 600;
+}
+
+.review-detail {
+  min-width: 0;
+}
+
+.review-detail__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.review-back {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .review-split {
+    grid-template-columns: 1fr;
+  }
+
+  .review-split.is-detail-open .review-list {
+    display: none;
+  }
+
+  .review-back {
+    display: inline-flex;
+  }
+}
+
 /* ---------- filter toolbar ---------- */
 .toolbar {
   display: flex;

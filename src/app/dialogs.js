@@ -2,9 +2,14 @@ import { el } from '../core/dom.js';
 import { getPersona, getPersonaIds } from '../data/personas.js';
 import { SEED_CONTACTS } from '../data/seed.js';
 import {
+  SUBMISSION_STATUS,
   assessmentRevisionsFor,
   classroomById,
+  classroomsForAcademy,
+  classroomsForTeacher,
   isHomeworkOpen,
+  nextPendingSubmission,
+  reviewQueue,
   subjectById,
   submissionFor,
   subjectsForAcademy,
@@ -53,6 +58,19 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
   }
 
   const closeNamed = (name) => () => handles[name]?.close();
+
+  // The grading backlog visible to the signed-in teacher/owner, used to offer
+  // "Save & next" so a teacher works through a large class without closing and
+  // hunting for each row.
+  function scopedReviewQueue(state) {
+    const persona = getPersona(state.personaId);
+    const owned = state.academies?.[persona.id];
+    const classrooms =
+      persona.role === ROLE.OWNER && owned
+        ? classroomsForAcademy(state.classrooms ?? [], owned.id)
+        : classroomsForTeacher(state.classrooms ?? [], persona.id, state.capabilities ?? []);
+    return reviewQueue(state.submissions ?? [], state.homework ?? [], classrooms);
+  }
 
   function openSign(signId) {
     const item = store.getState().signQueue.find((entry) => entry.id === signId);
@@ -271,6 +289,10 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     const submission = (state.submissions ?? []).find((entry) => entry.id === submissionId);
     if (!submission) return null;
     const homeworkItem = (state.homework ?? []).find((entry) => entry.id === submission.homeworkId);
+    const nextSubmissionId =
+      submission.status === SUBMISSION_STATUS.SUBMITTED
+        ? nextPendingSubmission(scopedReviewQueue(state), submissionId)
+        : null;
     return openNamed('grade', {
       label: t('actions.scoreNamed', { name: submission.id }),
       content: renderGradeSubmission({
@@ -281,6 +303,11 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
         revisions: assessmentRevisionsFor(state.assessmentRevisions ?? [], submission.id),
         actions,
         onOpenFile: openFileViewer,
+        nextSubmissionId,
+        onNext: (id) => {
+          closeNamed('grade')();
+          openGradeSubmission(id);
+        },
         close: closeNamed('grade'),
       }),
     });
