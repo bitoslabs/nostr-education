@@ -11,6 +11,7 @@ import {
   normalizeRole,
   roleSpaceLabel,
   roleSpaceShort,
+  workspaceRole,
 } from '../src/domain/school.js';
 
 test('role spaces map per role', () => {
@@ -27,6 +28,42 @@ test('normalizeRole falls back to the learner workspace', () => {
   assert.equal(normalizeRole(null), ROLE.STUDENT);
   assert.equal(normalizeRole(undefined), ROLE.STUDENT);
   assert.equal(normalizeRole('principal'), ROLE.STUDENT);
+});
+
+test('workspaceRole derives the role the membership screen already shows', () => {
+  const student = { id: 'pk1', role: 'student' };
+  assert.equal(workspaceRole({ academies: {} }, student), ROLE.STUDENT);
+
+  // Owning an academy opens the organization workspace even if the persona's
+  // stored role lagged behind (for example an extension sign-in with no role).
+  assert.equal(
+    workspaceRole({ academies: { pk1: { id: 'org1', ownerId: 'pk1' } } }, student),
+    ROLE.OWNER,
+  );
+
+  // A teacher assignment synced onto this device must open the teaching
+  // workspace, matching the "Teacher" badge in Settings → Membership.
+  assert.equal(
+    workspaceRole(
+      { classrooms: [{ id: 'room1', teacherId: 'pk1' }] },
+      student,
+    ),
+    ROLE.TEACHER,
+  );
+  assert.equal(
+    workspaceRole(
+      {
+        capabilities: [
+          { kind: 'teacher-assignment', academyId: 'org1', accountId: 'pk1', status: 'active' },
+        ],
+      },
+      student,
+    ),
+    ROLE.TEACHER,
+  );
+
+  // A stored higher role is never downgraded.
+  assert.equal(workspaceRole({ academies: {} }, { id: 'pk1', role: 'owner' }), ROLE.OWNER);
 });
 
 test('enrollmentBadge reflects state', () => {

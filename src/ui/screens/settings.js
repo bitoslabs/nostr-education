@@ -412,7 +412,13 @@ function classPreviewRow(state, room) {
     el('span', { class: 'who' }, room.name),
     subject ? el('span', { class: 'ctx' }, subject.name) : null,
     el('span', { class: 'spacer' }),
-    teacher ? el('span', { class: 'muted small' }, t('settings.membership.classTeacher', { name: teacher.displayName })) : null,
+    teacher
+      ? el(
+          'span',
+          { class: 'muted small' },
+          t('settings.membership.classTeacher', { name: teacher.displayName || truncateNpub(teacher.npub) }),
+        )
+      : null,
   ]);
 }
 

@@ -1,3 +1,5 @@
+import { CAPABILITY, hasCapability } from './capability.js';
+
 export const ROLE = Object.freeze({
   STUDENT: 'student',
   TEACHER: 'teacher',
@@ -6,11 +8,46 @@ export const ROLE = Object.freeze({
 
 const ROLE_VALUES = new Set(Object.values(ROLE));
 
+const ROLE_RANK = Object.freeze({
+  [ROLE.STUDENT]: 0,
+  [ROLE.TEACHER]: 1,
+  [ROLE.OWNER]: 2,
+});
+
 // Role is display state that can be missing (for example an extension sign-in
 // that has not picked a workspace yet). Default to the learner workspace so
 // every role-driven label, icon, and screen resolves to something valid.
 export function normalizeRole(role) {
   return ROLE_VALUES.has(role) ? role : ROLE.STUDENT;
+}
+
+// Which workspace the role button / `/role` should open. `persona.role` is a
+// locally chosen default, so a returning owner or a teacher whose assignment
+// arrived from another device can be left in the learner workspace even though
+// Settings → Membership already reports the higher role. Derive the effective
+// role from state that proves it, keeping the highest role seen.
+export function workspaceRole(state, persona, at = Date.now()) {
+  const stored = normalizeRole(persona?.role);
+  const accountId = persona?.id ?? state?.personaId;
+  if (!accountId) return stored;
+
+  const ownsAcademy = Object.values(state?.academies ?? {}).some(
+    (academy) => academy?.ownerId === accountId,
+  );
+  if (ownsAcademy) return ROLE.OWNER;
+
+  const teaches =
+    (state?.classrooms ?? []).some((room) => room?.teacherId === accountId) ||
+    hasCapability(
+      state?.capabilities ?? [],
+      { kind: CAPABILITY.TEACHER_ASSIGNMENT, accountId },
+      at,
+    ) ||
+    (state?.academyMemberships ?? []).some(
+      (entry) => entry.accountId === accountId && entry.role === ROLE.TEACHER,
+    );
+
+  return teaches && ROLE_RANK[stored] < ROLE_RANK[ROLE.TEACHER] ? ROLE.TEACHER : stored;
 }
 
 const ROLE_SPACE = Object.freeze({

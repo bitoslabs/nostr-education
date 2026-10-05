@@ -1,13 +1,13 @@
 import { el } from '../../core/dom.js';
 import { getPersona } from '../../data/personas.js';
-import { normalizeRole } from '../../domain/school.js';
+import { workspaceRole } from '../../domain/school.js';
 import { t } from '../../services/i18n/index.js';
 import { icon } from '../components/icon.js';
 import { badgeCount } from './nav.js';
 
 export function renderBottomTabs({ state, app }) {
   const persona = getPersona(state.personaId);
-  const role = normalizeRole(persona.role);
+  const role = workspaceRole(state, persona);
   const badge = badgeCount(state);
   const items = [
     { route: '/home', label: t('nav.home'), icon: 'lucide:house', fallback: '◉' },

@@ -1,7 +1,7 @@
 import { el } from '../../core/dom.js';
 import { bindScreen } from '../../core/reactive.js';
 import { getPersona } from '../../data/personas.js';
-import { ROLE, normalizeRole } from '../../domain/school.js';
+import { ROLE, workspaceRole } from '../../domain/school.js';
 import { renderEducation } from './education.js';
 import { renderOrganization } from './organization.js';
 import { renderTeaching } from './teaching.js';
@@ -20,7 +20,7 @@ export function renderRole(ctx) {
   let mounted = null;
 
   return bindScreen(ctx.state, host, (snapshot) => {
-    const role = normalizeRole(getPersona(snapshot.personaId).role);
+    const role = workspaceRole(snapshot, getPersona(snapshot.personaId));
     if (role === mounted) return;
     mounted = role;
     host.replaceChildren(screenFor(ctx, role));

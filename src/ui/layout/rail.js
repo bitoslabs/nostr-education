@@ -7,7 +7,7 @@ import {
   classroomsForTeacher,
   homeworkForStudent,
 } from '../../domain/classroom.js';
-import { pendingRequestCount, ROLE, normalizeRole } from '../../domain/school.js';
+import { pendingRequestCount, ROLE, workspaceRole } from '../../domain/school.js';
 import { t } from '../../services/i18n/index.js';
 import { button, widget } from '../components/primitives.js';
 
@@ -18,7 +18,7 @@ function healthyRelays(relays) {
 
 export function renderRail({ state, app }) {
   const persona = getPersona(state.personaId);
-  const role = normalizeRole(persona.role);
+  const role = workspaceRole(state, persona);
   const relays = el('p', {}, healthyRelays(state.relays));
 
   if (role === ROLE.TEACHER) {

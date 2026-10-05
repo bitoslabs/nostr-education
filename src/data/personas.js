@@ -20,7 +20,13 @@ function placeholder(id) {
 
 export function registerPersona(profile) {
   if (!profile?.id) return null;
+  // Spread the profile first, then re-assert the computed defaults. Doing it the
+  // other way round lets an explicit `displayName: undefined` (extension and
+  // bare-nsec sign-ins register with no profile) clobber the fallback, which
+  // surfaced as untranslated `{name}` placeholders in the UI.
   const entry = Object.freeze({
+    ...profile,
+    id: profile.id,
     pubkey: profile.id,
     npub: profile.npub ?? profile.id,
     displayName: profile.displayName || placeholder(profile.id).displayName,
@@ -31,7 +37,6 @@ export function registerPersona(profile) {
     role: profile.role ?? null,
     verifiedAt: profile.verifiedAt ?? null,
     loaded: true,
-    ...profile,
   });
   registry.set(entry.id, entry);
   return entry;
