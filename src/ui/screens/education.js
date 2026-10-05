@@ -16,7 +16,8 @@ import {
 import { completionBadge, evaluateCompletion } from '../../domain/completion.js';
 import { MEMBERSHIP, REQUEST_STATUS, membershipBadge } from '../../domain/school.js';
 import { t } from '../../services/i18n/index.js';
-import { button, dateMeta, emptyState, fileChip, pageTitle, timeStamp } from '../components/primitives.js';
+import { button, dateMeta, emptyState, pageTitle, timeStamp } from '../components/primitives.js';
+import { fileLink } from '../components/file-viewer.js';
 import { statusBadge } from '../components/status-badge.js';
 import { learnerDisplayName } from '../private-name-view.js';
 
@@ -258,9 +259,7 @@ function homeworkRow(state, app, persona, item, lookup) {
       ? el(
           'div',
           { class: 'files' },
-          item.files.map((file) =>
-            el('a', { href: file.url, target: '_blank', rel: 'noreferrer' }, fileChip(file.name)),
-          ),
+          item.files.map((file) => fileLink(file, { onOpen: (picked) => app.openFileViewer?.(picked) })),
         )
       : null,
   ].filter(Boolean);

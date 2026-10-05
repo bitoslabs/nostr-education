@@ -254,6 +254,7 @@ export default {
   classNotReadyYet: 'ຫ້ອງຮຽນນີ້ຍັງຊິງຢູ່ — ເປີດລິ້ງອີກຄັ້ງໃນອີກຈັກຄູ່.',
   writeAnswerOrAttach: 'ຂຽນຄຳຕອບ, ເພີ່ມລິ້ງ, ຫຼື ແນບໄຟລ໌.',
   uploadFile: 'ແນບໄຟລ໌',
+  filePreview: 'ເບິ່ງໄຟລ໌',
   uploadingFile: 'ກຳລັງອັບໂຫຼດໄຟລ໌…',
   fileUploaded: 'ແນບໄຟລ໌ແລ້ວ.',
   fileUploadFailed: 'ອັບໂຫຼດໄຟລ໌ບໍ່ໄດ້.',

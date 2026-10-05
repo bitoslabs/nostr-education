@@ -14,6 +14,7 @@ import { normalizePolicy } from '../../domain/completion.js';
 import { buildScoreSheet, normalizeRubric, rubricMax, scoresTotal } from '../../domain/rubric.js';
 import { t } from '../../services/i18n/index.js';
 import { button, fileChip, noteBox } from './primitives.js';
+import { fileLink } from './file-viewer.js';
 import { dangerSection, formFoot, formSection } from './form-fields.js';
 import { inviteLinkPanel } from './invite-dialog.js';
 import { statusBadge } from './status-badge.js';
@@ -753,6 +754,7 @@ export function renderSubmissionView({
   versions = [],
   revisions = [],
   onGrade,
+  onOpenFile,
   close,
 }) {
   const token = submissionStatusBadge(submission);
@@ -781,9 +783,7 @@ export function renderSubmissionView({
       ? el(
           'div',
           { class: 'files' },
-          submission.files.map((file) =>
-            el('a', { href: file.url, target: '_blank', rel: 'noreferrer' }, fileChip(file.name)),
-          ),
+          submission.files.map((file) => fileLink(file, { onOpen: onOpenFile })),
         )
       : null,
     finalized.length ? el('h3', {}, t('teaching.assessmentHistory')) : null,
@@ -812,6 +812,7 @@ export function renderGradeSubmission({
   versions = [],
   revisions = [],
   actions,
+  onOpenFile,
   close,
 }) {
   const error = errorLine();
@@ -920,9 +921,11 @@ export function renderGradeSubmission({
         )
       : null,
     submission.files?.length
-      ? el('div', { class: 'files' }, submission.files.map((file) =>
-          el('a', { href: file.url, target: '_blank', rel: 'noreferrer' }, fileChip(file.name)),
-        ))
+      ? el(
+          'div',
+          { class: 'files' },
+          submission.files.map((file) => fileLink(file, { onOpen: onOpenFile })),
+        )
       : null,
     versions.length > 1
       ? el(

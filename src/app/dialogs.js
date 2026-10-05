@@ -28,6 +28,7 @@ import {
   renderSubmitHomework,
 } from '../ui/components/classroom-dialogs.js';
 import { renderComposer } from '../ui/components/composer.js';
+import { renderFileViewer } from '../ui/components/file-viewer.js';
 import { inviteLinkPanel, renderInviteLink, renderInviteTeacher } from '../ui/components/invite-dialog.js';
 import { noteBox } from '../ui/components/primitives.js';
 import { renderCropper } from '../ui/components/image-cropper.js';
@@ -279,6 +280,7 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
         versions: versionsFor(state.submissionVersions ?? [], submission.id),
         revisions: assessmentRevisionsFor(state.assessmentRevisions ?? [], submission.id),
         actions,
+        onOpenFile: openFileViewer,
         close: closeNamed('grade'),
       }),
     });
@@ -299,6 +301,7 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
         learnerName: learnerDisplayName(state, getPersona(state.personaId), submission.studentId),
         versions: versionsFor(state.submissionVersions ?? [], submission.id),
         revisions: assessmentRevisionsFor(state.assessmentRevisions ?? [], submission.id),
+        onOpenFile: openFileViewer,
         onGrade: () => {
           closeNamed('view-submission')();
           openGradeSubmission(submissionId);
@@ -339,6 +342,15 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     });
   }
 
+  function openFileViewer(file) {
+    if (!file?.url) return null;
+    return openNamed('file-viewer', {
+      kind: 'drawer-wide',
+      label: String(file.name ?? t('actions.filePreview')),
+      content: renderFileViewer({ file, close: closeNamed('file-viewer') }),
+    });
+  }
+
   function openComposer() {
     return openNamed('composer', {
       label: t('common.a11y.newPost'),
@@ -374,5 +386,6 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     openSubmitHomework,
     openGradeSubmission,
     openViewSubmission,
+    openFileViewer,
   };
 }

@@ -254,6 +254,7 @@ export default {
   classNotReadyYet: 'This class is still syncing — open the link again in a moment.',
   writeAnswerOrAttach: 'Write an answer, add a link, or attach a file.',
   uploadFile: 'Attach file',
+  filePreview: 'File preview',
   uploadingFile: 'Uploading file…',
   fileUploaded: 'File attached.',
   fileUploadFailed: 'Could not upload the file.',
