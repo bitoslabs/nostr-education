@@ -37,7 +37,7 @@ Under [NIP-01](https://github.com/nostr-protocol/nips/blob/master/01.md), regula
 | Assign homework, submit work, request revision | None | Student-specific education records and files are private. |
 | Record test score, grade, or grade correction | None | Grades and evidence are private. |
 | Recommend or approve completion | None | Internal decision and evidence remain private. |
-| Publish general academy news | Optional `kind:1` | Public text approved by owner. |
+| Publish general academy news | Optional `kind:1` (`#t: bitos-education`) | Public text approved by owner. |
 | Publish academy/staff profile | Optional `kind:0` | Only public identity fields. |
 | Issue a public badge | Optional `kind:30009` and `kind:8` | Only if badge visibility is explicitly chosen. |
 | Issue formal completion credential | **No NIP kind chosen** | Define credential format, holder control, issuer authority, status, and verification first. |
@@ -71,6 +71,7 @@ The prototype publishes only the events below. Everything else stays local or is
 | Published event | Kind | Payload |
 | --- | --- | --- |
 | Academy record | `30078` (`#t: bitos-education`) | name, type, time zone, about, picture, handle, `orgPubkey` |
+| Public note | `1` (`#t: bitos-education`) | short public text only; no roster, individual progress, or private class relationship |
 | Subject record | `30078` | name, code |
 | Classroom record | `30078` | name, term, status, `teacherId`, `subjectId`, completion policy — `studentIds` stripped by `toPublicRecord` |
 | Academy profile | `0` | approved public profile fields (name, about, picture, nip05) |

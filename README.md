@@ -7,6 +7,8 @@ and records are published to relays.
 Design context lives in [`docs/`](./docs) (index: [`docs/README.md`](./docs/README.md)):
 
 - [`docs/school-system.md`](./docs/school-system.md) — **product contract**; source of truth for scope
+- [`docs/product-roadmap.md`](./docs/product-roadmap.md) — full-system roadmap for education, social,
+  messaging, notifications, wallet/zaps, production infrastructure, and future releases
 - [`docs/chat.md`](./docs/chat.md) — earlier exploration: social-shell UI concept
 - [`docs/idea.md`](./docs/idea.md) — earlier exploration: Nostr UX layer and UNIQ handles
 - [`docs/idea-prototype.md`](./docs/idea-prototype.md) — usability test guide

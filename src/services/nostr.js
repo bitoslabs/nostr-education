@@ -1,4 +1,4 @@
-import { finalizeEvent, generateSecretKey, getPublicKey, verifyEvent } from 'nostr-tools/pure';
+import { finalizeEvent, generateSecretKey, getEventHash, getPublicKey, verifyEvent } from 'nostr-tools/pure';
 import { decode, npubEncode, nsecEncode } from 'nostr-tools/nip19';
 import { decrypt as nip44Decrypt, encrypt as nip44Encrypt, getConversationKey } from 'nostr-tools/nip44';
 import { BunkerSigner } from 'nostr-tools/nip46';
@@ -14,12 +14,22 @@ export const DEFAULT_RELAYS = Object.freeze([
 export const KIND = Object.freeze({
   PROFILE: 0,
   NOTE: 1,
+  // NIP-02 contact list (follow graph).
+  CONTACT: 3,
+  // NIP-09 deletion request; NIP-18 repost; NIP-25 reaction.
+  DELETE: 5,
+  REPOST: 6,
+  REACTION: 7,
   // NIP-78: kind 78 is a regular event (append-only), kind 30078 is addressable
   // (latest value wins by `d`). Immutable coursework history uses 78; mutable
   // heads use 30078.
   APP_DATA_HISTORY: 78,
   APP_DATA: 30078,
   CREDENTIAL: 30080,
+  // NIP-13 proof-of-work is a `nonce` tag on any event, not its own kind.
+  // NIP-57: zap request (9734) and zap receipt (9735), relay/LN published.
+  ZAP_REQUEST: 9734,
+  ZAP: 9735,
 });
 
 export function generateKeyPair() {
@@ -167,4 +177,4 @@ export function verify(event) {
   return verifyEvent(event);
 }
 
-export { finalizeEvent, generateSecretKey, getPublicKey };
+export { finalizeEvent, generateSecretKey, getPublicKey, getEventHash };

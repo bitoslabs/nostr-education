@@ -22,6 +22,8 @@ export const DEFAULT_FLAGS = Object.freeze({
   oled: false,
   reduceMotion: false,
   compact: false,
+  showEventIds: true,
+  showPowBadges: true,
 });
 
 function safeStorage() {
@@ -117,6 +119,8 @@ export function createThemeService({
     root.dataset.oled = state.flags.oled ? 'true' : 'false';
     root.dataset.motion = state.flags.reduceMotion ? 'reduced' : 'normal';
     root.dataset.density = state.flags.compact ? 'compact' : 'cozy';
+    root.dataset.showEventIds = state.flags.showEventIds ? 'true' : 'false';
+    root.dataset.showPow = state.flags.showPowBadges ? 'true' : 'false';
     root.style.setProperty('--accent', token.value);
     root.style.setProperty('--accent-hi', token.hi);
     root.style.setProperty('--accent-ink', token.ink);

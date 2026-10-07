@@ -5,6 +5,8 @@ import {
   filterFeed,
   forYouRank,
   feedContext,
+  feedEventFromNote,
+  threadEventFromNote,
   isActionNeededFor,
   isVisible,
   nextActions,
@@ -299,4 +301,86 @@ test('mutes drop a muted actor from For you but keep Latest and required tasks',
   assert.deepEqual(forYou.map((event) => event.id), ['task', 'm2']);
   const latest = filterFeed(events, { personaId: 'alice', tab: 'latest', context });
   assert.deepEqual(latest.map((event) => event.id), ['task', 'm1', 'm2']);
+});
+
+test('feedEventFromNote projects top-level kind:1 notes and skips replies', () => {
+  const now = Date.UTC(2026, 0, 2, 0, 0, 0);
+  const note = {
+    id: 'n1',
+    pubkey: 'pk1',
+    created_at: Math.floor(now / 1000) - 3600,
+    tags: [],
+    content: '  Hello relays.  ',
+  };
+  const mapped = feedEventFromNote(note, now);
+  assert.equal(mapped.id, 'n1');
+  assert.equal(mapped.type, 'social');
+  assert.equal(mapped.author, 'pk1');
+  assert.equal(mapped.audience, 'all');
+  assert.equal(mapped.text, 'Hello relays.');
+  assert.equal(mapped.time, '1h');
+  assert.equal(mapped.occurredAt, new Date(note.created_at * 1000).toISOString());
+  assert.deepEqual(mapped.counts, { likes: 0, reposts: 0, bitz: 0, replies: 0 });
+
+  // A reply carries an `e` tag and belongs to threads, not the feed.
+  assert.equal(feedEventFromNote({ ...note, tags: [['e', 'parent']] }, now), null);
+  // Empty content and malformed events are dropped.
+  assert.equal(feedEventFromNote({ ...note, content: '   ' }, now), null);
+  assert.equal(feedEventFromNote({ pubkey: 'pk1' }, now), null);
+});
+
+test('feedEventFromNote lifts NIP-92 imeta media into files and strips the URLs from text', () => {
+  const note = {
+    id: 'n2',
+    pubkey: 'pk1',
+    created_at: 1_700_000_000,
+    tags: [
+      ['t', 'bitos-education'],
+      ['imeta', 'url https://cdn.example/a.png', 'm image/png', 'alt diagram'],
+      ['imeta', 'url https://cdn.example/b.gif', 'm image/gif'],
+    ],
+    content: 'Look at this\n\nhttps://cdn.example/a.png\n\nhttps://cdn.example/b.gif',
+  };
+  const mapped = feedEventFromNote(note);
+  assert.equal(mapped.text, 'Look at this');
+  assert.deepEqual(mapped.files, [
+    { url: 'https://cdn.example/a.png', type: 'image/png', name: 'diagram' },
+    { url: 'https://cdn.example/b.gif', type: 'image/gif', name: 'b.gif' },
+  ]);
+});
+
+test('feedEventFromNote keeps a media-only note and still drops replies', () => {
+  const mediaOnly = {
+    id: 'n3',
+    pubkey: 'pk1',
+    created_at: 1_700_000_000,
+    tags: [['imeta', 'url https://cdn.example/c.png', 'm image/png']],
+    content: 'https://cdn.example/c.png',
+  };
+  const mapped = feedEventFromNote(mediaOnly);
+  assert.equal(mapped.text, '');
+  assert.equal(mapped.files.length, 1);
+
+  const reply = { ...mediaOnly, id: 'n4', tags: [...mediaOnly.tags, ['e', 'parent']] };
+  assert.equal(feedEventFromNote(reply), null);
+});
+
+test('threadEventFromNote keeps replies and records the event it answers', () => {
+  const reply = {
+    id: 'r1',
+    pubkey: 'pk2',
+    kind: 1,
+    created_at: 1_700_000_100,
+    tags: [
+      ['e', 'root1', '', 'root'],
+      ['e', 'parent1', '', 'reply'],
+      ['p', 'pk1'],
+    ],
+    content: 'Nice note!',
+  };
+  assert.equal(feedEventFromNote(reply), null); // replies are not feed items
+  const mapped = threadEventFromNote(reply);
+  assert.equal(mapped.id, 'r1');
+  assert.equal(mapped.text, 'Nice note!');
+  assert.equal(mapped.replyTo, 'root1');
 });

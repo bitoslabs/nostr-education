@@ -10,20 +10,23 @@ import {
   isActionNeededFor,
   nextActions,
 } from '../../domain/feed.js';
+import { LOW_POW_THRESHOLD } from '../../domain/prefs.js';
 import { t } from '../../services/i18n/index.js';
 import { eventCard } from '../components/event-card.js';
 import { button, emptyState, row, tabs } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
 
-const { section, h1, h3, p, div } = van.tags;
+const { section, header, h1, h3, p, div } = van.tags;
 
 export function renderHome({ app, state }) {
   return section(
     { class: 'screen' },
-    h1(t('home.title')),
+    header({ class: 'page-head' }, [
+      div({ class: 'page-head__row' }, h1({ class: 'page-title' }, t('home.title'))),
+      () => tabs(FEED_TABS, state.val.feedTab, (id) => app.setFeedTab(id), { label: t('home.feed') }),
+    ]),
     () => createdBanner(state.val, getPersona(state.val.personaId), app),
     () => nextActionsSection(state.val, app),
-    () => tabs(FEED_TABS, state.val.feedTab, (id) => app.setFeedTab(id), { label: t('home.feed') }),
     () => feedList(state.val, app),
   );
 }
@@ -107,7 +110,7 @@ function taskControls(task, app) {
 
 function feedList(state, app) {
   const persona = getPersona(state.personaId);
-  const events = filterFeed(state.events, {
+  const filtered = filterFeed(state.events, {
     personaId: state.personaId,
     tab: state.feedTab,
     following: state.following[state.personaId] ?? [],
@@ -116,12 +119,20 @@ function feedList(state, app) {
     // mutes — derived server-style from state, never from client filters.
     context: feedContext(state, persona),
   });
+  // Optional low-PoW filter: hide notes below the threshold when the privacy
+  // preference is on. Records and other card types are never filtered.
+  const refuseLowPow = Boolean(state.prefs?.privacy?.refuseLowPow);
+  const events = refuseLowPow
+    ? filtered.filter((event) => !(event.type === 'social' && (event.pow ?? 0) < LOW_POW_THRESHOLD))
+    : filtered;
+  const showReactions = state.prefs?.zap?.nonZapReactions !== false;
 
   const cards = events.map((event) => {
     const node = eventCard(event, {
       persona,
       actions: app,
       enrollments: state.enrollRequests,
+      showReactions,
       onDismiss: isActionNeededFor(event, state.personaId)
         ? null
         : () => app.dismissFeedEvent(eventKeyOf(event)),
@@ -132,11 +143,26 @@ function feedList(state, app) {
     node.addEventListener('click', () => app.readFeedEvent(eventKeyOf(event)));
     return node;
   });
-  return div(
-    { class: 'feed' },
-    ...(cards.length
-      ? cards
-      : [emptyState(state.events.length ? t('home.emptyFeedTab') : t('home.emptyFeed'))]),
+  const body = cards.length
+    ? cards
+    : state.events.length || state.feedStatus === 'ready'
+      ? [emptyState(state.events.length ? t('home.emptyFeedTab') : t('home.emptyFeed'))]
+      : feedSkeleton();
+  return div({ class: 'feed' }, ...body);
+}
+
+// Placeholder cards shown only while the first relay page is in flight and no
+// cached notes exist, so the feed never flashes an empty state.
+function feedSkeleton(count = 4) {
+  return Array.from({ length: count }, () =>
+    el('article', { class: 'card feed-skeleton' }, [
+      el('span', { class: 'skel skel--ava' }),
+      el('div', { class: 'skel-body' }, [
+        el('span', { class: 'skel skel--line skel--short' }),
+        el('span', { class: 'skel skel--line' }),
+        el('span', { class: 'skel skel--line skel--mid' }),
+      ]),
+    ]),
   );
 }
 

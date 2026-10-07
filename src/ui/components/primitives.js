@@ -116,8 +116,17 @@ export function emptyState(message) {
   return el('p', { class: 'muted small' }, message);
 }
 
-export function pageTitle(text) {
-  return el('h1', {}, text);
+// Standard page header used by every screen: title on the left, optional
+// actions on the right, optional tab row underneath (docs/ui.html layout).
+export function pageTitle(text, { actions, tabs } = {}) {
+  const actionList = Array.isArray(actions) ? actions.filter(Boolean) : actions ? [actions] : [];
+  return el('header', { class: 'page-head' }, [
+    el('div', { class: 'page-head__row' }, [
+      el('h1', { class: 'page-title' }, text),
+      actionList.length ? el('div', { class: 'page-head__actions' }, actionList) : null,
+    ]),
+    tabs ? el('div', { class: 'page-tabs' }, Array.isArray(tabs) ? tabs.filter(Boolean) : tabs) : null,
+  ]);
 }
 
 // A single labelled timestamp, e.g. "Submitted Sep 30, 2026". Accepts ISO

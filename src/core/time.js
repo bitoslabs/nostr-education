@@ -14,6 +14,25 @@ function toDate(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+// Compact relative time for lists: "now", "5m", "3h", "2d", then a date.
+export function formatRelative(value, now = Date.now()) {
+  const date = toDate(value);
+  if (!date) return null;
+  const delta = now - date.getTime();
+  const abs = Math.abs(delta);
+  const MIN = 60_000;
+  const HOUR = 3_600_000;
+  const DAY = 86_400_000;
+  const WEEK = 604_800_000;
+  const future = delta < 0;
+  if (abs < MIN) return 'now';
+  const unit = (n, suffix) => (future ? `in ${n}${suffix}` : `${n}${suffix}`);
+  if (abs < HOUR) return unit(Math.round(abs / MIN), 'm');
+  if (abs < DAY) return unit(Math.round(abs / HOUR), 'h');
+  if (abs < WEEK) return unit(Math.round(abs / DAY), 'd');
+  return formatDate(value);
+}
+
 export function formatDate(value) {
   const date = toDate(value);
   if (!date) return null;

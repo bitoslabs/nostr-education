@@ -8,9 +8,12 @@ import {
   encodeNpub,
   extensionSigner,
   generateKeyPair,
+  getEventHash,
   localSigner,
   publicKeyFromSecret,
   encodeNsec,
+  verify,
+  DEFAULT_RELAYS,
 } from '../services/nostr.js';
 import {
   APP_TAG,
@@ -21,13 +24,15 @@ import {
   recordTags,
 } from '../services/records.js';
 import { normalizeBlossomServer, uploadBlob } from '../services/blossom.js';
-import { wrapForRecipient } from '../services/giftwrap.js';
+import { RECORD_RUMOR_KIND, wrapForRecipient } from '../services/giftwrap.js';
 import { RECORD_TYPES, applyRecord, toPublicRecord } from '../domain/records.js';
 import { CAPABILITY, createCapability, isCapabilityActive } from '../domain/capability.js';
 import { normalizeRubric, rubricMax, scoresComplete, scoresTotal } from '../domain/rubric.js';
 import { credentialPayload, credentialProofContent, revocationPayload } from '../domain/credential.js';
 import { ACTION, authorize } from '../domain/authorization.js';
-import { clearState, loadOrgSecret, saveOrgSecret, saveSecretKey } from '../services/storage.js';
+import { clearFeedCache, clearState, loadOrgSecret, saveOrgSecret, saveSecretKey } from '../services/storage.js';
+import { clearGifCache } from '../services/giphy.js';
+import { clearIconCache } from '../services/iconify.js';
 import {
   ACADEMY_TYPES,
   INVITE_STATUS,
@@ -59,9 +64,39 @@ import {
 } from '../domain/classroom.js';
 import { evaluateCompletion, normalizePolicy } from '../domain/completion.js';
 import { DELIVERY_STATE } from '../domain/delivery.js';
+import { eventKeyOf, feedEventFromNote, threadEventFromNote } from '../domain/feed.js';
+import {
+  CONVERSATION_STATUS,
+  MESSAGE_STATE,
+  conversationById,
+  conversationWith,
+  conversationsForAccount,
+  incomingMessageFromEvent,
+  mergeIncomingMessage,
+  normalizeConversation,
+} from '../domain/messaging.js';
+import {
+  mergeSocialNotifications,
+  notificationFromEngagement,
+  notificationFromZap,
+  socialNotificationsFor,
+  workflowNotifications,
+} from '../domain/notifications.js';
+import { ZAP_DIRECTION, ZAP_RECEIPT_KIND, ZAP_STATUS, formatSats, mergeZapReceipt, normalizeZap, sortZaps, upsertZap, zapFromReceipt, zapRequestTags, zapsForAccount } from '../domain/wallet.js';
+import { fetchPayRequest, lnurlPayUrl, requestZapInvoice } from '../services/lnurl.js';
 import { normalizeHandle, validateHandle } from '../domain/handle.js';
 import { truncateNpub } from '../domain/identity.js';
 import { normalizeMode } from '../domain/mode.js';
+import {
+  allowsIncomingMessage,
+  defaultPow as defaultPowPref,
+  setNetwork as setNetworkPrefs,
+  setPrivacy as setPrivacyPrefs,
+  setSubscription as setSubscriptionPrefs,
+  setZap as setZapPrefs,
+  zapAmounts as zapAmountsPref,
+} from '../domain/prefs.js';
+import { REACTION_LIKE, leadingZeroBits, reactionTags, replyTags, repostTags } from '../domain/social.js';
 import { normalizePrivateName, formatPrivateName, validatePrivateName } from '../domain/private-name.js';
 import { normalizeUrl, parseProfileMeta, profileContent } from '../domain/profile.js';
 import {
@@ -87,6 +122,9 @@ import {
 import { t, availableLocales, setLocale as setI18nLocale } from '../services/i18n/index.js';
 
 let sequence = 0;
+
+// How many of an author's public notes the profile page loads per visit.
+const PROFILE_NOTE_LIMIT = 20;
 
 function inviteRoleKey(role) {
   if (role === ROLE.TEACHER) return 'common.inviteRole.teacher';
@@ -142,6 +180,10 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
 
   function setFeedTab(feedTab) {
     update({ feedTab });
+  }
+
+  function setNotificationTab(notificationTab) {
+    update({ notificationTab });
   }
 
   function setRoleTab(roleTab) {
@@ -833,6 +875,43 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     return next;
   }
 
+  // Local preferences (privacy / zap / network). Stored in app state so every
+  // observer re-renders, and persisted by services/storage.js.
+  function updatePrefs(section, patch = {}) {
+    const current = state().prefs;
+    const next =
+      section === 'privacy'
+        ? setPrivacyPrefs(current, patch)
+        : section === 'zap'
+          ? setZapPrefs(current, patch)
+          : section === 'network'
+            ? setNetworkPrefs(current, patch)
+            : current;
+    update({ prefs: next });
+    return next;
+  }
+
+  function toggleSubscription(kind, enabled) {
+    update({ prefs: setSubscriptionPrefs(state().prefs, kind, enabled) });
+  }
+
+  function zapPresets() {
+    return zapAmountsPref(state().prefs);
+  }
+
+  function defaultPow() {
+    return defaultPowPref(state().prefs);
+  }
+
+  // Drops local caches (feed paint, Giphy, and the icon cache) without touching
+  // keys, records, or any signed data. Safe to run at any time.
+  async function clearCache() {
+    clearFeedCache();
+    clearGifCache();
+    await clearIconCache().catch(() => {});
+    toast(t('actions.cacheCleared'), 'ok');
+  }
+
   function fetchProfile(targetId) {
     const me = targetId ?? state().accountId;
     if (!me) return Promise.resolve(null);
@@ -937,6 +1016,203 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     });
   }
 
+  // Open a profile page for any npub/hex/nprofile reference. The public key
+  // travels in the route, so a profile is shareable as a plain hash link.
+  function openProfile(reference) {
+    const pubkey = recipientPubkey(reference);
+    if (!pubkey) {
+      toast(t('profile.invalid'), 'warn');
+      return null;
+    }
+    const ref = encodeNpub(pubkey);
+    if (state().route === `/profile/${ref}`) {
+      store.setState({});
+      return ref;
+    }
+    navigate(`/profile/${ref}`);
+    return ref;
+  }
+
+  const emptyTimeline = (pubkey = null, status = 'idle') => ({
+    pubkey,
+    status,
+    events: [],
+    zaps: [],
+    zapsStatus: 'idle',
+    likes: [],
+    likesStatus: 'idle',
+  });
+
+  // The public notes and replies an author published, for the profile page.
+  // Read-only and page-scoped: they live in `state.profileTimeline`, never in
+  // `state.events`, so browsing a profile cannot re-rank or pollute For-you /
+  // Latest — while the shared engagement actions still resolve them by id.
+  // One author query feeds Notes, Replies, and Media (the card carries
+  // `replyTo`, and files ride along), so those tabs need no extra round-trip.
+  function loadProfileNotes(reference) {
+    const pubkey = recipientPubkey(reference);
+    if (!pubkey) {
+      update({ profileTimeline: emptyTimeline() });
+      return Promise.resolve([]);
+    }
+    const items = [];
+    const seen = new Set();
+    // Only the newest visit owns the slice: a slow query for a profile the
+    // user already left must not overwrite the profile they are viewing.
+    const owns = () => state().profileTimeline?.pubkey === pubkey;
+    const commit = (status) => {
+      if (!owns()) return;
+      const events = [...items].sort(
+        (left, right) => Date.parse(right.occurredAt ?? '') - Date.parse(left.occurredAt ?? ''),
+      );
+      update({ profileTimeline: { ...state().profileTimeline, events, status } });
+    };
+    update({ profileTimeline: emptyTimeline(pubkey, 'loading') });
+    return new Promise((resolve) => {
+      let settled = false;
+      let sub = null;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        sub?.close?.();
+        commit('ready');
+        resolve([...items]);
+      };
+      const timer = setTimeout(finish, 7000);
+      sub = relay.subscribe([{ kinds: [KIND.NOTE], authors: [pubkey], limit: PROFILE_NOTE_LIMIT }], {
+        onEvent: (event) => {
+          if (event.pubkey !== pubkey || seen.has(event.id)) return;
+          // Keep replies too (`allowReply`); the Replies tab filters on `replyTo`.
+          const mapped = threadEventFromNote(event);
+          if (!mapped) return;
+          seen.add(event.id);
+          items.push(mapped);
+          commit('loading');
+        },
+        onEose: finish,
+      });
+    });
+  }
+
+  // Zaps the author received (NIP-57 receipts addressed to them). Reused by the
+  // Zaps tab and the "Sats received" stat; loaded lazily on first tab open.
+  function loadProfileZaps(reference) {
+    const pubkey = recipientPubkey(reference);
+    if (!pubkey || !state().profileTimeline || state().profileTimeline.pubkey !== pubkey) {
+      return Promise.resolve([]);
+    }
+    const owns = () => state().profileTimeline?.pubkey === pubkey;
+    const zaps = [];
+    const seen = new Set();
+    const commit = (status) => {
+      if (!owns()) return;
+      update({ profileTimeline: { ...state().profileTimeline, zaps: sortZaps(zaps), zapsStatus: status } });
+    };
+    commit('loading');
+    return new Promise((resolve) => {
+      let settled = false;
+      let sub = null;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        sub?.close?.();
+        commit('ready');
+        resolve([...zaps]);
+      };
+      const timer = setTimeout(finish, 7000);
+      sub = relay.subscribe([{ kinds: [KIND.ZAP], '#p': [pubkey], limit: 50 }], {
+        onEvent: (event) => {
+          if (seen.has(event.id)) return;
+          const zap = zapFromReceipt(event, pubkey);
+          if (!zap || zap.direction !== ZAP_DIRECTION.IN) return;
+          seen.add(event.id);
+          zaps.push(zap);
+          commit('loading');
+        },
+        onEose: finish,
+      });
+    });
+  }
+
+  // Notes the author liked: their kind:7 reactions, then the referenced notes.
+  // Two phases in one visit; loaded lazily on first open of the Likes tab.
+  function loadProfileLikes(reference) {
+    const pubkey = recipientPubkey(reference);
+    if (!pubkey || !state().profileTimeline || state().profileTimeline.pubkey !== pubkey) {
+      return Promise.resolve([]);
+    }
+    const owns = () => state().profileTimeline?.pubkey === pubkey;
+    const targetIds = new Set();
+    const liked = [];
+    const seen = new Set();
+    const commit = (status) => {
+      if (!owns()) return;
+      const events = [...liked].sort(
+        (left, right) => Date.parse(right.occurredAt ?? '') - Date.parse(left.occurredAt ?? ''),
+      );
+      update({ profileTimeline: { ...state().profileTimeline, likes: events, likesStatus: status } });
+    };
+    commit('loading');
+    return new Promise((resolve) => {
+      let settled = false;
+      let reactionsDone = false;
+      let notesDone = false;
+      let reactSub = null;
+      let notesSub = null;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reactSub?.close?.();
+        notesSub?.close?.();
+        commit('ready');
+        resolve([...liked]);
+      };
+      const timer = setTimeout(() => {
+        reactionsDone = true;
+        notesDone = true;
+        finish();
+      }, 8000);
+      const fetchLikedNotes = () => {
+        const ids = [...targetIds].filter((id) => /^[0-9a-f]{64}$/.test(id)).slice(0, 80);
+        if (!ids.length) {
+          notesDone = true;
+          finish();
+          return;
+        }
+        notesSub = relay.subscribe([{ kinds: [KIND.NOTE], ids }], {
+          onEvent: (event) => {
+            if (seen.has(event.id)) return;
+            const mapped = threadEventFromNote(event);
+            if (!mapped) return;
+            seen.add(event.id);
+            liked.push(mapped);
+            commit('loading');
+          },
+          onEose: () => {
+            notesDone = true;
+            if (reactionsDone) finish();
+          },
+        });
+      };
+      reactSub = relay.subscribe([{ kinds: [KIND.REACTION], authors: [pubkey], limit: 80 }], {
+        onEvent: (event) => {
+          if (event.content === '-') return; // a dislike, not a like
+          for (const tag of event.tags ?? []) {
+            if (tag?.[0] === 'e' && tag?.[1]) targetIds.add(tag[1]);
+          }
+        },
+        onEose: () => {
+          reactionsDone = true;
+          reactSub?.close?.();
+          fetchLikedNotes();
+        },
+      });
+    });
+  }
+
   function recipientPubkey(target) {
     return decodeKey(target)?.pubkey ?? null;
   }
@@ -983,7 +1259,12 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         let last = null;
         for (const recipient of recipients.filter(Boolean)) {
           last = await enqueueRecipientPublish(recipient, async () => {
-            const wrap = await wrapForRecipient({ content: plaintext, recipient, signer: active });
+            const wrap = await wrapForRecipient({
+              content: plaintext,
+              recipient,
+              signer: active,
+              kind: RECORD_RUMOR_KIND,
+            });
             if (!wrap) return null;
             return relay.publish(wrap);
           });
@@ -3496,41 +3777,282 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     });
   }
 
-  function like(eventId) {
+  // Reverse of muteAuthor: drop the actor from the per-person mute list.
+  function unmuteAuthor(actorId) {
+    const current = state();
+    const personaId = current.personaId;
+    if (!personaId || !actorId) return;
+    const muted = current.feedMutes?.[personaId] ?? [];
+    if (!muted.includes(actorId)) return;
     update({
-      events: state().events.map((event) =>
-        event.id === eventId ? { ...event, liked: !event.liked } : event,
-      ),
+      feedMutes: { ...(current.feedMutes ?? {}), [personaId]: muted.filter((id) => id !== actorId) },
     });
   }
 
-  function openThread() {
-    toast(t('actions.threadsComingSoon'), 'info');
+  // Notes can be engaged from two surfaces: the home feed (`events`) and an
+  // open profile (`profileTimeline`). Look up and patch both so like / repost /
+  // reply / bookmark work identically wherever the note is shown.
+  function feedEventById(eventId) {
+    const current = state();
+    const inFeed = (current.events ?? []).find((entry) => entry.id === eventId);
+    if (inFeed) return inFeed;
+    return (current.profileTimeline?.events ?? []).find((entry) => entry.id === eventId) ?? null;
   }
 
-  function postNote(text) {
+  function patchFeedEvent(eventId, patch) {
+    const current = state();
+    const apply = (list) =>
+      list.map((entry) => (entry.id === eventId ? { ...entry, ...patch } : entry));
+    const next = {};
+    if ((current.events ?? []).some((entry) => entry.id === eventId)) {
+      next.events = apply(current.events);
+    }
+    const timelineEvents = current.profileTimeline?.events ?? [];
+    if (timelineEvents.some((entry) => entry.id === eventId)) {
+      next.profileTimeline = {
+        ...current.profileTimeline,
+        events: apply(timelineEvents),
+      };
+    }
+    if (Object.keys(next).length) update(next);
+  }
+
+  // Sign and publish a small social event (reaction, repost, reply, deletion).
+  // Local signers sign silently; external signers confirm via the sign drawer.
+  async function publishSocial({ kind, content = '', tags = [], title, action, detail, pow = 0 }) {
+    const base = buildEvent({ kind, tags, content });
+    const event = pow > 0 ? await minePow(base, Number(pow) || 0) : base;
+    const signed = await signRecord(event, { title, action, detail });
+    if (!signed) return null;
+    const published = await relay.publish(signed);
+    return { event: signed, published };
+  }
+
+  async function like(eventId) {
+    const current = feedEventById(eventId);
+    if (!current?.raw) return false;
+    if (!signer.canSign()) {
+      toast(t('actions.connectSignerToSign'), 'warn');
+      return false;
+    }
+    if (current.liked) return unlikePost(eventId, current);
+
+    const result = await publishSocial({
+      kind: KIND.REACTION,
+      content: REACTION_LIKE,
+      tags: reactionTags(current.raw),
+      title: t('home.like'),
+      action: t('home.like'),
+    });
+    if (!result) return false;
+    patchFeedEvent(eventId, {
+      liked: true,
+      reactionId: result.event.id,
+      counts: { ...current.counts, likes: (current.counts?.likes ?? 0) + 1 },
+    });
+    return true;
+  }
+
+  // Undo a like: publish a NIP-09 deletion for our own reaction (kind 7) so
+  // relays drop the count, and decrement locally right away.
+  async function unlikePost(eventId, current) {
+    patchFeedEvent(eventId, {
+      liked: false,
+      reactionId: null,
+      counts: { ...current.counts, likes: Math.max(0, (current.counts?.likes ?? 0) - 1) },
+    });
+    if (current.reactionId) {
+      await publishSocial({
+        kind: KIND.DELETE,
+        tags: [['e', current.reactionId], ['k', String(KIND.REACTION)]],
+        title: t('home.unlike'),
+        action: t('home.unlike'),
+      });
+    }
+    return true;
+  }
+
+  async function repost(eventId) {
+    const current = feedEventById(eventId);
+    if (!current?.raw) return false;
+    if (!signer.canSign()) {
+      toast(t('actions.connectSignerToSign'), 'warn');
+      return false;
+    }
+    if (current.reposted) return unrepostPost(eventId, current);
+
+    const result = await publishSocial({
+      kind: KIND.REPOST,
+      content: JSON.stringify(current.raw),
+      tags: repostTags(current.raw),
+      title: t('home.repost'),
+      action: t('home.repost'),
+    });
+    if (!result) return false;
+    patchFeedEvent(eventId, {
+      reposted: true,
+      repostId: result.event.id,
+      counts: { ...current.counts, reposts: (current.counts?.reposts ?? 0) + 1 },
+    });
+    toast(t('actions.reposted'), 'ok');
+    return true;
+  }
+
+  async function unrepostPost(eventId, current) {
+    patchFeedEvent(eventId, {
+      reposted: false,
+      repostId: null,
+      counts: { ...current.counts, reposts: Math.max(0, (current.counts?.reposts ?? 0) - 1) },
+    });
+    if (current.repostId) {
+      await publishSocial({
+        kind: KIND.DELETE,
+        tags: [['e', current.repostId], ['k', String(KIND.REPOST)]],
+        title: t('home.unrepost'),
+        action: t('home.unrepost'),
+      });
+    }
+    return true;
+  }
+
+  async function replyPost(eventId, text, pow = 0) {
     const trimmed = String(text ?? '').trim();
+    const current = feedEventById(eventId);
     if (!trimmed) {
       toast(t('actions.writeSomethingFirst'), 'warn');
-      return;
+      return false;
     }
-    update({
-      events: [
-        {
-          id: nextId('e'),
-          type: 'social',
-          author: state().personaId,
-          time: 'now',
-          occurredAt: new Date().toISOString(),
-          audience: 'all',
-          text: trimmed,
-          counts: { likes: 0, bitz: 0, replies: 0 },
-        },
-        ...state().events,
-      ],
+    if (!current?.raw) return false;
+    if (!signer.canSign()) {
+      toast(t('actions.connectSignerToSign'), 'warn');
+      return false;
+    }
+    if (Number(pow) > 0) toast(t('actions.miningPow', { bits: Number(pow) }), 'info');
+    const result = await publishSocial({
+      kind: KIND.NOTE,
+      content: trimmed,
+      tags: [['t', APP_TAG], ...replyTags(current.raw)],
+      title: t('home.reply'),
+      action: t('home.reply'),
+      detail: trimmed,
+      pow,
     });
+    if (!result) return false;
+    const mappedReply = threadEventFromNote(result.event);
+    const thread = state().threads?.[eventId] ?? { status: 'ready', replies: [] };
+    // Works whether the note is in the home feed or an open profile timeline.
+    patchFeedEvent(eventId, {
+      counts: { ...(current.counts ?? {}), replies: (current.counts?.replies ?? 0) + 1 },
+    });
+    update({
+      threads: mappedReply && !thread.replies.some((reply) => reply.id === mappedReply.id)
+        ? { ...state().threads, [eventId]: { ...thread, replies: [...thread.replies, mappedReply] } }
+        : state().threads,
+    });
+    toast(t('actions.replied'), 'ok');
+    return true;
+  }
+
+  function bookmark(eventId) {
+    const current = feedEventById(eventId);
+    if (!current) return false;
+    const next = !current.bookmarked;
+    patchFeedEvent(eventId, { bookmarked: next });
+    toast(next ? t('actions.bookmarked') : t('actions.unbookmarked'), 'ok');
+    return true;
+  }
+
+  // Comment threads: replies (kind:1 with an `e` tag for the note) are fetched
+  // on demand and cached in state.threads. One live subscription per note.
+  const threadSubs = new Map();
+
+  function loadThread(noteId) {
+    if (threadSubs.has(noteId)) return;
+    const existing = state().threads?.[noteId];
+    update({ threads: { ...(state().threads ?? {}), [noteId]: { status: 'loading', replies: existing?.replies ?? [] } } });
+    const sub = relay.subscribe([{ kinds: [KIND.NOTE], '#e': [noteId], limit: 100 }], {
+      onEvent: (event) => {
+        if (!verify(event)) return;
+        const mapped = threadEventFromNote(event);
+        if (!mapped) return;
+        const entry = state().threads?.[noteId] ?? { status: 'loading', replies: [] };
+        if (entry.replies.some((reply) => reply.id === mapped.id)) return;
+        update({
+          threads: { ...state().threads, [noteId]: { ...entry, replies: [...entry.replies, mapped] } },
+        });
+      },
+      onEose: () => {
+        const entry = state().threads?.[noteId];
+        if (entry && entry.status !== 'ready') {
+          update({ threads: { ...state().threads, [noteId]: { ...entry, status: 'ready' } } });
+        }
+      },
+    });
+    threadSubs.set(noteId, sub);
+  }
+
+  function closeThread(noteId) {
+    const sub = threadSubs.get(noteId);
+    sub?.close?.();
+    threadSubs.delete(noteId);
+  }
+
+  // (Comment threads are opened by the dialogs layer; see dialogs.openThread.)
+
+  // NIP-13: vary the `nonce` tag until the event id has `target` leading zero
+  // bits. Yields to the event loop periodically so the mining UI stays alive.
+  async function minePow(event, target) {
+    if (!target) return event;
+    const me = state().accountId;
+    if (!me) return event;
+    const base = { kind: event.kind, created_at: event.created_at, content: event.content, pubkey: me };
+    for (let nonce = 0; ; nonce += 1) {
+      const tags = [...event.tags, ['nonce', String(nonce), String(target)]];
+      if (leadingZeroBits(getEventHash({ ...base, tags })) >= target) return { ...event, tags };
+      if (nonce % 25000 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+
+  async function postNote({ text, media = [], pow = 0 } = {}) {
+    const trimmed = String(text ?? '').trim();
+    const attachments = (Array.isArray(media) ? media : []).filter((item) => item?.url);
+    if (!trimmed && !attachments.length) {
+      toast(t('actions.writeSomethingFirst'), 'warn');
+      return false;
+    }
+    if (!signer.canSign()) {
+      toast(t('actions.connectSignerToSign'), 'warn');
+      return false;
+    }
+
+    // Media URLs ride in the content (so any client can find them) and in
+    // NIP-92 `imeta` tags (so this client renders a proper grid).
+    const content = [trimmed, ...attachments.map((item) => item.url)].filter(Boolean).join('\n\n');
+    const imeta = attachments.map((item) =>
+      ['imeta', `url ${item.url}`, item.type ? `m ${item.type}` : null, item.name ? `alt ${item.name}` : null]
+        .filter(Boolean),
+    );
+    const base = buildEvent({ kind: KIND.NOTE, tags: [['t', APP_TAG], ...imeta], content });
+    if (pow > 0) toast(t('actions.miningPow', { bits: pow }), 'info');
+    const event = await minePow(base, Number(pow) || 0);
+
+    // Local signers sign silently; external signers (NIP-07 / bunker) confirm.
+    const signed = await signRecord(event, {
+      title: t('common.a11y.newPost'),
+      action: t('home.post'),
+      detail: trimmed || attachments.map((item) => item.name).filter(Boolean).join(', '),
+    });
+    if (!signed) return false;
+
+    const published = await relay.publish(signed);
+    // Show the note immediately; the relay echo is deduped by event id.
+    const mapped = feedEventFromNote(signed);
+    if (mapped && !state().events.some((entry) => entry.id === mapped.id)) {
+      update({ events: [mapped, ...state().events] });
+    }
     if (state().route !== '/home') navigateTo('/home');
-    toast(t('actions.postedPublic'), 'ok');
+    toast(published.count ? t('actions.postedPublic') : t('actions.postedNoRelay'), published.count ? 'ok' : 'warn');
+    return true;
   }
 
   async function sendCompletion() {
@@ -3893,6 +4415,624 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     toast(t('actions.relaysReachable', { healthy, total: statuses.length }), healthy ? 'ok' : 'warn');
   }
 
+  // ---- Messaging (NIP-17 over NIP-59 gift wraps) ------------------------
+  // One-to-one messages are encrypted to the recipient and published as gift
+  // wraps; the conversation list is a local index over them. Nothing here
+  // grants academic authority, and official records still travel separately
+  // (docs/product-roadmap.md, R3).
+  function accountConversations(current) {
+    return conversationsForAccount(current, current.accountId);
+  }
+
+  function writeConversations(list) {
+    const current = state();
+    update({
+      conversationsByAccount: {
+        ...(current.conversationsByAccount ?? {}),
+        [current.accountId]: list,
+      },
+    });
+  }
+
+  function isHexPubkey(value) {
+    return /^[0-9a-f]{64}$/i.test(String(value ?? ''));
+  }
+
+  // Flip an optimistic message's delivery state once the relay answers (or the
+  // send is known to be impossible).
+  function settleMessage(messageId, nextState) {
+    const current = state();
+    let changed = false;
+    const list = accountConversations(current).map((conversation) => {
+      if (!(conversation.messages ?? []).some((message) => message.id === messageId)) return conversation;
+      changed = true;
+      return {
+        ...conversation,
+        messages: conversation.messages.map((message) =>
+          message.id === messageId ? { ...message, state: nextState } : message,
+        ),
+      };
+    });
+    if (changed) writeConversations(list);
+  }
+
+  // Encrypt `text` to the peer and to ourselves (so our other devices see the
+  // sent message), publishing a gift wrap to the network for each. Settles the
+  // local message to sent/failed based on whether any relay accepted it.
+  function dispatchDirectMessage({ peerId, text, messageId }) {
+    const active = signer.getSigner();
+    if (!isHexPubkey(peerId)) {
+      settleMessage(messageId, MESSAGE_STATE.FAILED);
+      toast(t('messages.noRecipientKey'), 'warn');
+      return Promise.resolve(false);
+    }
+    if (!active?.nip44Encrypt || !active?.signEvent) {
+      settleMessage(messageId, MESSAGE_STATE.FAILED);
+      toast(t('messages.noSigner'), 'warn');
+      return Promise.resolve(false);
+    }
+
+    const me = state().personaId;
+    const recipients = [...new Set([peerId, me].filter(isHexPubkey))];
+    const tags = [
+      ['p', peerId],
+      ['client', messageId],
+    ];
+    return (async () => {
+      let delivered = false;
+      for (const recipient of recipients) {
+        try {
+          const wrap = await wrapForRecipient({
+            content: text,
+            recipient,
+            signer: active,
+            tags,
+          });
+          if (!wrap) continue;
+          const published = await relay.publish(wrap);
+          if (published?.count) delivered = true;
+        } catch {
+          /* try the next recipient/relay set */
+        }
+      }
+      settleMessage(messageId, delivered ? MESSAGE_STATE.SENT : MESSAGE_STATE.FAILED);
+      if (!delivered) toast(t('messages.sendFailed'), 'warn');
+      return delivered;
+    })();
+  }
+
+  // Apply a decrypted incoming gift wrap to the conversation index.
+  function receiveMessage(payload = {}) {
+    const current = state();
+    const meId = current.personaId;
+    if (!meId) return false;
+    const normalized = incomingMessageFromEvent(payload, meId);
+    if (!normalized) return false;
+    // Respect the "who can DM me" preference before the message enters the
+    // local inbox. Default policy (everyone) keeps the previous behavior.
+    const allowed = allowsIncomingMessage(current.prefs, {
+      peerId: normalized.peerId,
+      selfId: meId,
+      following: current.following?.[meId] ?? [],
+    });
+    if (!allowed) return false;
+    const result = mergeIncomingMessage(accountConversations(current), normalized);
+    if (!result.changed) return false;
+    writeConversations(result.list);
+    if (!hasPersona(normalized.peerId)) {
+      registerPersona({ id: normalized.peerId, npub: encodeNpub(normalized.peerId) });
+    }
+    return true;
+  }
+
+  function markConversationRead(conversationId) {
+    const current = state();
+    const me = current.personaId;
+    const at = new Date().toISOString();
+    const list = accountConversations(current).map((conversation) => {
+      if (conversation.id !== conversationId) return conversation;
+      return {
+        ...conversation,
+        messages: conversation.messages.map((message) =>
+          message.from !== me && !message.readAt ? { ...message, readAt: at } : message,
+        ),
+      };
+    });
+    writeConversations(list);
+  }
+
+  function setActiveConversation(id) {
+    const next = id ?? null;
+    if (next) markConversationRead(next);
+    update({ activeConversationId: next });
+  }
+
+  function sendMessage(conversationId, text) {
+    const trimmed = String(text ?? '').trim();
+    if (!trimmed) return false;
+    const current = state();
+    const list = accountConversations(current);
+    const conversation = conversationById(list, conversationId);
+    if (!conversation) return false;
+    const createdAt = new Date().toISOString();
+    const message = {
+      id: nextId('m'),
+      from: current.personaId,
+      text: trimmed,
+      state: MESSAGE_STATE.SENDING,
+      createdAt,
+      readAt: null,
+    };
+    writeConversations(
+      list.map((entry) =>
+        entry.id === conversationId
+          ? normalizeConversation({
+              ...entry,
+              messages: [...entry.messages, message],
+              updatedAt: createdAt,
+            })
+          : entry,
+      ),
+    );
+    // Relay delivery is asynchronous; the optimistic bubble shows "sending…"
+    // and settles to sent/failed from the publish result.
+    dispatchDirectMessage({ peerId: conversation.peerId, text: trimmed, messageId: message.id });
+    return true;
+  }
+
+  // Re-send a message that failed to reach a relay. Reuses the original message
+  // id, so if a previous attempt actually landed the recipient still sees one
+  // bubble.
+  function retryMessage(messageId) {
+    const current = state();
+    if (!messageId) return false;
+    for (const conversation of accountConversations(current)) {
+      const message = (conversation.messages ?? []).find((entry) => entry.id === messageId);
+      if (!message) continue;
+      if (message.from !== current.personaId) return false;
+      settleMessage(messageId, MESSAGE_STATE.SENDING);
+      dispatchDirectMessage({ peerId: conversation.peerId, text: message.text, messageId });
+      return true;
+    }
+    return false;
+  }
+
+  function setConversationStatus(conversationId, status) {
+    writeConversations(
+      accountConversations(state()).map((conversation) =>
+        conversation.id === conversationId ? { ...conversation, status } : conversation,
+      ),
+    );
+  }
+
+  function acceptConversation(conversationId) {
+    setConversationStatus(conversationId, CONVERSATION_STATUS.ACCEPTED);
+    markConversationRead(conversationId);
+  }
+
+  function declineConversation(conversationId) {
+    writeConversations(
+      accountConversations(state()).filter((conversation) => conversation.id !== conversationId),
+    );
+    if (state().activeConversationId === conversationId) update({ activeConversationId: null });
+  }
+
+  function blockConversation(conversationId) {
+    setConversationStatus(conversationId, CONVERSATION_STATUS.BLOCKED);
+    if (state().activeConversationId === conversationId) update({ activeConversationId: null });
+    toast(t('messages.blocked'), 'info');
+  }
+
+  function unblockConversation(conversationId) {
+    setConversationStatus(conversationId, CONVERSATION_STATUS.ACCEPTED);
+    markConversationRead(conversationId);
+    update({ activeConversationId: conversationId });
+  }
+
+  // Resolve an npub/hex/handle to a persona id, registering a minimal persona
+  // for a valid key the app has never seen so the thread has a stable peer.
+  function resolvePeer(reference) {
+    const value = String(reference ?? '').trim();
+    if (!value) return { reason: 'empty' };
+    const known = findPersonaByKey(value);
+    if (known) return { peerId: known.id };
+    const decoded = decodeKey(value);
+    if (decoded?.pubkey) {
+      registerPersona({ id: decoded.pubkey, npub: encodeNpub(decoded.pubkey) });
+      return { peerId: decoded.pubkey };
+    }
+    const handle = normalizeHandle(value.replace(/^@/, '').split('@')[0].toLowerCase());
+    if (handle) {
+      const match = getPersonaIds()
+        .map(getPersona)
+        .find((person) => normalizeHandle(String(person.handle ?? '').split('@')[0].toLowerCase()) === handle);
+      if (match) return { peerId: match.id };
+    }
+    return { reason: 'unknown' };
+  }
+
+  function startConversation(reference, text) {
+    const trimmed = String(text ?? '').trim();
+    if (!trimmed) return { ok: false, reason: 'empty' };
+    const current = state();
+    const resolved = resolvePeer(reference);
+    if (resolved.reason) return { ok: false, reason: resolved.reason };
+    if (resolved.peerId === current.personaId || resolved.peerId === current.accountId) {
+      return { ok: false, reason: 'self' };
+    }
+
+    const list = accountConversations(current);
+    const existing = conversationWith(list, resolved.peerId);
+    const createdAt = new Date().toISOString();
+    const message = {
+      id: nextId('m'),
+      from: current.personaId,
+      text: trimmed,
+      state: MESSAGE_STATE.SENDING,
+      createdAt,
+      readAt: null,
+    };
+    let conversationId;
+    let next;
+    if (existing) {
+      conversationId = existing.id;
+      next = list.map((conversation) =>
+        conversation.id === existing.id
+          ? normalizeConversation({
+              ...conversation,
+              status: CONVERSATION_STATUS.ACCEPTED,
+              messages: [...conversation.messages, message],
+              updatedAt: createdAt,
+            })
+          : conversation,
+      );
+    } else {
+      const created = normalizeConversation({
+        id: nextId('c'),
+        peerId: resolved.peerId,
+        status: CONVERSATION_STATUS.ACCEPTED,
+        messages: [message],
+        updatedAt: createdAt,
+      });
+      conversationId = created.id;
+      next = [created, ...list];
+    }
+    writeConversations(next);
+    dispatchDirectMessage({ peerId: resolved.peerId, text: trimmed, messageId: message.id });
+    if (current.route !== '/messages') navigateTo('/messages');
+    update({ activeConversationId: conversationId });
+    return { ok: true };
+  }
+
+  // ---- Wallet (external, prototype) -------------------------------------
+  // A zap records an outbound entry locally and bumps the post's zap count. It
+  // is never an academic record and cannot change access
+  // (docs/product-roadmap.md, R4).
+  function zapPost(eventId, amountSats) {
+    const amount = Math.max(1, Math.round(Number(amountSats) || 0));
+    const current = state();
+    const event = (current.events ?? []).find((entry) => entry.id === eventId);
+    if (!event) return false;
+    if (event.author === current.personaId) {
+      toast(t('wallet.zap.self'), 'warn');
+      return false;
+    }
+    if (!amount) return false;
+    const zap = normalizeZap({
+      id: nextId('z'),
+      direction: ZAP_DIRECTION.OUT,
+      amountSats: amount,
+      status: ZAP_STATUS.SETTLED,
+      peerId: event.author,
+      note: t('wallet.zap.note'),
+      createdAt: new Date().toISOString(),
+    });
+    const zaps = current.zapsByAccount?.[current.accountId] ?? [];
+    update({
+      zapsByAccount: { ...(current.zapsByAccount ?? {}), [current.accountId]: [zap, ...zaps] },
+      events: current.events.map((entry) =>
+        entry.id === eventId
+          ? { ...entry, counts: { ...entry.counts, bitz: (entry.counts?.bitz ?? 0) + amount } }
+          : entry,
+      ),
+    });
+    toast(t('wallet.zap.sent', { amount: formatSats(amount) }), 'ok');
+    return true;
+  }
+
+  // A direct zap to a person (no post attached), e.g. from a message thread.
+  function zapPeer(peerId, amountSats) {
+    const amount = Math.max(1, Math.round(Number(amountSats) || 0));
+    const current = state();
+    if (!peerId || peerId === current.personaId || !amount) return false;
+    const zap = normalizeZap({
+      id: nextId('z'),
+      direction: ZAP_DIRECTION.OUT,
+      amountSats: amount,
+      status: ZAP_STATUS.SETTLED,
+      peerId,
+      note: t('wallet.zap.note'),
+      createdAt: new Date().toISOString(),
+    });
+    const zaps = current.zapsByAccount?.[current.accountId] ?? [];
+    update({
+      zapsByAccount: { ...(current.zapsByAccount ?? {}), [current.accountId]: [zap, ...zaps] },
+    });
+    toast(t('wallet.zap.sent', { amount: formatSats(amount) }), 'ok');
+    return true;
+  }
+
+  // --- NIP-57 zaps -----------------------------------------------------------
+  // Real flow: resolve the recipient's LNURL-pay endpoint from their profile,
+  // sign a kind:9734 zap request, ask the endpoint for an invoice, then either
+  // pay with WebLN or hand the invoice to the caller to render as a QR code.
+
+  async function createZapInvoice(eventId, peerId, amountSats) {
+    const amount = Math.max(1, Math.round(Number(amountSats) || 0));
+    const target = eventId ? feedEventById(eventId) : null;
+    const recipient = peerId ?? target?.author ?? null;
+    if (!recipient) throw new Error(t('wallet.zap.noRecipient'));
+    const payUrl = lnurlPayUrl(getPersona(recipient));
+    if (!payUrl) throw new Error(t('wallet.zap.noAddress'));
+    if (!signer.canSign()) throw new Error(t('actions.connectSignerToSign'));
+
+    const payRequest = await fetchPayRequest(payUrl);
+    const amountMsat = amount * 1000;
+    if (payRequest.minSendable && amountMsat < Number(payRequest.minSendable)) {
+      throw new Error(t('wallet.zap.tooSmall', { min: Math.ceil(Number(payRequest.minSendable) / 1000) }));
+    }
+    if (payRequest.maxSendable && amountMsat > Number(payRequest.maxSendable)) {
+      throw new Error(t('wallet.zap.tooLarge', { max: Math.floor(Number(payRequest.maxSendable) / 1000) }));
+    }
+
+    let zapRequest = null;
+    if (payRequest.allowsNostr && payRequest.nostrPubkey) {
+      const tags = zapRequestTags({
+        recipient,
+        eventId,
+        amountSats: amount,
+        relays: DEFAULT_RELAYS,
+        lnurl: payUrl,
+      });
+      zapRequest = await signRecord(buildEvent({ kind: KIND.ZAP_REQUEST, tags, content: '' }), {
+        title: t('wallet.zap.title'),
+        action: t('wallet.zap.confirm'),
+        detail: `${formatSats(amount)} ${t('wallet.sats')}`,
+      });
+      if (!zapRequest) throw new Error(t('wallet.zap.cancelled'));
+    }
+
+    const data = await requestZapInvoice(payRequest.callback, { amountMsat, zapRequest });
+    return { invoice: data.pr, amount, recipient, payUrl, requestId: zapRequest?.id ?? null };
+  }
+
+  // Pay with WebLN when a browser wallet is injected. Returns paid:false so the
+  // caller can fall back to showing the invoice as a QR code.
+  async function payInvoiceWithWebln(invoice) {
+    const webln = typeof window !== 'undefined' ? window.webln : null;
+    if (!webln?.sendPayment) return { paid: false };
+    try {
+      await webln.enable?.();
+      const result = await webln.sendPayment(invoice);
+      return { paid: true, preimage: result?.preimage ?? null };
+    } catch {
+      return { paid: false };
+    }
+  }
+
+  // Local history entry. Pending entries do not move the balance; a settled
+  // entry also bumps the note's bitz counter when it targets a post. `requestId`
+  // links this optimistic row to the signed kind:9734 request so the real
+  // receipt replaces it instead of double-counting (mergeZapReceipt).
+  function recordZap({ peerId, amountSats, note = '', status = ZAP_STATUS.SETTLED, eventId = null, requestId = null } = {}) {
+    const current = state();
+    if (!current.accountId) return null;
+    const zap = normalizeZap({
+      id: nextId('z'),
+      direction: ZAP_DIRECTION.OUT,
+      amountSats,
+      status,
+      peerId,
+      note,
+      createdAt: new Date().toISOString(),
+      requestId,
+      eventId,
+    });
+    const list = zapsForAccount(current, current.accountId);
+    const events =
+      eventId && status === ZAP_STATUS.SETTLED
+        ? current.events.map((entry) =>
+            entry.id === eventId
+              ? { ...entry, counts: { ...entry.counts, bitz: (entry.counts?.bitz ?? 0) + Number(amountSats) } }
+              : entry,
+          )
+        : current.events;
+    update({
+      zapsByAccount: { ...(current.zapsByAccount ?? {}), [current.accountId]: upsertZap(list, zap) },
+      events,
+    });
+    return zap;
+  }
+
+  // Live projector for a single NIP-57 receipt read from relays. A receipt is
+  // the only authoritative settlement signal, so both the dialog (auto-close)
+  // and the global relay subscription (syncZaps) funnel through here. Ignores a
+  // repeat receipt, evicts any optimistic row for the same request, bumps the
+  // note counter once, and notifies the user only for a genuinely new settle.
+  function ingestZapReceipt(event) {
+    if (!verify(event)) return null;
+    const me = state().accountId;
+    const zap = zapFromReceipt(event, me);
+    if (!zap) return null;
+    const current = state();
+    const list = zapsForAccount(current, me);
+    if (list.some((entry) => entry.id === zap.id)) return zap;
+    const replacedSettled = Boolean(
+      zap.requestId &&
+        list.some((entry) => entry.requestId === zap.requestId && entry.status === ZAP_STATUS.SETTLED),
+    );
+    const events =
+      zap.eventId && !replacedSettled
+        ? current.events.map((entry) =>
+            entry.id === zap.eventId
+              ? { ...entry, counts: { ...entry.counts, bitz: (entry.counts?.bitz ?? 0) + zap.amountSats } }
+              : entry,
+          )
+        : current.events;
+    update({
+      zapsByAccount: { ...(current.zapsByAccount ?? {}), [me]: mergeZapReceipt(list, zap) },
+      events,
+    });
+    // The sender already saw a "paid" toast when their wallet settled, so skip a
+    // second one; a QR/invoice payment or an incoming zap is announced here. An
+    // incoming zap also becomes an inbox notification for the recipient.
+    if (!replacedSettled) {
+      notifySettledZap(zap);
+      const note = notificationFromZap(zap, me);
+      if (note) addSocialNotifications([note]);
+    }
+    return zap;
+  }
+
+  function notifySettledZap(zap) {
+    const peer = getPersona(zap.peerId);
+    const name = peer?.displayName ?? truncateNpub(peer?.npub ?? '') ?? '';
+    const key = zap.direction === ZAP_DIRECTION.IN ? 'wallet.zap.notifyIn' : 'wallet.zap.notifyOut';
+    toast(t(key, { amount: formatSats(zap.amountSats), name }), 'ok');
+  }
+
+  // Auto-detect: while a zap dialog is waiting for payment, watch the relays for
+  // the matching kind:9735 receipt and resolve as soon as it lands. Matching is
+  // by the signed request id (preferred); when the recipient's server does not
+  // build a NIP-57 request we fall back to our own outgoing receipt of the same
+  // amount to the same peer. Returns a closer to run when the dialog closes.
+  function watchZapSettlement({ requestId = null, peerId = null, amountSats = 0, onSettled } = {}) {
+    const me = state().accountId;
+    if (!me) return { close() {} };
+    return relay.subscribe(
+      [
+        { kinds: [ZAP_RECEIPT_KIND], '#P': [me] },
+        { kinds: [ZAP_RECEIPT_KIND], '#p': [me] },
+      ],
+      {
+        onEvent: (event) => {
+          const matchesId = requestId
+            ? zapFromReceipt(event, me, { requestId }) !== null
+            : false;
+          if (!matchesId) {
+            if (requestId) return;
+            const fallback = zapFromReceipt(event, me);
+            if (
+              !fallback ||
+              fallback.direction !== ZAP_DIRECTION.OUT ||
+              (amountSats && fallback.amountSats !== Number(amountSats)) ||
+              (peerId && fallback.peerId !== peerId)
+            ) {
+              return;
+            }
+          }
+          const zap = ingestZapReceipt(event);
+          if (!zap) return;
+          onSettled?.(zap);
+        },
+      },
+    );
+  }
+
+  function connectWallet() {
+    const current = state();
+    update({
+      walletConnectedByAccount: {
+        ...(current.walletConnectedByAccount ?? {}),
+        [current.accountId]: true,
+      },
+    });
+    toast(t('wallet.connectBody'), 'ok');
+  }
+
+  function disconnectWallet() {
+    const current = state();
+    update({
+      walletConnectedByAccount: {
+        ...(current.walletConnectedByAccount ?? {}),
+        [current.accountId]: false,
+      },
+    });
+    toast(t('wallet.disconnect'), 'info');
+  }
+
+  // ---- Notification inbox ----------------------------------------------
+
+  // Append engagement notifications for the signed-in account. Dedupes by
+  // source event id so a relay replay never doubles a row. Returns the fresh
+  // entries (empty when nothing changed).
+  function addSocialNotifications(entries) {
+    const me = state().accountId;
+    if (!me) return [];
+    const current = state();
+    const list = socialNotificationsFor(current, me);
+    const merged = mergeSocialNotifications(list, entries);
+    if (merged === list) return [];
+    update({
+      socialNotificationsByAccount: {
+        ...(current.socialNotificationsByAccount ?? {}),
+        [me]: merged,
+      },
+    });
+    return entries ?? [];
+  }
+
+  // Project one public engagement event (reaction, repost, reply, or mention)
+  // into a notification for the note author. Called by the `#p:[me]`
+  // subscription in main.js; ignores anything not addressed to this account.
+  function ingestSocialNotification(event) {
+    const me = state().accountId;
+    const entry = notificationFromEngagement(event, me);
+    if (!entry) return false;
+    addSocialNotifications([entry]);
+    return true;
+  }
+
+  function markNotificationRead(eventKey) {
+    const current = state();
+    const personaId = current.personaId;
+    if (!personaId || eventKey == null) return;
+    const mine = current.notificationReads?.[personaId] ?? {};
+    if (mine[eventKey]) return;
+    update({
+      notificationReads: {
+        ...(current.notificationReads ?? {}),
+        [personaId]: { ...mine, [eventKey]: new Date().toISOString() },
+      },
+    });
+  }
+
+  function markAllNotificationsRead() {
+    const current = state();
+    const personaId = current.personaId;
+    if (!personaId) return;
+    const at = new Date().toISOString();
+    const mine = { ...(current.notificationReads?.[personaId] ?? {}) };
+    for (const event of workflowNotifications(current, personaId)) {
+      const key = eventKeyOf(event);
+      if (key) mine[key] = at;
+    }
+    for (const notification of socialNotificationsFor(current, personaId)) {
+      if (notification.id) mine[notification.id] = at;
+    }
+    const conversations = accountConversations(current).map((conversation) => ({
+      ...conversation,
+      messages: conversation.messages.map((message) =>
+        message.from !== personaId && !message.readAt ? { ...message, readAt: at } : message,
+      ),
+    }));
+    update({
+      notificationReads: { ...(current.notificationReads ?? {}), [personaId]: mine },
+      conversationsByAccount: { ...(current.conversationsByAccount ?? {}), [current.accountId]: conversations },
+    });
+    toast(t('notifications.allRead'), 'ok');
+  }
+
   function stub(message = t('actions.actionNotAvailable')) {
     toast(message, 'info');
   }
@@ -3900,12 +5040,18 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
   return {
     navigate: navigateTo,
     setFeedTab,
+    setNotificationTab,
     setRoleTab,
     setOrgTab,
     setSettingsSection,
     setGradebookClass,
     setReviewSelection,
     copyText,
+    updatePrefs,
+    toggleSubscription,
+    zapPresets,
+    defaultPow,
+    clearCache,
     signInWithExtension,
     createAccount,
     signInWithKey,
@@ -3956,6 +5102,10 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     setLocale,
     refreshMyProfile,
     resolveProfile,
+    openProfile,
+    loadProfileNotes,
+    loadProfileZaps,
+    loadProfileLikes,
     requestMembership,
     acceptJoin,
     declineJoin,
@@ -3968,10 +5118,37 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     dismissFeedEvent,
     readFeedEvent,
     muteAuthor,
+    unmuteAuthor,
     testSigner,
     like,
-    openThread,
+    repost,
+    replyPost,
     postNote,
+    bookmark,
+    loadThread,
+    closeThread,
+    setActiveConversation,
+    sendMessage,
+    retryMessage,
+    receiveMessage,
+    startConversation,
+    acceptConversation,
+    declineConversation,
+    blockConversation,
+    unblockConversation,
+    zapPost,
+    zapPeer,
+    createZapInvoice,
+    payInvoiceWithWebln,
+    recordZap,
+    ingestZapReceipt,
+    watchZapSettlement,
+    toast,
+    connectWallet,
+    disconnectWallet,
+    markNotificationRead,
+    markAllNotificationsRead,
+    ingestSocialNotification,
     sendCompletion,
     signIssue,
     revokeCredential,

@@ -3,7 +3,10 @@ import { getPersona } from '../../data/personas.js';
 import { SUBMISSION_STATUS, classroomsForTeacher } from '../../domain/classroom.js';
 import { isActionNeededFor } from '../../domain/feed.js';
 import { identitySecondary } from '../../domain/identity.js';
+import { conversationsForAccount, unreadMessageCount } from '../../domain/messaging.js';
+import { unreadNotificationCount } from '../../domain/notifications.js';
 import { ROLE, workspaceRole } from '../../domain/school.js';
+import { formatSats, walletBalance, zapsForAccount } from '../../domain/wallet.js';
 import { t } from '../../services/i18n/index.js';
 import { icon } from '../components/icon.js';
 import { beeLogo } from '../components/logo.js';
@@ -36,6 +39,8 @@ export function renderNav({ state, app }) {
   const persona = getPersona(state.personaId);
   const role = workspaceRole(state, persona);
   const badge = badgeCount(state);
+  const messages = unreadMessageCount(conversationsForAccount(state, state.accountId), state.personaId);
+  const notifications = unreadNotificationCount(state, state.personaId);
 
   const items = [
     { route: '/home', label: t('nav.home'), icon: 'lucide:house', fallback: '◉' },
@@ -48,9 +53,25 @@ export function renderNav({ state, app }) {
     },
     { route: '/credentials', label: t('nav.credentials'), icon: 'lucide:id-card', fallback: '◎' },
     { route: '/discover', label: t('nav.discover'), icon: 'lucide:search', fallback: '⌕' },
-    { route: '/notifications', label: t('nav.notifications'), icon: 'lucide:bell', fallback: '🔔' },
+    { route: '/wallet', label: t('nav.wallet'), icon: 'lucide:wallet', fallback: '⚡' },
+    {
+      route: '/messages',
+      label: t('nav.messages'),
+      icon: 'lucide:message-circle',
+      fallback: '💬',
+      badge: messages,
+    },
+    {
+      route: '/notifications',
+      label: t('nav.notifications'),
+      icon: 'lucide:bell',
+      fallback: '🔔',
+      badge: notifications,
+    },
     { route: '/settings', label: t('nav.settings'), icon: 'lucide:settings', fallback: '⚙' },
   ];
+
+  const balance = walletBalance(zapsForAccount(state, state.accountId));
 
   return el('nav', { class: 'nav', 'aria-label': t('common.a11y.primaryNav') }, [
     el(
@@ -63,8 +84,22 @@ export function renderNav({ state, app }) {
       },
       [beeLogo(26, 'bee-float'), el('span', {}, t('common.appName'))],
     ),
-    button(`＋ ${t('common.a11y.newPost')}`, { variant: 'gold', className: 'navbtn--gold', onClick: () => app.openComposer() }),
     ...items.map((item) => navButton(item, state.route, app)),
+    button(`＋ ${t('common.a11y.newPost')}`, { variant: 'gold', className: 'navbtn--gold', onClick: () => app.openComposer() }),
+    el(
+      'button',
+      { class: 'nav-wallet', type: 'button', 'aria-label': t('common.a11y.wallet'), onClick: () => app.navigate('/wallet') },
+      [
+        el('span', { class: 'nav-wallet__top' }, [
+          el('span', {}, t('wallet.balance')),
+          icon('lucide:zap', { size: 12, fallback: '⚡' }),
+        ]),
+        el('span', { class: 'nav-wallet__amt' }, [
+          el('b', {}, formatSats(balance)),
+          el('span', { class: 'nav-wallet__unit' }, t('wallet.sats')),
+        ]),
+      ],
+    ),
     el('div', { class: 'navsep' }),
     el(
       'button',

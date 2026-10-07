@@ -53,6 +53,29 @@ function iconRequest(normalized) {
   return new Request(`${CACHE_ORIGIN}/${encodeURIComponent(normalized)}`);
 }
 
+// Drop the persistent icon cache (Cache Storage + localStorage) so a "Clear
+// cache" action in Settings → Network reclaims space without touching keys.
+export async function clearIconCache() {
+  const cache = cacheStorage();
+  if (cache) {
+    try {
+      await cache.delete(CACHE_NAME);
+    } catch {
+      /* cache storage may be unavailable */
+    }
+  }
+  const store = localStore();
+  if (!store) return;
+  try {
+    for (let index = store.length - 1; index >= 0; index -= 1) {
+      const key = store.key(index);
+      if (key && key.startsWith(STORAGE_PREFIX)) store.removeItem(key);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 export function createPersistentIconCache() {
   return {
     async get(normalized) {

@@ -4,10 +4,21 @@ import { getPersona, getPersonaIds } from '../../data/personas.js';
 import { SIGNER_TYPES, signerType } from '../../domain/account.js';
 import { classroomsForStudent, classroomsForTeacher, subjectById } from '../../domain/classroom.js';
 import { normalizeHandle, validateHandle } from '../../domain/handle.js';
-import { identitySecondary, isVerified, truncateNpub } from '../../domain/identity.js';
+import { isVerified, truncateNpub } from '../../domain/identity.js';
 import { MODE, normalizeMode } from '../../domain/mode.js';
-import { MEMBERSHIP, REQUEST_STATUS, ROLE, membershipBadge } from '../../domain/school.js';
+import {
+  CONNECTION_CHOICES,
+  DM_POLICIES,
+  LOW_POW_THRESHOLD,
+  POW_CHOICES,
+  SUBSCRIPTION_KINDS,
+  zapAmounts,
+} from '../../domain/prefs.js';
+import { MEMBERSHIP, REQUEST_STATUS, ROLE } from '../../domain/school.js';
 import { backupNsecForPubkey, decodeKey } from '../../services/nostr.js';
+import { splitNip05 } from '../../domain/nip05.js';
+import { resolveNip05 } from '../../services/nip05.js';
+import { formatSats, walletBalance, zapsForAccount } from '../../domain/wallet.js';
 import { loadOrgSecret, loadSecretKey } from '../../services/storage.js';
 import { ACCENTS, THEME_CHOICES } from '../../services/theme.js';
 import { availableLocales, t } from '../../services/i18n/index.js';
@@ -15,17 +26,37 @@ import { icon } from '../components/icon.js';
 import { identityChip } from '../components/identity-chip.js';
 import { renderEditAcademy } from '../components/academy-dialog.js';
 import { renderEditProfile } from '../components/profile-dialog.js';
-import { avatar, button, emptyState, noteBox, segmented, swatchGroup } from '../components/primitives.js';
+import { button, emptyState, noteBox, pageTitle, segmented, swatchGroup } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
 
 const SECTIONS = Object.freeze({
-  appearance: { titleKey: 'settings.sections.appearance.title', icon: 'lucide:palette', fallback: '🎨', subKey: 'settings.sections.appearance.sub' },
-  profile: { titleKey: 'settings.sections.profile.title', icon: 'lucide:id-card', fallback: '🪪', subKey: 'settings.sections.profile.sub' },
-  academy: { titleKey: 'settings.sections.academy.title', icon: 'lucide:building-2', fallback: '🏫', subKey: 'settings.sections.academy.sub' },
-  identity: { titleKey: 'settings.sections.identity.title', icon: 'lucide:user-round', fallback: '👤', subKey: 'settings.sections.identity.sub' },
-  membership: { titleKey: 'settings.sections.membership.title', icon: 'lucide:school', fallback: '🎓', subKey: 'settings.sections.membership.sub' },
-  relays: { titleKey: 'settings.sections.relays.title', icon: 'lucide:server', fallback: '📡', subKey: 'settings.sections.relays.sub' },
-  session: { titleKey: 'settings.sections.session.title', icon: 'lucide:log-out', fallback: '⏻', subKey: 'settings.sections.session.sub' },
+  appearance: { titleKey: 'settings.sections.appearance.title', navKey: 'settings.nav.appearance', icon: 'lucide:palette', fallback: '🎨', subKey: 'settings.sections.appearance.sub' },
+  profile: { titleKey: 'settings.sections.profile.title', navKey: 'settings.nav.account', icon: 'lucide:user', fallback: '👤', subKey: 'settings.sections.profile.sub' },
+  academy: { titleKey: 'settings.sections.academy.title', navKey: 'settings.nav.academy', icon: 'lucide:building-2', fallback: '🏫', subKey: 'settings.sections.academy.sub' },
+  identity: { titleKey: 'settings.sections.identity.title', navKey: 'settings.nav.keys', icon: 'lucide:key-round', fallback: '🔑', subKey: 'settings.sections.identity.sub' },
+  membership: { titleKey: 'settings.sections.membership.title', navKey: 'settings.nav.membership', icon: 'lucide:school', fallback: '🎓', subKey: 'settings.sections.membership.sub' },
+  relays: { titleKey: 'settings.sections.relays.title', navKey: 'settings.nav.network', icon: 'lucide:network', fallback: '📡', subKey: 'settings.sections.relays.sub' },
+  session: { titleKey: 'settings.sections.session.title', navKey: 'settings.nav.session', icon: 'lucide:log-out', fallback: '⏻', subKey: 'settings.sections.session.sub' },
+  lightning: { titleKey: 'settings.lightning.title', navKey: 'settings.nav.lightning', icon: 'lucide:zap', fallback: '⚡' },
+  privacy: { titleKey: 'settings.privacy.title', navKey: 'settings.nav.privacy', icon: 'lucide:shield', fallback: '🛡' },
+});
+
+// ui.html sidebar order. `about` is a link out of settings.
+const NAV_ORDER = Object.freeze([
+  'profile',
+  'lightning',
+  'privacy',
+  'appearance',
+  'relays',
+  'identity',
+  'membership',
+  'academy',
+  'session',
+  'about',
+]);
+
+const NAV_LINKS = Object.freeze({
+  about: { route: '/about', icon: 'lucide:info', fallback: 'ℹ', labelKey: 'settings.nav.about' },
 });
 
 export function renderSettings({ app, theme, scope, state }) {
@@ -37,13 +68,31 @@ export function renderSettings({ app, theme, scope, state }) {
     hideBackups.forEach((hide) => hide());
     hideBackups = [];
     syncAppearance = null;
-    const section = snapshot.settingsSection;
+
+    const entries = navEntries(snapshot);
+    const activeId = SECTIONS[snapshot.settingsSection]
+      ? snapshot.settingsSection
+      : entries.find((entry) => entry.kind === 'section')?.id ?? null;
+    const registerHide = (hide) => hideBackups.push(hide);
+    const registerSync = (sync) => {
+      syncAppearance = sync;
+    };
+
+    // ui.html layout: a left section nav beside the section content.
     node.replaceChildren(
-      ...(section && SECTIONS[section]
-        ? sectionView(section, snapshot, app, theme, (hide) => hideBackups.push(hide), (sync) => {
-            syncAppearance = sync;
-          })
-        : hubView(snapshot, app)),
+      pageTitle(t('settings.title')),
+      el('div', { class: 'settings-layout' }, [
+        el(
+          'nav',
+          { class: 'settings-nav', 'aria-label': t('settings.title') },
+          entries.map((entry) => navItem(entry, entry.id === activeId, app)),
+        ),
+        el(
+          'div',
+          { class: 'settings-content' },
+          ...(activeId ? sectionBody(activeId, snapshot, app, theme, registerHide, registerSync) : []),
+        ),
+      ]),
     );
   }
 
@@ -56,42 +105,32 @@ export function renderSettings({ app, theme, scope, state }) {
   return bindScreen(state, node, render);
 }
 
-function hubView(state, app) {
+function navEntries(state) {
   const persona = getPersona(state.personaId);
-  const membership = state.memberships?.[persona.id] ?? state.membership ?? MEMBERSHIP.NONE;
-  const badge = membershipBadge(membership);
-
-  return [
-    el('h1', { class: 'font-display' }, t('settings.title')),
-    el('button', { class: 'list-row', type: 'button', onClick: () => app.navigate('/credentials') }, [
-      avatar(persona, 48),
-      el('span', { class: 'listrow__txt' }, [
-        el('span', { class: 'list-row__title' }, [persona.displayName, el('span', { class: 'vmark' }, ' ✓')]),
-        el('span', { class: 'mono small muted' }, identitySecondary(persona)),
-        el('span', { class: 'small' }, badge ? statusBadge(t(badge.key, badge.params), badge.tone) : t('settings.noMembership')),
-      ]),
-      el('span', { class: 'listrow__chev', 'aria-hidden': 'true' }, '›'),
-    ]),
-
-    el('span', { class: 'field-label' }, t('settings.preferences')),
-    el(
-      'div',
-      { class: 'list-divide' },
-      Object.entries(SECTIONS)
-        .filter(([id]) => id !== 'academy' || Boolean(state.academies?.[persona.id]))
-        .map(([id, meta]) => settingRow(meta, () => app.setSettingsSection(id))),
-    ),
-
-    el('span', { class: 'field-label' }, t('settings.support')),
-    el('div', { class: 'list-divide' }, [
-      plainRow('lucide:circle-help', '❓', t('settings.helpAndSupport'), () => app.stub(t('settings.helpComingSoon'))),
-      plainRow('lucide:info', 'ℹ', t('settings.about'), () => app.navigate('/about')),
-    ]),
-  ];
+  const owned = Boolean(state.academies?.[persona.id]);
+  return NAV_ORDER.filter((id) => id !== 'academy' || owned).map((id) => {
+    if (NAV_LINKS[id]) return { id, kind: 'link', ...NAV_LINKS[id] };
+    const meta = SECTIONS[id];
+    return { id, kind: 'section', icon: meta.icon, fallback: meta.fallback, labelKey: meta.navKey ?? meta.titleKey };
+  });
 }
 
-function sectionView(section, state, app, theme, registerBackupHide, registerSync) {
-  const meta = SECTIONS[section];
+function navItem(entry, active, app) {
+  const onClick =
+    entry.kind === 'link' ? () => app.navigate(entry.route) : () => app.setSettingsSection(entry.id);
+  return el(
+    'button',
+    {
+      class: `settings-nav__item${active ? ' is-on' : ''}`,
+      type: 'button',
+      'aria-current': active ? 'true' : null,
+      onClick,
+    },
+    [icon(entry.icon, { size: 17, fallback: entry.fallback }), el('span', {}, t(entry.labelKey))],
+  );
+}
+
+function sectionBody(section, state, app, theme, registerBackupHide, registerSync) {
   const persona = getPersona(state.personaId);
   const membership = state.memberships?.[persona.id] ?? state.membership ?? MEMBERSHIP.NONE;
 
@@ -105,6 +144,7 @@ function sectionView(section, state, app, theme, registerBackupHide, registerSyn
         cropImage: app.cropImage,
         blossomServer: state.blossomServer,
       }),
+      nip05Card(persona, app),
     ],
     academy: () => {
       const academy = state.academies?.[persona.id];
@@ -119,7 +159,6 @@ function sectionView(section, state, app, theme, registerBackupHide, registerSyn
       ];
     },
     identity: () => [
-      identityCard(persona, app),
       backupCard({
         title: t('settings.backup.accountTitle'),
         description: t('settings.backup.accountBody'),
@@ -129,6 +168,7 @@ function sectionView(section, state, app, theme, registerBackupHide, registerSyn
         external: state.session?.method === 'extension' || state.session?.method === 'bunker',
         app,
         registerHide: registerBackupHide,
+        fileBase: 'bitos-education-account-backup',
       }),
       state.academies?.[persona.id]?.orgPubkey
         ? backupCard({
@@ -139,54 +179,21 @@ function sectionView(section, state, app, theme, registerBackupHide, registerSyn
             readSecret: () => loadOrgSecret(state.academies[persona.id].id, decodeKey),
             app,
             registerHide: registerBackupHide,
+            fileBase: 'bitos-education-academy-backup',
           })
         : null,
+      identityCard(persona, app),
       handleCard(persona, app),
       signerCard(state, app),
     ],
     membership: () => membershipCard(state, app, persona, membership),
-    relays: () => [relayCard(state, app)],
+    relays: () => [relayCard(state, app), networkExtrasBody(state, app)],
     session: () => [sessionCard(app)],
+    lightning: () => lightningBody(state, app, persona),
+    privacy: () => privacyBody(state, app, persona),
   };
 
-  return [sectionHeader(meta, app), ...(bodies[section]?.() ?? []).filter(Boolean)];
-}
-
-function sectionHeader(meta, app) {
-  return el('div', { class: 'secthead' }, [
-    el(
-      'button',
-      {
-        class: 'icon-btn',
-        type: 'button',
-        'aria-label': t('settings.backToSettings'),
-        onClick: () => app.setSettingsSection(null),
-      },
-      icon('lucide:chevron-left', { size: 20, fallback: '←' }),
-    ),
-    el('div', { class: 'secthead__txt' }, [
-      el('h1', { class: 'font-display secthead__title' }, t(meta.titleKey)),
-      meta.subKey ? el('span', { class: 'list-row__sub' }, t(meta.subKey)) : null,
-    ]),
-  ]);
-}
-
-function settingRow(meta, onClick) {
-  return el('button', { class: 'list-row', type: 'button', onClick }, [
-    el('span', { class: 'hex-plate', style: { width: '40px', height: '40px' } }, icon(meta.icon, { size: 18, fallback: meta.fallback })),
-    el('span', { class: 'listrow__txt' }, [
-      el('span', { class: 'list-row__title' }, t(meta.titleKey)),
-      el('span', { class: 'list-row__sub' }, t(meta.subKey)),
-    ]),
-    el('span', { class: 'listrow__chev', 'aria-hidden': 'true' }, '›'),
-  ]);
-}
-
-function plainRow(iconName, fallback, title, onClick) {
-  return el('button', { class: 'list-row', type: 'button', onClick }, [
-    el('span', { class: 'listrow__ico' }, icon(iconName, { size: 17, fallback })),
-    el('span', { class: 'listrow__txt' }, el('span', { class: 'list-row__title' }, title)),
-  ]);
+  return (bodies[section]?.() ?? []).filter(Boolean);
 }
 
 function switchLine(key, label, theme) {
@@ -247,6 +254,12 @@ function appearanceBody(theme, registerSync, state, app) {
       switchLine('reduceMotion', t('settings.appearance.reduceMotion'), theme),
     ]),
 
+    el('span', { class: 'field-label', style: { marginTop: '18px' } }, t('settings.appearance.layout')),
+    el('div', { class: 'list-divide' }, [
+      switchLine('showEventIds', t('settings.appearance.showEventIds'), theme),
+      switchLine('showPowBadges', t('settings.appearance.showPowBadges'), theme),
+    ]),
+
     el(
       'div',
       { class: 'state-banner info' },
@@ -294,62 +307,115 @@ function identityCard(persona, app) {
     el('div', { class: 'arow' }, [
       button(t('settings.identity.editProfile'), { variant: 'gold', small: true, onClick: () => app.setSettingsSection('profile') }),
       button(t('settings.identity.copyPublicKey'), { small: true, onClick: () => app.copyText(persona.npub, t('settings.identity.publicKeyCopied')) }),
+      button(t('settings.identity.showQr'), { small: true, onClick: () => app.openQr?.({ text: persona.npub, label: t('settings.identity.qrTitle') }) }),
     ]),
     noteBox(t('settings.identity.npubNote')),
   ]);
 }
 
-function backupCard({ title, description, pubkey, npub, readSecret, external = false, app, registerHide }) {
+function downloadTextFile(filename, text) {
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = el('a', { href: url, download: filename });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1_000);
+}
+
+function backupFileText({ nsec, npub, pubkey }) {
+  return [
+    t('settings.backup.backupFileHeading'),
+    '='.repeat(40),
+    '',
+    `npub: ${npub ?? ''}`,
+    `nsec: ${nsec}`,
+    '',
+    t('settings.backup.backupFileNote'),
+    '',
+    `pubkey: ${pubkey ?? ''}`,
+  ].join('\n');
+}
+
+function backupCard({
+  title,
+  description,
+  pubkey,
+  npub,
+  readSecret,
+  external = false,
+  app,
+  registerHide,
+  fileBase = 'bitos-education-backup',
+}) {
   const card = el('div', { class: 'card' });
-  const status = el('p', { class: 'muted small', role: 'status', 'aria-live': 'polite' });
+  const status = el('p', { class: 'muted small backup-status', role: 'status', 'aria-live': 'polite' });
   const secret = el('code', { class: 'backup-key mono' });
-  const secretArea = el('div', { class: 'backup-key-area', hidden: true }, [
-    el('span', { class: 'field-label' }, t('settings.backup.secretKey')),
-    secret,
-  ]);
   let revealedNsec = null;
   let hideTimer = null;
 
-  const copy = button(t('settings.backup.copySecretKey'), {
-    small: true,
-    disabled: true,
-    onClick: () => {
-      if (revealedNsec) app.copyText(revealedNsec, t('settings.backup.secretCopied'));
+  const keyBox = el(
+    'button',
+    {
+      class: 'backup-key-box is-hidden',
+      type: 'button',
+      'aria-label': t('settings.backup.revealSecretKey'),
+      onClick: () => (revealedNsec ? hide() : reveal()),
     },
-  });
-  const toggle = button(t('settings.backup.revealSecretKey'), {
+    secret,
+  );
+  const hint = el('span', { class: 'backup-key-hint' }, t('settings.backup.tapToReveal'));
+
+  const copy = button(t('settings.backup.copySecretKey'), {
     small: true,
     variant: 'gold',
     onClick: () => {
-      if (revealedNsec) {
-        hide();
-        return;
-      }
-      const nsec = backupNsecForPubkey(readSecret(), pubkey);
-      if (!nsec) {
-        status.textContent = t('settings.backup.unavailable');
-        return;
-      }
-      revealedNsec = nsec;
-      secret.textContent = nsec;
-      secretArea.hidden = false;
-      copy.disabled = false;
-      toggle.textContent = t('settings.backup.hideSecretKey');
-      status.textContent = t('settings.backup.visible');
-      document.addEventListener('visibilitychange', hideWhenHidden);
-      hideTimer = setTimeout(hide, 60_000);
+      const nsec = reveal();
+      if (nsec) app.copyText(nsec, t('settings.backup.secretCopied'));
     },
   });
+  const download = button(t('settings.backup.downloadBackup'), {
+    small: true,
+    onClick: () => {
+      const nsec = reveal();
+      if (!nsec) return;
+      downloadTextFile(`${fileBase}.txt`, backupFileText({ nsec, npub, pubkey }));
+      status.textContent = t('settings.backup.backupDownloaded');
+    },
+  });
+
+  function maskSecret() {
+    secret.textContent = '•'.repeat(36);
+  }
+  maskSecret();
+
+  function reveal() {
+    if (revealedNsec) return revealedNsec;
+    const nsec = backupNsecForPubkey(readSecret(), pubkey);
+    if (!nsec) {
+      status.textContent = t('settings.backup.unavailable');
+      return null;
+    }
+    revealedNsec = nsec;
+    secret.textContent = nsec;
+    keyBox.classList.remove('is-hidden');
+    keyBox.setAttribute('aria-label', t('settings.backup.hideSecretKey'));
+    hint.textContent = t('settings.backup.tapToHide');
+    status.textContent = t('settings.backup.visible');
+    document.addEventListener('visibilitychange', hideWhenHidden);
+    hideTimer = setTimeout(hide, 60_000);
+    return nsec;
+  }
 
   function hide() {
     clearTimeout(hideTimer);
     hideTimer = null;
     document.removeEventListener('visibilitychange', hideWhenHidden);
     revealedNsec = null;
-    secret.textContent = '';
-    secretArea.hidden = true;
-    copy.disabled = true;
-    toggle.textContent = t('settings.backup.revealSecretKey');
+    maskSecret();
+    keyBox.classList.add('is-hidden');
+    keyBox.setAttribute('aria-label', t('settings.backup.revealSecretKey'));
+    hint.textContent = t('settings.backup.tapToReveal');
     status.textContent = t('settings.backup.hidden');
   }
 
@@ -366,10 +432,11 @@ function backupCard({ title, description, pubkey, npub, readSecret, external = f
     el('p', { class: 'mono small' }, npub ?? pubkey ?? ''),
     external
       ? noteBox(t('settings.backup.externalSigner'))
-      : el('div', {}, [
+      : el('div', { class: 'backup-card__body' }, [
           noteBox(t('settings.backup.warning'), 'warn'),
-          el('div', { class: 'arow' }, [toggle, copy]),
-          secretArea,
+          keyBox,
+          hint,
+          el('div', { class: 'arow' }, [copy, download]),
           status,
         ]),
   );
@@ -593,6 +660,222 @@ function handleCard(persona, app) {
         ]),
       ]),
     )),
+  ]);
+}
+
+// A preference switch bound to the reactive store. Unlike switchLine (theme
+// flags), this calls back so the caller can persist to the right prefs group.
+function prefSwitch(label, checked, onChange) {
+  return el('div', { class: 'list-row' }, [
+    el('span', { class: 'switch__label' }, label),
+    el('span', { class: 'spacer' }),
+    el(
+      'button',
+      {
+        class: `switch${checked ? ' is-on' : ''}`,
+        type: 'button',
+        role: 'switch',
+        'aria-checked': String(Boolean(checked)),
+        'aria-label': label,
+        onClick: () => onChange(!checked),
+      },
+      el('span', { class: 'switch__dot', 'aria-hidden': 'true' }),
+    ),
+  ]);
+}
+
+function selectField(label, value, options, onChange) {
+  const select = el(
+    'select',
+    { 'aria-label': label, onChange: (event) => onChange(event.target.value) },
+    options.map((option) =>
+      el('option', { value: String(option.value), selected: String(option.value) === String(value) }, option.label),
+    ),
+  );
+  return el('div', {}, [el('span', { class: 'field-label' }, label), select]);
+}
+
+function nip05Card(persona, app) {
+  const identifier = String(persona.nip05 ?? persona.handle ?? '').trim();
+  const status = el('p', { class: 'muted small', role: 'status', 'aria-live': 'polite' }, t('settings.nip05.idle'));
+  const valid = Boolean(splitNip05(identifier));
+
+  const verify = button(t('settings.nip05.verify'), {
+    small: true,
+    variant: 'gold',
+    disabled: !valid,
+    onClick: async () => {
+      status.textContent = t('settings.nip05.checking');
+      const resolved = await resolveNip05(identifier).catch(() => null);
+      if (!resolved) {
+        status.className = 'small danger';
+        status.textContent = t('settings.nip05.unverified');
+        return;
+      }
+      const matches = resolved.npub === persona.npub;
+      status.className = matches ? 'small ok' : 'small danger';
+      status.textContent = matches
+        ? t('settings.nip05.verified')
+        : t('settings.nip05.mismatch', { npub: resolved.npub });
+    },
+  });
+
+  return el('div', { class: 'card' }, [
+    el('h3', {}, t('settings.nip05.title')),
+    el('p', { class: 'muted small' }, t('settings.nip05.body')),
+    el('span', { class: 'field-label', style: { marginTop: '10px' } }, t('settings.nip05.identifier')),
+    el('p', { class: 'mono small' }, valid ? identifier : t('settings.nip05.none')),
+    el('div', { class: 'arow' }, [verify]),
+    status,
+  ]);
+}
+
+function privacyBody(state, app, persona) {
+  const prefs = state.prefs ?? {};
+  const privacy = prefs.privacy ?? {};
+  const muted = state.feedMutes?.[persona.id] ?? [];
+
+  const policyOptions = DM_POLICIES.map((id) => ({
+    value: id,
+    label: t('settings.privacy.dmPolicy.' + id),
+  }));
+
+  const powOptions = POW_CHOICES.map((bits) => ({
+    value: bits,
+    label: t('settings.privacy.powBits', { bits }),
+  }));
+
+  const mutedList = muted.length
+    ? el(
+        'div',
+        { class: 'list-divide' },
+        muted.map((actorId) =>
+          el('div', { class: 'list-row' }, [
+            el('span', { class: 'mono small' }, truncateNpub(String(actorId))),
+            el('span', { class: 'spacer' }),
+            button(t('settings.privacy.unmute'), { small: true, onClick: () => app.unmuteAuthor(actorId) }),
+          ]),
+        ),
+      )
+    : emptyState(t('settings.privacy.mutedEmpty'));
+
+  return el('div', {}, [
+    el('div', { class: 'card' }, [
+      el('h3', {}, t('settings.privacy.dmTitle')),
+      el('p', { class: 'muted small' }, t('settings.privacy.dmBody')),
+      selectField(t('settings.privacy.dmWho'), privacy.dmPolicy, policyOptions, (value) =>
+        app.updatePrefs('privacy', { dmPolicy: value }),
+      ),
+    ]),
+    el('div', { class: 'card' }, [
+      el('h3', {}, t('settings.privacy.powTitle')),
+      el('p', { class: 'muted small' }, t('settings.privacy.powBody')),
+      selectField(t('settings.privacy.defaultPow'), privacy.defaultPow, powOptions, (value) =>
+        app.updatePrefs('privacy', { defaultPow: Number(value) }),
+      ),
+      el('div', { class: 'list-divide', style: { marginTop: '12px' } }, [
+        prefSwitch(
+          t('settings.privacy.refuseLowPow'),
+          Boolean(privacy.refuseLowPow),
+          (on) => app.updatePrefs('privacy', { refuseLowPow: on }),
+        ),
+      ]),
+      el('p', { class: 'muted small' }, t('settings.privacy.refuseLowPowHint', { bits: LOW_POW_THRESHOLD })),
+    ]),
+    el('div', { class: 'card' }, [
+      el('h3', {}, t('settings.privacy.mutedTitle')),
+      el('p', { class: 'muted small' }, t('settings.privacy.mutedCount', { count: muted.length })),
+      mutedList,
+    ]),
+  ]);
+}
+
+function lightningBody(state, app, persona) {
+  const prefs = state.prefs ?? {};
+  const zap = prefs.zap ?? {};
+  const amounts = zapAmounts(prefs);
+  const connected = Boolean(state.walletConnectedByAccount?.[persona.id] ?? state.walletConnectedByAccount?.[state.accountId]);
+  const balance = walletBalance(zapsForAccount(state, state.accountId ?? persona.id));
+
+  const amountInputs = el(
+    'div',
+    { class: 'zap-amounts' },
+    amounts.map((amount, index) =>
+      el('input', {
+        type: 'number',
+        min: String(1),
+        inputmode: 'numeric',
+        value: String(amount),
+        'aria-label': t('settings.lightning.amountLabel', { index: index + 1 }),
+        onChange: (event) => {
+          const next = amounts.map((value, i) => (i === index ? Number(event.target.value) : value));
+          app.updatePrefs('zap', { amounts: next });
+        },
+      }),
+    ),
+  );
+
+  return el('div', {}, [
+    el('div', { class: 'card' }, [
+      el('h3', {}, t('settings.lightning.walletTitle')),
+      el('p', { class: 'small' }, connected ? t('settings.lightning.connected') : t('settings.lightning.disconnected')),
+      el('p', { class: 'muted small' }, t('settings.lightning.balance', { amount: formatSats(balance) })),
+      el('div', { class: 'arow' }, [
+        connected
+          ? button(t('settings.lightning.disconnect'), { small: true, onClick: () => app.disconnectWallet() })
+          : button(t('settings.lightning.connect'), { variant: 'gold', small: true, onClick: () => app.connectWallet() }),
+        button(t('settings.lightning.openWallet'), { small: true, onClick: () => app.navigate('/wallet') }),
+      ]),
+    ]),
+    el('div', { class: 'card' }, [
+      el('h3', {}, t('settings.lightning.amountsTitle')),
+      el('p', { class: 'muted small' }, t('settings.lightning.amountsHint')),
+      amountInputs,
+    ]),
+    el('div', { class: 'card' }, [
+      el('h3', {}, t('settings.lightning.prefsTitle')),
+      el('div', { class: 'list-divide' }, [
+        prefSwitch(t('settings.lightning.nonZapReactions'), Boolean(zap.nonZapReactions), (on) =>
+          app.updatePrefs('zap', { nonZapReactions: on }),
+        ),
+        prefSwitch(t('settings.lightning.anonymousZaps'), Boolean(zap.anonymousZaps), (on) =>
+          app.updatePrefs('zap', { anonymousZaps: on }),
+        ),
+        prefSwitch(t('settings.lightning.autoZapFollow'), Boolean(zap.autoZapFollow), (on) =>
+          app.updatePrefs('zap', { autoZapFollow: on }),
+        ),
+      ]),
+    ]),
+  ]);
+}
+
+function networkExtrasBody(state, app) {
+  const prefs = state.prefs ?? {};
+  const network = prefs.network ?? {};
+
+  const connectionOptions = CONNECTION_CHOICES.map((value) => ({ value, label: String(value) }));
+
+  const subscriptionRows = SUBSCRIPTION_KINDS.map(({ kind, labelKey }) =>
+    prefSwitch(t(labelKey), network.subscriptions?.[kind] !== false, (on) => app.toggleSubscription(kind, on)),
+  );
+
+  return el('div', {}, [
+    el('div', { class: 'card' }, [
+      el('h3', {}, t('settings.network.connectionTitle')),
+      selectField(t('settings.network.maxConnections'), network.maxConnections, connectionOptions, (value) =>
+        app.updatePrefs('network', { maxConnections: Number(value) }),
+      ),
+      el('p', { class: 'muted small' }, t('settings.network.maxConnectionsHint')),
+      el('div', { class: 'arow', style: { marginTop: '12px' } }, [
+        button(t('settings.network.clearCache'), { small: true, onClick: () => app.clearCache() }),
+      ]),
+      el('p', { class: 'muted small' }, t('settings.network.clearCacheHint')),
+    ]),
+    el('div', { class: 'card' }, [
+      el('h3', {}, t('settings.network.subscriptions')),
+      el('p', { class: 'muted small' }, t('settings.network.subscriptionsHint')),
+      el('div', { class: 'list-divide' }, subscriptionRows),
+    ]),
   ]);
 }
 

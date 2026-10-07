@@ -15,7 +15,9 @@ import {
   subjectsForAcademy,
   versionsFor,
 } from '../domain/classroom.js';
+import { conversationWith, conversationsForAccount } from '../domain/messaging.js';
 import { ROLE } from '../domain/school.js';
+import { walletBalance, zapsForAccount } from '../domain/wallet.js';
 import { renderCreateAcademy } from '../ui/components/academy-dialog.js';
 import { renderPrivateName } from '../ui/components/private-name-dialog.js';
 import {
@@ -33,13 +35,17 @@ import {
   renderSubmitHomework,
 } from '../ui/components/classroom-dialogs.js';
 import { renderComposer } from '../ui/components/composer.js';
+import { renderThread } from '../ui/components/reply-dialog.js';
 import { renderFileViewer } from '../ui/components/file-viewer.js';
 import { inviteLinkPanel, renderInviteLink, renderInviteTeacher } from '../ui/components/invite-dialog.js';
-import { noteBox } from '../ui/components/primitives.js';
+import { renderNewMessage } from '../ui/components/new-message-dialog.js';
+import { noteBox, button } from '../ui/components/primitives.js';
+import { qrNode } from '../services/qr.js';
 import { renderCropper } from '../ui/components/image-cropper.js';
 import { learnerDisplayName } from '../ui/private-name-view.js';
 import { renderShare } from '../ui/components/share-dialog.js';
 import { renderSign } from '../ui/components/sign-drawer.js';
+import { renderZap } from '../ui/components/zap-dialog.js';
 import { t } from '../services/i18n/index.js';
 
 export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACTS }) {
@@ -47,10 +53,12 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
 
   function openNamed(name, options) {
     handles[name]?.close();
+    const { onClose, ...rest } = options;
     const handle = overlay.open({
-      ...options,
-      onClose: () => {
+      ...rest,
+      onClose: (result) => {
         handles[name] = null;
+        onClose?.(result);
       },
     });
     handles[name] = handle;
@@ -379,23 +387,138 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
   }
 
   function openComposer() {
+    const persona = getPersona(store.getState().personaId);
     return openNamed('composer', {
       label: t('common.a11y.newPost'),
       content: renderComposer({
+        persona,
         close: closeNamed('composer'),
-        onPost: (text, close) => {
-          actions.postNote(text);
-          close();
+        onPost: (payload) => actions.postNote(payload),
+        uploadImage: (blob) => actions.uploadImage(blob),
+        uploadAttachment: (file) => actions.uploadAttachment(file),
+        defaultPow: actions.defaultPow?.() ?? 0,
+      }),
+    });
+  }
+
+  function findNote(noteId) {
+    const current = store.getState();
+    return (
+      (current.events ?? []).find((entry) => entry.id === noteId) ??
+      (current.profileTimeline?.events ?? []).find((entry) => entry.id === noteId) ??
+      null
+    );
+  }
+
+  function openThread(noteId) {
+    const note = findNote(noteId);
+    if (!note) return null;
+    actions.loadThread(noteId);
+    const { node, cleanup } = renderThread({
+      note,
+      getReplies: () => store.getState().threads?.[noteId]?.replies ?? [],
+      getStatus: () => store.getState().threads?.[noteId]?.status ?? 'loading',
+      subscribe: (listener) => store.subscribe(listener),
+      onReply: (text, pow) => actions.replyPost(noteId, text, pow),
+      onOpenMedia: (file) => openFileViewer(file),
+      close: closeNamed('thread'),
+    });
+    return openNamed('thread', {
+      kind: 'drawer',
+      label: t('home.replies'),
+      content: node,
+      onClose: () => {
+        cleanup?.();
+        actions.closeThread?.(noteId);
+      },
+    });
+  }
+
+  function openNewMessage() {
+    return openNamed('new-message', {
+      label: t('messages.newMessage'),
+      content: renderNewMessage({ actions, close: closeNamed('new-message') }),
+    });
+  }
+
+  // Shared zap dialog. `registerCleanup` lets the dialog tear down its live
+  // receipt subscription whether it closes itself (auto-detect settlement) or
+  // the user dismisses it (backdrop / Escape).
+  function openZapDialog({ peer, eventId = null }) {
+    const state = store.getState();
+    let cleanup = null;
+    return openNamed('zap', {
+      label: t('wallet.zap.title'),
+      content: renderZap({
+        peer,
+        eventId,
+        presets: actions.zapPresets?.(),
+        balance: walletBalance(zapsForAccount(state, state.accountId)),
+        actions,
+        close: closeNamed('zap'),
+        registerCleanup: (fn) => {
+          cleanup = fn;
         },
       }),
+      onClose: () => cleanup?.(),
+    });
+  }
+
+  function openZap(eventId) {
+    const event = findNote(eventId);
+    if (!event) return null;
+    return openZapDialog({ peer: getPersona(event.author), eventId });
+  }
+
+  function openZapPeer(peerId) {
+    const peer = getPersona(peerId);
+    if (!peer?.id) return null;
+    return openZapDialog({ peer });
+  }
+
+  // Open the existing thread with this person, or start a new one. Used by the
+  // "Message" action on a post or profile.
+  function openMessageTo(peerId) {
+    const peer = getPersona(peerId);
+    if (!peer?.id) return null;
+    const state = store.getState();
+    const existing = conversationWith(conversationsForAccount(state, state.accountId), peerId);
+    if (existing) {
+      actions.setActiveConversation(existing.id);
+      actions.navigate('/messages');
+      return null;
+    }
+    return openNamed('new-message', {
+      label: t('messages.newMessage'),
+      content: renderNewMessage({ actions, close: closeNamed('new-message'), recipient: peer }),
+    });
+  }
+
+  function openQr({ text, label, description } = {}) {
+    const value = String(text ?? '').trim();
+    if (!value) return null;
+    return openNamed('qr', {
+      label: label ?? t('settings.identity.qrTitle'),
+      content: el('div', { class: 'qr-dialog' }, [
+        qrNode(value, { cell: 6, margin: 2 }),
+        description ? el('p', { class: 'muted small' }, description) : null,
+        el('p', { class: 'mono small qr-dialog__value' }, value),
+        button(t('common.actions.copy'), { small: true, onClick: () => actions.copyText(value) }),
+      ]),
     });
   }
 
   return {
     openSign,
     openShare,
+    openQr,
     cropImage,
     openComposer,
+    openThread,
+    openNewMessage,
+    openMessageTo,
+    openZap,
+    openZapPeer,
     openCreateAcademy,
     openInviteTeacher,
     openInviteLink,

@@ -1,15 +1,18 @@
 import { el } from '../../core/dom.js';
+import { truncateNpub } from '../../domain/identity.js';
 import { isNip05, normalizeUrl } from '../../domain/profile.js';
 import { BLOSSOM_SERVERS } from '../../services/blossom.js';
 import { t } from '../../services/i18n/index.js';
+import { icon } from './icon.js';
 import { avatar, button, noteBox } from './primitives.js';
-import { charCount, fieldHead, formFoot, formSection, imageField, setWorking } from './form-fields.js';
+import { charCount, fieldHead, formSection, setWorking } from './form-fields.js';
 
 export function renderEditProfile({ persona, actions, close, cropImage, blossomServer }) {
   const state = {
     picture: persona.picture ?? '',
     banner: persona.banner ?? '',
   };
+  let bot = persona.bot === true;
 
   const nameInput = el('input', {
     id: 'edit-profile-name',
@@ -57,24 +60,6 @@ export function renderEditProfile({ persona, actions, close, cropImage, blossomS
     autocomplete: 'off',
     spellcheck: 'false',
   });
-  const botToggle = el('input', { id: 'edit-profile-bot', type: 'checkbox', checked: persona.bot === true });
-
-  const avatarPreview = el('span', { class: 'image-field__avatar' });
-  const bannerImg = el('img', { class: 'image-field__banner-img', alt: '' });
-  const bannerEmpty = el('span', { class: 'muted small' }, t('settings.profile.noBanner'));
-  const bannerPreview = el('div', { class: 'image-field__banner' }, [bannerImg, bannerEmpty]);
-
-  const renderAvatar = () => {
-    avatarPreview.replaceChildren(avatar({ avatar: persona.avatar, picture: state.picture }, 64));
-  };
-  const renderBanner = () => {
-    const has = Boolean(state.banner);
-    bannerImg.hidden = !has;
-    bannerEmpty.hidden = has;
-    if (has) bannerImg.src = state.banner;
-  };
-  renderAvatar();
-  renderBanner();
 
   const pictureFile = el('input', { type: 'file', accept: 'image/*', hidden: true });
   const bannerFile = el('input', { type: 'file', accept: 'image/*', hidden: true });
@@ -83,6 +68,125 @@ export function renderEditProfile({ persona, actions, close, cropImage, blossomS
   const error = el('p', { class: 'small danger', 'aria-live': 'polite' });
   const busy = { value: false };
 
+  // ---- live preview ------------------------------------------------------
+  const previewName = el('strong', { class: 'pedit-hero__name' });
+  const previewHandle = el('span', { class: 'pedit-hero__handle' });
+  const coverImg = el('img', { class: 'pedit-hero__cover-img', alt: '', hidden: true });
+  const coverEmpty = el('span', { class: 'pedit-hero__cover-empty' }, [
+    icon('lucide:image', { size: 16, fallback: '🖼' }),
+    t('settings.profile.addBanner'),
+  ]);
+  const coverEditLabel = el('span', {}, t('settings.profile.changeBanner'));
+  const coverEdit = el(
+    'button',
+    {
+      class: 'pedit-hero__cover-btn',
+      type: 'button',
+      'aria-label': t('settings.profile.changeBanner'),
+      onClick: () => bannerFile.click(),
+    },
+    [icon('lucide:camera', { size: 14, fallback: '📷' }), coverEditLabel],
+  );
+  const avatarRing = el('span', { class: 'pedit-hero__avatar-ring' });
+  const avatarBtn = el(
+    'button',
+    {
+      class: 'pedit-hero__avatar-btn',
+      type: 'button',
+      'aria-label': t('settings.profile.changePhoto'),
+      onClick: () => pictureFile.click(),
+    },
+    [
+      avatarRing,
+      el('span', { class: 'pedit-hero__avatar-badge' }, icon('lucide:camera', { size: 12, fallback: '📷' })),
+    ],
+  );
+
+  const removePhotoBtn = button(t('settings.profile.removePhoto'), {
+    small: true,
+    variant: 'ghost',
+    onClick: () => {
+      state.picture = '';
+      renderAvatar();
+      afterMediaChange();
+    },
+  });
+  const removeBannerBtn = button(t('settings.profile.removeBanner'), {
+    small: true,
+    variant: 'ghost',
+    onClick: () => {
+      state.banner = '';
+      renderBanner();
+      afterMediaChange();
+    },
+  });
+  const heroActions = el('div', { class: 'pedit-hero__actions' }, [removePhotoBtn, removeBannerBtn]);
+
+  const hero = el('div', { class: 'pedit-hero' }, [
+    el('div', { class: 'pedit-hero__cover' }, [coverImg, coverEmpty, coverEdit]),
+    el('div', { class: 'pedit-hero__body' }, [
+      avatarBtn,
+      el('div', { class: 'pedit-hero__meta' }, [previewName, previewHandle]),
+    ]),
+    heroActions,
+  ]);
+
+  const renderAvatar = () => {
+    avatarRing.replaceChildren(avatar({ avatar: persona.avatar, picture: state.picture }, 76));
+  };
+
+  const renderBanner = () => {
+    const has = Boolean(state.banner);
+    coverImg.hidden = !has;
+    coverEmpty.hidden = has;
+    const label = has ? t('settings.profile.changeBanner') : t('settings.profile.addBanner');
+    coverEditLabel.textContent = label;
+    coverEdit.setAttribute('aria-label', label);
+    if (has) coverImg.src = state.banner;
+    else coverImg.removeAttribute('src');
+  };
+
+  const refreshHeroActions = () => {
+    removePhotoBtn.hidden = !state.picture;
+    removeBannerBtn.hidden = !state.banner;
+    heroActions.hidden = !state.picture && !state.banner;
+  };
+
+  const syncPreview = () => {
+    previewName.textContent = nameInput.value.trim() || t('settings.profile.previewEmptyName');
+    const username = usernameInput.value.trim().replace(/^@/, '');
+    const nip05 = handleInput.value.trim();
+    previewHandle.textContent = username ? `@${username}` : nip05 || truncateNpub(persona.npub);
+  };
+
+  const afterMediaChange = () => {
+    refreshHeroActions();
+    refreshDirty();
+  };
+
+  // ---- bot switch --------------------------------------------------------
+  const botSwitch = el(
+    'button',
+    {
+      class: 'switch',
+      type: 'button',
+      role: 'switch',
+      'aria-checked': String(bot),
+      'aria-label': t('settings.profile.botAccount'),
+      onClick: () => {
+        bot = !bot;
+        refreshBot();
+        refreshDirty();
+      },
+    },
+    el('span', { class: 'switch__dot', 'aria-hidden': 'true' }),
+  );
+  const refreshBot = () => {
+    botSwitch.classList.toggle('is-on', bot);
+    botSwitch.setAttribute('aria-checked', String(bot));
+  };
+
+  // ---- uploads -----------------------------------------------------------
   const uploadKind = async (file, { label, aspect, outputWidth, apply }) => {
     if (!file || busy.value) return;
     if (!file.type.startsWith('image/')) {
@@ -118,6 +222,7 @@ export function renderEditProfile({ persona, actions, close, cropImage, blossomS
       apply: (url) => {
         state.picture = url;
         renderAvatar();
+        afterMediaChange();
       },
     });
   });
@@ -132,11 +237,44 @@ export function renderEditProfile({ persona, actions, close, cropImage, blossomS
       apply: (url) => {
         state.banner = url;
         renderBanner();
+        afterMediaChange();
       },
     });
   });
 
-  const submit = button(t('settings.profile.savePublish'), { variant: 'gold', type: 'submit' });
+  // ---- dirty tracking ----------------------------------------------------
+  const collect = () => ({
+    name: nameInput.value.trim(),
+    username: usernameInput.value.trim(),
+    about: aboutInput.value,
+    nip05: handleInput.value.trim(),
+    lud16: lud16Input.value.trim(),
+    website: websiteInput.value.trim(),
+    picture: state.picture,
+    banner: state.banner,
+    bot,
+  });
+  const initial = collect();
+  const unsaved = el(
+    'span',
+    { class: 'pedit-foot__unsaved', role: 'status', 'aria-live': 'polite', hidden: true },
+    [icon('lucide:circle-dot', { size: 12, fallback: '•' }), t('settings.profile.unsaved')],
+  );
+  const submit = button(t('settings.profile.savePublish'), { variant: 'gold', type: 'submit', disabled: true });
+
+  function refreshDirty() {
+    const current = collect();
+    const dirty = Object.keys(initial).some((key) => current[key] !== initial[key]);
+    submit.disabled = !dirty;
+    unsaved.hidden = !dirty;
+  }
+
+  [nameInput, usernameInput, aboutInput, handleInput, lud16Input, websiteInput].forEach((input) => {
+    input.addEventListener('input', () => {
+      syncPreview();
+      refreshDirty();
+    });
+  });
 
   const run = async () => {
     error.textContent = '';
@@ -174,10 +312,11 @@ export function renderEditProfile({ persona, actions, close, cropImage, blossomS
       handle: nip05,
       lud16,
       website,
-      bot: botToggle.checked,
+      bot,
     });
     setWorking(submit, false, t('settings.profile.savePublish'));
     if (ok) close();
+    else refreshDirty();
   };
 
   const serverSelect = el(
@@ -188,7 +327,44 @@ export function renderEditProfile({ persona, actions, close, cropImage, blossomS
     ),
   );
 
-  return el('div', {}, [
+  // ---- advanced (uploads) disclosure ------------------------------------
+  const advancedBody = el('div', { class: 'pedit-advanced__body', hidden: true }, [
+    el('label', { for: 'edit-profile-server' }, t('settings.profile.blossomServer')),
+    serverSelect,
+    el('p', { class: 'field-hint' }, t('settings.profile.blossomServerHint')),
+    noteBox(t('settings.profile.uploadNote')),
+  ]);
+  const advanced = el('div', { class: 'pedit-advanced' }, [
+    el(
+      'button',
+      {
+        class: 'pedit-advanced__head',
+        type: 'button',
+        'aria-expanded': 'false',
+        onClick: (event) => {
+          const open = event.currentTarget.getAttribute('aria-expanded') === 'true';
+          event.currentTarget.setAttribute('aria-expanded', String(!open));
+          advancedBody.hidden = open;
+        },
+      },
+      [
+        el('span', { class: 'pedit-advanced__chev' }, icon('lucide:chevron-right', { size: 16, fallback: '›' })),
+        el('span', {}, t('settings.profile.sectionUploads')),
+        el('span', { class: 'spacer' }),
+        el('span', { class: 'pedit-advanced__hint' }, t('settings.profile.advancedHint')),
+      ],
+    ),
+    advancedBody,
+  ]);
+
+  renderAvatar();
+  renderBanner();
+  refreshHeroActions();
+  refreshBot();
+  syncPreview();
+  refreshDirty();
+
+  return el('div', { class: 'pedit' }, [
     el(
       'form',
       {
@@ -198,29 +374,8 @@ export function renderEditProfile({ persona, actions, close, cropImage, blossomS
         },
       },
       [
+        hero,
         formSection(t('settings.profile.sectionIdentity'), [
-          imageField({
-            label: t('settings.profile.pictureLabel'),
-            hint: t('settings.profile.pictureHint'),
-            preview: avatarPreview,
-            fileInput: pictureFile,
-            onUpload: () => pictureFile.click(),
-            onRemove: () => {
-              state.picture = '';
-              renderAvatar();
-            },
-          }),
-          imageField({
-            label: t('settings.profile.bannerLabel'),
-            hint: t('settings.profile.bannerHint'),
-            preview: bannerPreview,
-            fileInput: bannerFile,
-            onUpload: () => bannerFile.click(),
-            onRemove: () => {
-              state.banner = '';
-              renderBanner();
-            },
-          }),
           fieldHead(t('settings.profile.displayName'), 'edit-profile-name', charCount(nameInput, 64)),
           nameInput,
           el('label', { for: 'edit-profile-username' }, t('settings.profile.usernameLabel')),
@@ -230,9 +385,10 @@ export function renderEditProfile({ persona, actions, close, cropImage, blossomS
         formSection(t('settings.profile.sectionAbout'), [
           fieldHead(t('settings.profile.bio'), 'edit-profile-about', charCount(aboutInput, 480)),
           aboutInput,
-          el('label', { class: 'check', for: 'edit-profile-bot' }, [
-            botToggle,
-            el('span', {}, t('settings.profile.botAccount')),
+          el('div', { class: 'row pedit-bot' }, [
+            el('span', { class: 'switch__label' }, t('settings.profile.botAccount')),
+            el('span', { class: 'spacer' }),
+            botSwitch,
           ]),
         ]),
         formSection(t('settings.profile.sectionLinks'), [
@@ -245,16 +401,13 @@ export function renderEditProfile({ persona, actions, close, cropImage, blossomS
           el('label', { for: 'edit-profile-website' }, t('settings.profile.websiteLabel')),
           websiteInput,
         ]),
-        formSection(t('settings.profile.sectionUploads'), [
-          el('label', { for: 'edit-profile-server' }, t('settings.profile.blossomServer')),
-          serverSelect,
-          el('p', { class: 'field-hint' }, t('settings.profile.blossomServerHint')),
-        ]),
+        advanced,
         status,
         error,
-        noteBox(t('settings.profile.uploadNote')),
-        formFoot([submit], true),
+        el('div', { class: 'pedit-foot' }, [unsaved, submit]),
       ],
     ),
+    pictureFile,
+    bannerFile,
   ]);
 }

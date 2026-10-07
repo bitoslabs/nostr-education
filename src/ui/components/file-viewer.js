@@ -37,9 +37,11 @@ export function renderFileViewer({ file, close }) {
   const media =
     kind === FILE_KIND.IMAGE
       ? el('img', { class: 'fileview__media', src: url, alt: name, loading: 'lazy' })
-      : kind === FILE_KIND.PDF
-        ? el('iframe', { class: 'fileview__frame', src: url, title: name })
-        : el('p', { class: 'muted small' }, t('teaching.fileNoPreview'));
+      : kind === FILE_KIND.VIDEO
+        ? el('video', { class: 'fileview__media', src: url, controls: true, playsinline: true, preload: 'metadata' })
+        : kind === FILE_KIND.PDF
+          ? el('iframe', { class: 'fileview__frame', src: url, title: name })
+          : el('p', { class: 'muted small' }, t('teaching.fileNoPreview'));
 
   return el('div', { class: 'fileview' }, [
     el('div', { class: 'fileview__head' }, [

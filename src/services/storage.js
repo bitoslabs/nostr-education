@@ -1,11 +1,16 @@
 const STATE_KEY = 'bitos.education.state.v1';
 const SECRET_KEY = 'bitos.education.secret.v1';
 const ORG_SECRET_KEY = 'bitos.education.orgsecrets.v1';
+const FEED_CACHE_KEY = 'bitos.education.feed.v1';
+// Only the newest notes are cached, for an instant first paint before relays
+// answer. Enough to fill the first screen; stale entries fall off the tail.
+const FEED_CACHE_LIMIT = 20;
 
 const PERSISTED_FIELDS = [
   'session',
   'locale',
   'mode',
+  'prefs',
   'relayConfig',
   'profiles',
   'blossomServer',
@@ -27,6 +32,11 @@ const PERSISTED_FIELDS = [
   'privateNames',
   'following',
   'capabilities',
+  'zapsByAccount',
+  'conversationsByAccount',
+  'walletConnectedByAccount',
+  'notificationReads',
+  'socialNotificationsByAccount',
 ];
 
 function storage() {
@@ -62,6 +72,18 @@ export function saveState(state) {
   }
 }
 
+// Wipe only the cached feed page, keeping keys and records intact. Used by the
+// Settings → Network "Clear cache" control.
+export function clearFeedCache() {
+  const store = storage();
+  if (!store) return;
+  try {
+    store.removeItem(FEED_CACHE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 export function clearState() {
   const store = storage();
   if (!store) return;
@@ -69,8 +91,37 @@ export function clearState() {
     store.removeItem(STATE_KEY);
     store.removeItem(SECRET_KEY);
     store.removeItem(ORG_SECRET_KEY);
+    store.removeItem(FEED_CACHE_KEY);
   } catch {
     /* ignore */
+  }
+}
+
+// Cached notes for an instant feed paint. Store the signed source event only,
+// so the caller re-projects it (fresh relative times, no stale flags) on load.
+export function loadFeedCache() {
+  const store = storage();
+  if (!store) return [];
+  try {
+    const raw = store.getItem(FEED_CACHE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveFeedCache(events) {
+  const store = storage();
+  if (!store) return;
+  try {
+    const notes = (Array.isArray(events) ? events : [])
+      .filter((event) => event?.type === 'social' && event?.raw)
+      .slice(0, FEED_CACHE_LIMIT)
+      .map((event) => event.raw);
+    store.setItem(FEED_CACHE_KEY, JSON.stringify(notes));
+  } catch {
+    /* storage may be unavailable or full */
   }
 }
 

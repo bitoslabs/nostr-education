@@ -6,11 +6,12 @@ import { createReactiveStore } from './core/reactive.js';
 import { createRouter, navigate } from './core/router.js';
 import { createScope } from './core/scope.js';
 import { createStore } from './core/store.js';
-import { getPersona, getPersonaIds, hydrateProfiles, registerPersona } from './data/personas.js';
+import { getPersona, getPersonaIds, hasPersona, hydrateProfiles, registerPersona } from './data/personas.js';
 import { DEFAULT_SIGNER } from './domain/account.js';
 import { findAcademyById } from './domain/academy.js';
 import { classroomById } from './domain/classroom.js';
 import { credentialFromEvent } from './domain/credential.js';
+import { feedEventFromNote } from './domain/feed.js';
 import {
   RECORD_TYPES,
   applyRecord,
@@ -21,7 +22,9 @@ import {
 import { parseProfileMeta } from './domain/profile.js';
 import { normalizeRelayList } from './domain/relay.js';
 import { normalizeMode } from './domain/mode.js';
+import { normalizePrefs, subscriptionEnabled } from './domain/prefs.js';
 import { MEMBERSHIP } from './domain/school.js';
+import { ZAP_RECEIPT_KIND } from './domain/wallet.js';
 import { APP_TAG, decodeRecord } from './services/records.js';
 import { BLOSSOM_SERVERS } from './services/blossom.js';
 import { createConfirmService } from './services/confirm.js';
@@ -37,10 +40,10 @@ import {
   localSigner,
   verify,
 } from './services/nostr.js';
-import { GIFT_WRAP_KIND, unwrapGiftWrap } from './services/giftwrap.js';
+import { GIFT_WRAP_KIND, RUMOR_KIND, unwrapGiftWrap } from './services/giftwrap.js';
 import { createRelayService } from './services/relay.js';
 import { createSignerService } from './services/signer.js';
-import { loadSecretKey, loadState, saveState } from './services/storage.js';
+import { loadFeedCache, loadSecretKey, loadState, saveFeedCache, saveState } from './services/storage.js';
 import { createThemeService } from './services/theme.js';
 import { applyStaticTranslations, getLocale, setLocale, t } from './services/i18n/index.js';
 import { createConfirmHost } from './ui/components/confirm-dialog.js';
@@ -61,7 +64,10 @@ import { renderCredentials } from './ui/screens/credentials.js';
 import { renderDiscover } from './ui/screens/discover.js';
 import { renderHome } from './ui/screens/home.js';
 import { renderJoin } from './ui/screens/join.js';
+import { renderMessages } from './ui/screens/messages.js';
 import { renderNotifications } from './ui/screens/notifications.js';
+import { renderProfile } from './ui/screens/profile.js';
+import { renderWallet } from './ui/screens/wallet.js';
 import { renderRole } from './ui/screens/role.js';
 import { renderSettings } from './ui/screens/settings.js';
 import { renderVerify } from './ui/screens/verify.js';
@@ -110,6 +116,7 @@ const store = createStore({
   assessmentRevisions,
   profiles: persisted.profiles ?? {},
   mode: normalizeMode(persisted.mode),
+  prefs: normalizePrefs(persisted.prefs),
   blossomServer: persisted.blossomServer ?? BLOSSOM_SERVERS[0],
   relayConfig: normalizeRelayList(persisted.relayConfig ?? persisted.relays ?? DEFAULT_RELAYS, {
     defaults: DEFAULT_RELAYS,
@@ -119,7 +126,23 @@ const store = createStore({
   locale: persisted.locale ?? 'lo',
   joinRequests: persisted.joinRequests ?? [],
   enrollRequests: persisted.enrollRequests ?? [],
-  events: [],
+  // Notes are relay-backed; the last cached page paints instantly on reload,
+  // then the relay subscription refreshes it. `feedStatus` drives the skeleton.
+  events: loadFeedCache().map((raw) => feedEventFromNote(raw)).filter(Boolean),
+  feedStatus: 'idle',
+  // The open profile page's content. Session-local and separate from the home
+  // feed, so browsing a profile never changes For-you / Latest ordering, yet
+  // engagement (reactions, reposts, threads) still resolves these events.
+  // `events` holds the author's notes + replies; `zaps`/`likes` load lazily.
+  profileTimeline: {
+    pubkey: null,
+    status: 'idle',
+    events: [],
+    zaps: [],
+    zapsStatus: 'idle',
+    likes: [],
+    likesStatus: 'idle',
+  },
   signQueue: persisted.signQueue ?? [],
   recommendations: persisted.recommendations ?? [],
   capabilities: persisted.capabilities ?? [],
@@ -130,6 +153,7 @@ const store = createStore({
   lastCreated: null,
   route: '/home',
   feedTab: 'foryou',
+  notificationTab: 'all',
   // Read/dismiss state per persona. Events themselves are session-local, so
   // this stays in memory too — it must not imply cross-device persistence.
   feedStates: {},
@@ -142,6 +166,25 @@ const store = createStore({
   gradebookClassId: null,
   reviewSelectedId: null,
   membership: MEMBERSHIP.NONE,
+  // Wallet, messaging, and notification-read state are local, per-account
+  // prototype data. A wallet balance never authorizes anything and messages
+  // are not yet an official academic record (docs/product-roadmap.md).
+  zapsByAccount: persisted.zapsByAccount ?? {},
+  conversationsByAccount: persisted.conversationsByAccount ?? {},
+  walletConnectedByAccount: persisted.walletConnectedByAccount ?? {},
+  notificationReads: persisted.notificationReads ?? {},
+  // Public engagement on this account's own notes (likes, replies, reposts,
+  // zaps), projected from signed relay events addressed to `#p:[me]`.
+  // Persisted so unread rows survive a reload; the source stays on relays.
+  socialNotificationsByAccount: persisted.socialNotificationsByAccount ?? {},
+  activeConversationId: null,
+  // Drives the conversation-list skeleton on first load; 'loading' only until
+  // the gift-wrap query answers, so an empty inbox never flashes before the
+  // relay replay arrives.
+  messagesStatus: 'idle',
+  // Loaded comment threads, keyed by note id: { status, replies[] }. Session
+  // only; replies are fetched on demand when a thread opens.
+  threads: {},
 });
 
 // Repair any submission head that was resolved with the old revision ordering,
@@ -175,14 +218,71 @@ const dialogs = createDialogs({ overlay, store, actions });
 const app = { ...actions, ...dialogs };
 app.refreshRecords = refreshRecords;
 
+// The prototype once seeded clearly-fake demo zaps and conversations. Wallet,
+// messaging, and the feed are relay-backed now, so strip any demo rows a
+// previous build persisted instead of seeding new ones.
+function dropDemoData(accountId) {
+  if (!accountId) return;
+  const current = store.getState();
+  const patch = {};
+  const zaps = current.zapsByAccount?.[accountId] ?? [];
+  const realZaps = zaps.filter((zap) => !String(zap?.id ?? '').startsWith('demo-zap-'));
+  if (realZaps.length !== zaps.length) {
+    patch.zapsByAccount = { ...(current.zapsByAccount ?? {}), [accountId]: realZaps };
+  }
+  const list = current.conversationsByAccount?.[accountId] ?? [];
+  const realConversations = list.filter(
+    (conversation) =>
+      !String(conversation?.id ?? '').startsWith('demo-conv-') &&
+      !String(conversation?.peerId ?? '').startsWith('demo-'),
+  );
+  if (realConversations.length !== list.length) {
+    patch.conversationsByAccount = {
+      ...(current.conversationsByAccount ?? {}),
+      [accountId]: realConversations,
+    };
+  }
+  if (Object.keys(patch).length) store.setState(patch);
+}
+
 let syncedAccount = null;
+let syncedSubs = null;
+let cachedEventsRef = null;
+let cachedTimelineRef = null;
 store.subscribe((state) => {
   saveState(state);
+  if (state.events !== cachedEventsRef) {
+    cachedEventsRef = state.events;
+    saveFeedCache(state.events);
+  }
+  // The profile timeline brings new note ids on screen; re-query engagement
+  // counts for them the same way a new feed page does.
+  if (state.profileTimeline?.events !== cachedTimelineRef) {
+    cachedTimelineRef = state.profileTimeline?.events ?? null;
+    if (cachedTimelineRef?.length) scheduleEngagementSync();
+  }
   if (state.locale !== getLocale()) setLocale(state.locale);
+  // Changing which event kinds we subscribe to re-queries relays immediately
+  // instead of waiting for the next account switch or reload.
+  const subsKey = JSON.stringify(state.prefs?.network?.subscriptions ?? {});
+  if (subsKey !== syncedSubs) {
+    syncedSubs = subsKey;
+    syncRecords();
+    syncNotes();
+    syncEngagement();
+    syncEngagementNotifications();
+    syncZaps();
+  }
   if (state.accountId !== syncedAccount) {
     syncedAccount = state.accountId;
+    dropDemoData(state.accountId);
+    engagementSeen.clear();
     syncRecords();
     syncCredentials();
+    syncNotes();
+    syncEngagement();
+    syncEngagementNotifications();
+    syncZaps();
   }
 });
 
@@ -224,11 +324,16 @@ async function restoreSigner() {
 }
 
 function recordFilters(me) {
-  return [
+  const filters = [
     { kinds: [KIND.APP_DATA, KIND.APP_DATA_HISTORY], '#t': [APP_TAG], authors: [me] },
     { kinds: [KIND.APP_DATA, KIND.APP_DATA_HISTORY], '#t': [APP_TAG], '#p': [me] },
-    { kinds: [GIFT_WRAP_KIND], '#p': [me] },
   ];
+  // Gift wraps carry DMs and encrypted records; a user can opt out of that
+  // relay subscription in Settings → Network.
+  if (subscriptionEnabled(store.getState().prefs, 1059)) {
+    filters.push({ kinds: [GIFT_WRAP_KIND], '#p': [me] });
+  }
+  return filters;
 }
 
 async function applyIncomingRecord(event, seen) {
@@ -253,8 +358,37 @@ async function applyIncomingRecord(event, seen) {
       }
       return;
     }
-    const record = decodeRecord(unwrapped.content, [], unwrapped.createdAt ?? event.created_at);
-    // Decoded with no tags and no type/id: nothing to apply, so consume it.
+    // A gift wrap carries either a NIP-17 direct message or an application
+    // record. The rumor kind classifies it; the body is never trusted to decide,
+    // so a crafted message cannot masquerade as a grade record.
+    if (unwrapped.kind === RUMOR_KIND) {
+      // A chat rumor always carries at least a recipient tag. A tagless kind-14
+      // wrap is a record written by an older build (which left the rumor tags
+      // empty); decode it for backward compatibility.
+      const legacy = unwrapped.tags.length
+        ? null
+        : decodeRecord(unwrapped.content, [], unwrapped.createdAt ?? event.created_at);
+      if (legacy) {
+        seen.add(event.id);
+        const patch = applyRecord(store.getState(), legacy);
+        if (patch) store.setState(patch);
+        if (legacy.type === RECORD_TYPES.CAPABILITY) actions.backfillHomeworkForEnrollment?.(legacy);
+        return;
+      }
+      seen.add(event.id);
+      const knownAuthor = hasPersona(unwrapped.author);
+      const applied = actions.receiveMessage({
+        author: unwrapped.author,
+        tags: unwrapped.tags,
+        content: unwrapped.content,
+        createdAt: unwrapped.createdAt ?? event.created_at,
+        eventId: event.id,
+      });
+      if (applied && !knownAuthor) syncProfiles();
+      return;
+    }
+    const record = decodeRecord(unwrapped.content, unwrapped.tags, unwrapped.createdAt ?? event.created_at);
+    // Decoded with no type/id: nothing to apply, so consume it.
     if (!record) {
       seen.add(event.id);
       return;
@@ -308,6 +442,10 @@ function refreshRecords({ timeoutMs = 8000, silent = false } = {}) {
   if (!me) return Promise.resolve(0);
   if (refreshInFlight) return refreshInFlight;
   if (!silent) bus.emit('toast', { message: t('actions.refreshingRecords'), tone: 'info' });
+  // Show the inbox skeleton only when there is nothing cached to paint.
+  if (!store.getState().conversationsByAccount?.[me]?.length) {
+    store.setState({ messagesStatus: 'loading' });
+  }
 
   // A restored browser session can still be authenticated while its signer is
   // not ready (most commonly an extension whose background page was asleep).
@@ -363,6 +501,7 @@ function refreshRecords({ timeoutMs = 8000, silent = false } = {}) {
     });
   })().finally(() => {
     refreshInFlight = null;
+    if (store.getState().messagesStatus === 'loading') store.setState({ messagesStatus: 'ready' });
   });
   return refreshInFlight;
 }
@@ -430,6 +569,215 @@ function syncProfiles() {
       });
     },
   });
+}
+
+// Public notes (kind:1) for the Home feed. A bounded latest-notes query seeds
+// the feed, then the live subscription keeps it current. Replies are ignored by
+// the mapper, and the store dedupes by event id so a re-query never doubles up.
+const NOTE_LIMIT = 50;
+let noteSub = null;
+
+function ingestNote(event) {
+  const mapped = feedEventFromNote(event);
+  if (!mapped) return;
+  const current = store.getState().events ?? [];
+  if (current.some((entry) => entry.id === mapped.id)) return;
+  if (!hasPersona(event.pubkey)) {
+    registerPersona({ id: event.pubkey, npub: encodeNpub(event.pubkey) });
+    syncProfiles();
+  }
+  store.setState({ events: [mapped, ...current], feedStatus: 'ready' });
+  scheduleEngagementSync();
+}
+
+function syncNotes() {
+  noteSub?.close?.();
+  noteSub = null;
+  if (!store.getState().authed) return;
+  if (!subscriptionEnabled(store.getState().prefs, KIND.NOTE)) return;
+  if (!(store.getState().events ?? []).length) store.setState({ feedStatus: 'loading' });
+  noteSub = relayService.subscribe([{ kinds: [KIND.NOTE], '#t': [APP_TAG], limit: NOTE_LIMIT }], {
+    onEvent: (event) => {
+      if (verify(event)) ingestNote(event);
+    },
+    onEose: () => {
+      if (store.getState().feedStatus !== 'ready') store.setState({ feedStatus: 'ready' });
+    },
+  });
+}
+
+// Engagement (NIP-25 reactions, NIP-18 reposts) for the notes on screen. The
+// seen set persists across resubscribes so a relay replay never double-counts.
+const ENGAGEMENT_LIMIT = 200;
+const engagementSeen = new Set();
+let engagementSub = null;
+let engagementSyncTimer = null;
+
+// Every note list that can be engaged from the UI: the home feed and the open
+// profile timeline. Both are projected the same way, so reactions, reposts and
+// threads resolve against either.
+function engagementSources() {
+  const current = store.getState();
+  return [current.events ?? [], current.profileTimeline?.events ?? []];
+}
+
+function feedNoteIds() {
+  const ids = engagementSources()
+    .flat()
+    .map((event) => event.id)
+    .filter((id) => /^[0-9a-f]{64}$/.test(id));
+  return [...new Set(ids)].slice(0, 100);
+}
+
+function patchFeedEvent(eventId, patch) {
+  const current = store.getState();
+  const apply = (list) =>
+    list.map((entry) => (entry.id === eventId ? { ...entry, ...patch } : entry));
+  const patchState = {};
+  if ((current.events ?? []).some((entry) => entry.id === eventId)) {
+    patchState.events = apply(current.events);
+  }
+  const timelineEvents = current.profileTimeline?.events ?? [];
+  if (timelineEvents.some((entry) => entry.id === eventId)) {
+    patchState.profileTimeline = {
+      ...current.profileTimeline,
+      events: apply(timelineEvents),
+    };
+  }
+  if (Object.keys(patchState).length) store.setState(patchState);
+}
+
+function findNoteById(targetId) {
+  for (const list of engagementSources()) {
+    const found = list.find((entry) => entry.id === targetId);
+    if (found) return found;
+  }
+  return null;
+}
+
+function applyEngagement(event) {
+  if (engagementSeen.has(event.id)) return;
+  engagementSeen.add(event.id);
+  const targetId = (event.tags ?? []).find((tag) => tag[0] === 'e')?.[1];
+  if (!targetId) return;
+  const feedEvent = findNoteById(targetId);
+  if (!feedEvent) return;
+  const me = store.getState().accountId;
+  const counts = feedEvent.counts ?? {};
+
+  if (event.kind === KIND.REACTION) {
+    if (event.content === '-') return; // a dislike, not a like
+    if (me && event.pubkey === me) {
+      if (feedEvent.reactionId === event.id) return; // already applied optimistically
+      patchFeedEvent(targetId, {
+        liked: true,
+        reactionId: event.id,
+        counts: { ...counts, likes: (counts.likes ?? 0) + 1 },
+      });
+      return;
+    }
+    patchFeedEvent(targetId, { counts: { ...counts, likes: (counts.likes ?? 0) + 1 } });
+    return;
+  }
+
+  if (event.kind === KIND.REPOST) {
+    if (me && event.pubkey === me) {
+      if (feedEvent.repostId === event.id) return;
+      patchFeedEvent(targetId, {
+        reposted: true,
+        repostId: event.id,
+        counts: { ...counts, reposts: (counts.reposts ?? 0) + 1 },
+      });
+      return;
+    }
+    patchFeedEvent(targetId, { counts: { ...counts, reposts: (counts.reposts ?? 0) + 1 } });
+  }
+}
+
+function syncEngagement() {
+  engagementSub?.close();
+  engagementSub = null;
+  if (!store.getState().authed) return;
+  const ids = feedNoteIds();
+  if (!ids.length) return;
+  const prefs = store.getState().prefs;
+  const filters = [];
+  if (subscriptionEnabled(prefs, KIND.REACTION)) {
+    filters.push({ kinds: [KIND.REACTION], '#e': ids, limit: ENGAGEMENT_LIMIT });
+  }
+  if (subscriptionEnabled(prefs, KIND.REPOST)) {
+    filters.push({ kinds: [KIND.REPOST], '#e': ids, limit: ENGAGEMENT_LIMIT });
+  }
+  if (!filters.length) return;
+  engagementSub = relayService.subscribe(filters, { onEvent: (event) => applyEngagement(event) });
+}
+
+function scheduleEngagementSync() {
+  clearTimeout(engagementSyncTimer);
+  engagementSyncTimer = setTimeout(syncEngagement, 600);
+}
+
+// Public engagement addressed to this account as a note author (NIP-25
+// reactions, NIP-18 reposts, and NIP-10 replies/mentions). Distinct from
+// `syncEngagement`, which counts engagement for notes already on screen: this
+// query is keyed by `#p:[me]`, so a like or comment on any of the viewer's
+// notes becomes an inbox notification even while that note is off screen.
+const NOTIFICATION_LIMIT = 100;
+let engagementNotifySub = null;
+
+function syncEngagementNotifications() {
+  engagementNotifySub?.close?.();
+  engagementNotifySub = null;
+  const me = store.getState().accountId;
+  if (!me) return;
+  const prefs = store.getState().prefs;
+  const filters = [];
+  if (subscriptionEnabled(prefs, KIND.NOTE)) {
+    filters.push({ kinds: [KIND.NOTE], '#p': [me], limit: NOTIFICATION_LIMIT });
+  }
+  if (subscriptionEnabled(prefs, KIND.REPOST)) {
+    filters.push({ kinds: [KIND.REPOST], '#p': [me], limit: NOTIFICATION_LIMIT });
+  }
+  if (subscriptionEnabled(prefs, KIND.REACTION)) {
+    filters.push({ kinds: [KIND.REACTION], '#p': [me], limit: NOTIFICATION_LIMIT });
+  }
+  // NIP-02: another account's contact list that includes me is a new follow.
+  if (subscriptionEnabled(prefs, KIND.CONTACT)) {
+    filters.push({ kinds: [KIND.CONTACT], '#p': [me], limit: NOTIFICATION_LIMIT });
+  }
+  if (!filters.length) return;
+  engagementNotifySub = relayService.subscribe(filters, {
+    onEvent: (event) => {
+      if (!verify(event)) return;
+      app.ingestSocialNotification(event);
+    },
+  });
+}
+
+// Wallet history is a projection over NIP-57 zap receipts read from relays:
+// kind 9735 addressed to us (`p`) or signed off by us as the zapper (`P`). The
+// store dedupes by receipt id so a replay and a live delivery cannot double up.
+let zapSub = null;
+function syncZaps() {
+  const me = store.getState().accountId;
+  zapSub?.close?.();
+  zapSub = null;
+  if (!me) return;
+  if (!subscriptionEnabled(store.getState().prefs, ZAP_RECEIPT_KIND)) return;
+  zapSub = relayService.subscribe(
+    [
+      { kinds: [ZAP_RECEIPT_KIND], '#p': [me] },
+      { kinds: [ZAP_RECEIPT_KIND], '#P': [me] },
+    ],
+    {
+      onEvent: (event) => {
+        if (!verify(event)) return;
+        // Single projector: dedupes, evicts the optimistic row, bumps the note
+        // counter once, and notifies when the zap actually settles.
+        app.ingestZapReceipt(event);
+      },
+    },
+  );
 }
 
 let catalogSub = null;
@@ -502,8 +850,14 @@ const screens = Object.freeze({
   '/home': renderHome,
   '/role': renderRole,
   '/credentials': renderCredentials,
+  '/wallet': renderWallet,
+  '/messages': renderMessages,
   '/discover': renderDiscover,
   '/notifications': renderNotifications,
+  '/profile': renderProfile,
+  '/profile/*': renderProfile,
+  '/p': renderProfile,
+  '/p/*': renderProfile,
   '/settings': renderSettings,
   '/verify': renderVerify,
   '/verify/*': renderVerify,
@@ -563,6 +917,10 @@ restoreSigner().finally(() => {
   syncProfiles();
   syncCatalog();
   syncCredentials();
+  syncNotes();
+  syncEngagement();
+  syncEngagementNotifications();
+  syncZaps();
   if (store.getState().authed) {
     // Once relays are confirmed reachable, pull records that arrived while the
     // tab was closed (for example a score the teacher set). Querying only on a

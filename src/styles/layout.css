@@ -12,13 +12,21 @@
       radial-gradient(900px 600px at 10% 110%, rgba(59, 130, 246, 0.06), transparent 55%), var(--bg);
   }
 
+  /* One container holds all three columns. */
   [data-app-root] {
-    max-width: calc(var(--app-max) + var(--nav-w));
+    max-width: var(--shell-max);
+  }
+
+  /* No bottom tab bar on desktop, so reclaim the mobile tab-bar clearance. */
+  .pv-scroll {
+    padding-bottom: 28px;
   }
 }
 
 .app-frame {
   position: relative;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   flex: 1 1 auto;
   min-width: 0;
@@ -34,10 +42,133 @@
 }
 
 .stage {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
   background: var(--bg);
+}
+
+/* ---------- Top header (web layout) ---------- */
+.topbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: calc(54px + env(safe-area-inset-top, 0px));
+  padding: env(safe-area-inset-top, 0px) 14px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+  z-index: 40;
+}
+
+.topbar[hidden] {
+  display: none;
+}
+
+.topbar__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.topbar__brand:hover {
+  opacity: 0.85;
+}
+
+.topbar__brandtxt {
+  white-space: nowrap;
+}
+
+.topbar__icon {
+  position: relative;
+}
+
+.topbar__badge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background: var(--red);
+  color: #fff;
+  border: 2px solid var(--bg-1);
+  border-radius: var(--r-pill);
+  font-size: 9px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.topbar__me {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 50%;
+  display: inline-flex;
+  flex: none;
+}
+
+.satspill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-hi);
+  background: var(--bg-2);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.satspill:hover {
+  background: var(--bg-3);
+}
+
+.satspill b {
+  font-family: var(--mono);
+}
+
+.satspill__unit {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11px;
+}
+
+@media (min-width: 900px) {
+  /* Desktop hides the global bar: the sidebar owns the brand and each page
+     renders its own header (.page-head), so the bar would duplicate both. */
+  .topbar {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .topbar {
+    gap: 6px;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .topbar__brandtxt,
+  .satspill__unit {
+    display: none;
+  }
 }
 
 .pv-screen {
@@ -126,7 +257,7 @@
 
 .navbtn--gold {
   justify-content: center;
-  margin-bottom: 12px;
+  margin: 14px 0 12px;
   padding: 11px;
   border-radius: 14px;
   background: linear-gradient(135deg, var(--orange), var(--amber));
@@ -136,6 +267,55 @@
 .navbtn--gold:hover {
   background: linear-gradient(135deg, var(--orange), var(--amber));
   color: #000;
+}
+
+/* Wallet summary card in the sidebar (docs/ui.html). */
+.nav-wallet {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, transparent), transparent);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.nav-wallet:hover {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+}
+
+.nav-wallet__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.nav-wallet__amt {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.nav-wallet__amt b {
+  font-family: var(--mono);
+  font-size: 20px;
+}
+
+.nav-wallet__unit {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .navbtn:disabled {
@@ -260,6 +440,13 @@
   max-width: 100%;
 }
 
+/* Profile renders a full-bleed sticky header as its first element. Drop the
+   scroll container's top padding for that route so the header sits flush; the
+   header itself carries the safe-area inset instead. */
+.is-profile .pv-scroll {
+  padding-top: 0;
+}
+
 /* ---------- Bottom tab bar + FAB (inside the frame) ---------- */
 .tabdock {
   position: absolute;
@@ -382,8 +569,10 @@
     display: none;
   }
 
+  /* The sidebar hosts the primary "New post" button, so the floating action
+     button would be a second, competing entry point on desktop. */
   .fab-create {
-    bottom: 20px;
+    display: none;
   }
 }
 
@@ -417,4 +606,25 @@
    the compose FAB would overlap that footer, so hide it on Settings. */
 .is-settings .fab-create {
   display: none;
+}
+
+/* ---------- Right rail (desktop only) ---------- */
+.rail {
+  display: none;
+}
+
+@media (min-width: 900px) {
+  [data-app-root].has-rail .rail {
+    display: block;
+    flex: none;
+    width: var(--rail-w);
+    height: 100dvh;
+    overflow-y: auto;
+    padding: 18px 16px 28px;
+    scrollbar-width: none;
+  }
+
+  [data-app-root].has-rail .rail::-webkit-scrollbar {
+    display: none;
+  }
 }

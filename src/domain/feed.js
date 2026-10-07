@@ -8,10 +8,12 @@ import {
   isLate,
   submissionIndex,
 } from './classroom.js';
+import { formatRelative } from '../core/time.js';
 import { REQUEST_STATUS, ROLE } from './school.js';
+import { powDifficulty } from './social.js';
 
 export const FEED_TABS = Object.freeze([
-  { id: 'foryou', label: 'For you' },
+  { id: 'foryou', label: 'For You' },
   { id: 'following', label: 'Following' },
   { id: 'latest', label: 'Latest' },
 ]);
@@ -55,6 +57,85 @@ export function compareEvents(left, right, now = Date.now()) {
 
 export function eventKeyOf(event) {
   return event?.eventKey ?? event?.id ?? null;
+}
+
+// Project a signed Nostr kind:1 note into the app's feed event shape. Top-level
+// notes only by default: replies carry an `e` tag and belong to threads. Pass
+// `{ allowReply: true }` when building a thread so replies are kept.
+export function feedEventFromNote(note, now = Date.now(), { allowReply = false } = {}) {
+  if (!note?.id || !note?.pubkey) return null;
+  const tags = Array.isArray(note.tags) ? note.tags : [];
+  if (!allowReply && tags.some((tag) => tag?.[0] === 'e')) return null;
+  const files = imetaFiles(tags);
+  const text = stripMediaUrls(String(note.content ?? ''), files).trim();
+  if (!text && !files.length) return null;
+  const createdAt = Number(note.created_at);
+  const occurredAt = Number.isFinite(createdAt) && createdAt > 0
+    ? new Date(createdAt * 1000).toISOString()
+    : new Date(now).toISOString();
+  const replyTo = tags.find((tag) => tag?.[0] === 'e')?.[1] ?? null;
+  return {
+    id: note.id,
+    type: 'social',
+    author: note.pubkey,
+    kind: Number.isFinite(Number(note.kind)) ? Number(note.kind) : 1,
+    pow: powDifficulty(note),
+    time: formatRelative(note.created_at ?? occurredAt, now) ?? 'now',
+    occurredAt,
+    audience: 'all',
+    text,
+    files: files.length ? files : undefined,
+    replyTo,
+    // Keep the signed source so reactions, reposts, and replies can quote the
+    // exact event. Events are session-local and are never persisted.
+    raw: note,
+    liked: false,
+    reposted: false,
+    bookmarked: false,
+    counts: { likes: 0, reposts: 0, bitz: 0, replies: 0 },
+  };
+}
+
+// A thread reply: same projection, but `e`-tagged events are kept.
+export function threadEventFromNote(note, now = Date.now()) {
+  return feedEventFromNote(note, now, { allowReply: true });
+}
+
+// NIP-92 media attachments: `["imeta", "url <u>", "m <type>", "alt <text>"]`.
+function imetaFiles(tags) {
+  const files = [];
+  for (const tag of tags) {
+    if (!Array.isArray(tag) || tag[0] !== 'imeta') continue;
+    const fields = new Map();
+    for (const entry of tag.slice(1)) {
+      const value = String(entry ?? '');
+      const space = value.indexOf(' ');
+      if (space > 0) fields.set(value.slice(0, space), value.slice(space + 1));
+    }
+    const url = fields.get('url');
+    if (!url) continue;
+    files.push({ url, type: fields.get('m') ?? null, name: fields.get('alt') ?? mediaName(url) });
+  }
+  return files;
+}
+
+function mediaName(url) {
+  try {
+    return decodeURIComponent(new URL(url).pathname.split('/').filter(Boolean).pop() ?? 'file');
+  } catch {
+    return 'file';
+  }
+}
+
+// Publish appends media URLs on their own lines so any client can find them;
+// the grid renders the file, so those bare URL lines are dropped from the text.
+function stripMediaUrls(content, files) {
+  if (!files.length) return content;
+  const urls = new Set(files.map((file) => file.url));
+  return content
+    .split('\n')
+    .filter((line) => !urls.has(line.trim()))
+    .join('\n');
 }
 
 // One card per source event: a repeated projection collapses to its first

@@ -86,16 +86,23 @@ function makeSheetDraggable({ overlay, panel, onDismiss }) {
 
   panel.addEventListener('pointerdown', (event) => {
     if (event.pointerType !== 'mouse' || event.button !== 0) return;
+    // Let clicks on controls through untouched: capturing the pointer here would
+    // retarget the follow-up click to the panel and swallow the button.
+    if (event.target?.closest?.('button, a, input, textarea, select, [role="button"]')) return;
     pointerId = event.pointerId;
     begin(event.clientY);
-    try {
-      panel.setPointerCapture(event.pointerId);
-    } catch {
-      /* capture is best-effort */
-    }
   });
   panel.addEventListener('pointermove', (event) => {
-    if (pointerId === event.pointerId) move(event.clientY, null);
+    if (pointerId !== event.pointerId) return;
+    move(event.clientY, null);
+    // Capture only once a real drag starts, never on a plain press.
+    if (mode === 'drag' && !panel.hasPointerCapture?.(event.pointerId)) {
+      try {
+        panel.setPointerCapture(event.pointerId);
+      } catch {
+        /* capture is best-effort */
+      }
+    }
   });
   const pointerEnd = (event) => {
     if (pointerId !== event.pointerId) return;

@@ -14,6 +14,7 @@ const copies = [
   ['node_modules/@noble/hashes', 'vendor/@noble/hashes'],
   ['node_modules/@noble/ciphers', 'vendor/@noble/ciphers'],
   ['node_modules/@scure/base', 'vendor/@scure/base'],
+  ['node_modules/qrcode-generator/dist/qrcode.mjs', 'vendor/qrcode-generator/qrcode.mjs'],
 ];
 
 await rm(resolve(root, 'vendor'), { recursive: true, force: true });
@@ -42,7 +43,7 @@ const assets = [
   './manifest.webmanifest',
   ...(await walk('assets', (name) => /\.(png|svg|ico|webmanifest)$/i.test(name))),
   ...(await walk('src', (name) => name.endsWith('.js') || name.endsWith('.css'))),
-  ...(await walk('vendor', (name) => name.endsWith('.js'))),
+  ...(await walk('vendor', (name) => name.endsWith('.js') || name.endsWith('.mjs'))),
 ];
 
 const manifest = { version: Date.now().toString(36), assets };

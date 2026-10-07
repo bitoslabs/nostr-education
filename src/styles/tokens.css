@@ -76,8 +76,29 @@
   --shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 
   --app-max: 600px;
-  --nav-w: 232px;
+  --nav-w: 260px;
   --feed-w: 600px;
+  /* Web layout (desktop): three columns — nav + center + rail — inside a single
+     max-width container, matching the reference grid (docs/ui.html). */
+  --shell-max: 1280px;
+  --content-max: 760px;
+  --rail-w: 340px;
+  /* Shared width for the two-pane columns (settings nav, message list). */
+  --panel-w: 280px;
+}
+
+/* Narrow desktop: shrink the columns so nav + center + rail still fit. */
+@media (min-width: 900px) and (max-width: 1279px) {
+  :root {
+    --nav-w: 224px;
+    --rail-w: 272px;
+  }
+}
+
+@media (max-width: 1023px) {
+  :root {
+    --panel-w: 236px;
+  }
 }
 
 /* Lao locale: Chanthavong covers Lao script, which Inter/Space Grotesk lack. */
