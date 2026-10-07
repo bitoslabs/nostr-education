@@ -3,6 +3,8 @@ export default {
   feed: 'ຟີດ',
   emptyFeed: 'ຍັງບໍ່ມີຫຍັງຢູ່ນີ້ — ຕິດຕາມຄົນ ຫຼື ຊອກຫາຄູຮຽນ.',
   emptyFeedTab: 'ຍັງບໍ່ມີຫຍັງໃນແຖບນີ້.',
+  loadingMore: 'ກຳລັງໂຫຼດເພີ່ມ…',
+  feedEnd: 'ອ່ານໝົດແລ້ວ',
   nextActions: 'ສິ່ງທີ່ຕ້ອງດຳເນີນຕໍ່ໄປ',
   nextActionsEmpty: 'ທຸກຢ່າງຮຽບຮ້ອຍແລ້ວ — ບໍ່ມີຫຍັງຕ້ອງເຮັດໃນຕອນນີ້.',
   taskAssignmentDue: 'ບົດການບ້ານໃກ້ຄົບກຳນົດ · {title}',

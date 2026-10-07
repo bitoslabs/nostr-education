@@ -11,7 +11,7 @@ import { DEFAULT_SIGNER } from './domain/account.js';
 import { findAcademyById } from './domain/academy.js';
 import { classroomById } from './domain/classroom.js';
 import { credentialFromEvent } from './domain/credential.js';
-import { feedEventFromNote } from './domain/feed.js';
+import { feedEventFromNote, oldestNoteCursor } from './domain/feed.js';
 import {
   RECORD_TYPES,
   applyRecord,
@@ -130,6 +130,10 @@ const store = createStore({
   // then the relay subscription refreshes it. `feedStatus` drives the skeleton.
   events: loadFeedCache().map((raw) => feedEventFromNote(raw)).filter(Boolean),
   feedStatus: 'idle',
+  // Home-feed pagination. `feedMoreStatus` is 'idle' while more notes may
+  // exist, 'loading' during a page request, and 'end' once a short page proves
+  // the relay has nothing older. Drives the auto-load sentinel in home.js.
+  feedMoreStatus: 'idle',
   // The open profile page's content. Session-local and separate from the home
   // feed, so browsing a profile never changes For-you / Latest ordering, yet
   // engagement (reactions, reposts, threads) still resolves these events.
@@ -217,6 +221,7 @@ const actions = createActions({ store, bus, signer, confirm, relay: relayService
 const dialogs = createDialogs({ overlay, store, actions });
 const app = { ...actions, ...dialogs };
 app.refreshRecords = refreshRecords;
+app.loadMoreFeed = loadMoreFeed;
 
 // The prototype once seeded clearly-fake demo zaps and conversations. Wallet,
 // messaging, and the feed are relay-backed now, so strip any demo rows a
@@ -579,20 +584,38 @@ let noteSub = null;
 
 function ingestNote(event) {
   const mapped = feedEventFromNote(event);
-  if (!mapped) return;
+  if (!mapped) return false;
   const current = store.getState().events ?? [];
-  if (current.some((entry) => entry.id === mapped.id)) return;
+  if (current.some((entry) => entry.id === mapped.id)) return false;
   if (!hasPersona(event.pubkey)) {
     registerPersona({ id: event.pubkey, npub: encodeNpub(event.pubkey) });
     syncProfiles();
   }
   store.setState({ events: [mapped, ...current], feedStatus: 'ready' });
   scheduleEngagementSync();
+  return true;
+}
+
+let feedMoreSub = null;
+let feedMoreInFlight = false;
+
+// Drop any in-flight "load older" page and reset the cursor when the feed
+// subscription is rebuilt (account switch or a network-preference change).
+function resetFeedPagination() {
+  try {
+    feedMoreSub?.close?.();
+  } catch {
+    /* the subscription may already be closed */
+  }
+  feedMoreSub = null;
+  feedMoreInFlight = false;
+  store.setState({ feedMoreStatus: 'idle' });
 }
 
 function syncNotes() {
   noteSub?.close?.();
   noteSub = null;
+  resetFeedPagination();
   if (!store.getState().authed) return;
   if (!subscriptionEnabled(store.getState().prefs, KIND.NOTE)) return;
   if (!(store.getState().events ?? []).length) store.setState({ feedStatus: 'loading' });
@@ -604,6 +627,56 @@ function syncNotes() {
       if (store.getState().feedStatus !== 'ready') store.setState({ feedStatus: 'ready' });
     },
   });
+}
+
+// "Load more": fetch the page of notes older than the oldest one on screen and
+// merge it in. A short page (fewer new notes than the limit) marks the end, so
+// the UI can stop asking. The live subscription stays open; this is a bounded
+// backfill query, not a replacement for it.
+function loadMoreFeed() {
+  const current = store.getState();
+  if (feedMoreInFlight) return false;
+  if (!current.authed || current.feedMoreStatus === 'end') return false;
+  if (!subscriptionEnabled(current.prefs, KIND.NOTE)) return false;
+  const until = oldestNoteCursor(current.events);
+  if (until == null) return false;
+
+  feedMoreInFlight = true;
+  store.setState({ feedMoreStatus: 'loading' });
+  const seen = new Set((current.events ?? []).map((entry) => entry.id));
+  let received = 0;
+  let settled = false;
+
+  const finish = (hasMore) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    try {
+      feedMoreSub?.close?.();
+    } catch {
+      /* the subscription may already be closed */
+    }
+    feedMoreSub = null;
+    feedMoreInFlight = false;
+    store.setState({ feedMoreStatus: hasMore ? 'idle' : 'end' });
+    if (received) scheduleEngagementSync();
+  };
+
+  // `until` is inclusive, so step one second below the cursor to avoid
+  // re-fetching notes already on screen.
+  const timer = setTimeout(() => finish(received >= NOTE_LIMIT), 8000);
+  feedMoreSub = relayService.subscribe(
+    [{ kinds: [KIND.NOTE], '#t': [APP_TAG], until: until - 1, limit: NOTE_LIMIT }],
+    {
+      onEvent: (event) => {
+        if (!verify(event) || seen.has(event.id)) return;
+        seen.add(event.id);
+        if (ingestNote(event)) received += 1;
+      },
+      onEose: () => finish(received >= NOTE_LIMIT),
+    },
+  );
+  return true;
 }
 
 // Engagement (NIP-25 reactions, NIP-18 reposts) for the notes on screen. The

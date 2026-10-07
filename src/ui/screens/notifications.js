@@ -57,6 +57,13 @@ export function renderNotifications({ app, state }) {
     // Messages come from accounts whose status is not BLOCKED, so a blocked
     // sender never surfaces a notification (SAFE-01).
 
+    const socialEmpty = () =>
+      emptyState(t('notifications.socialEmpty'), {
+        icon: 'lucide:bell',
+        fallback: '🔔',
+        hint: t('notifications.socialEmptyHint'),
+      });
+
     const children = [
       el('header', { class: 'page-head' }, [
         el('div', { class: 'page-head__row' }, [
@@ -72,39 +79,59 @@ export function renderNotifications({ app, state }) {
           { label: t('notifications.title') },
         ),
       ]),
-      el(
-        'div',
-        { class: 'notif-list' },
-        groups.length
-          ? groups.map((group) => notificationRow(group, reads, app))
-          : emptyState(t('notifications.socialEmpty')),
-      ),
     ];
 
-    if (tab === 'all' && messages.length) {
-      children.push(el('h3', { class: 'section-title' }, t('notifications.messagesSection')));
-      children.push(el('div', { class: 'notif-list' }, messages.map((c) => messageRow(c, meId, app))));
-    }
+    // Nothing to show across the whole inbox: one clear empty state instead of
+    // stacked empty sections. A specific tab (Likes, Zaps, …) always renders
+    // its own list so the active filter is still visible.
+    const hasAny = groups.length || (tab === 'all' && (messages.length || events.length));
+    if (!hasAny) {
+      children.push(el('div', { class: 'notif-list' }, [socialEmpty()]));
+    } else {
+      // The social list is redundant on the "all" tab when it has no rows and
+      // other sections do — skip it so the screen does not open with a
+      // contradictory "nothing here" message above real content.
+      if (groups.length || tab !== 'all') {
+        children.push(
+          el(
+            'div',
+            { class: 'notif-list' },
+            groups.length ? groups.map((group) => notificationRow(group, reads, app)) : [socialEmpty()],
+          ),
+        );
+      }
 
-    if (tab === 'all') {
-      children.push(el('h3', { class: 'section-title' }, t('notifications.activitySection')));
-      if (events.length) {
-        const persona = getPersona(meId);
-        for (const event of events) {
-          const card = eventCard(event, {
-            persona,
-            actions: app,
-            enrollments: snapshot.enrollRequests,
-          });
-          const key = eventKeyOf(event);
-          if (key && !reads[key]) {
-            card.classList.add('is-unread');
-            card.addEventListener('click', () => app.markNotificationRead(key));
+      if (tab === 'all' && messages.length) {
+        children.push(el('h3', { class: 'section-title' }, t('notifications.messagesSection')));
+        children.push(el('div', { class: 'notif-list' }, messages.map((c) => messageRow(c, meId, app))));
+      }
+
+      if (tab === 'all') {
+        children.push(el('h3', { class: 'section-title' }, t('notifications.activitySection')));
+        if (events.length) {
+          const persona = getPersona(meId);
+          for (const event of events) {
+            const card = eventCard(event, {
+              persona,
+              actions: app,
+              enrollments: snapshot.enrollRequests,
+            });
+            const key = eventKeyOf(event);
+            if (key && !reads[key]) {
+              card.classList.add('is-unread');
+              card.addEventListener('click', () => app.markNotificationRead(key));
+            }
+            children.push(card);
           }
-          children.push(card);
+        } else {
+          children.push(
+            emptyState(t('notifications.empty'), {
+              icon: 'lucide:inbox',
+              fallback: '📥',
+              hint: t('notifications.activityEmptyHint'),
+            }),
+          );
         }
-      } else {
-        children.push(emptyState(t('notifications.empty')));
       }
     }
 

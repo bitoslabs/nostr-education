@@ -59,6 +59,22 @@ export function eventKeyOf(event) {
   return event?.eventKey ?? event?.id ?? null;
 }
 
+// Pagination cursor for the home feed: the oldest source `created_at` currently
+// on screen, in Nostr seconds. Nostr's `until` is inclusive, so a caller that
+// wants strictly older notes requests `cursor - 1` and never re-fetches the page
+// it already has. Returns null when no event carries a usable timestamp.
+export function oldestNoteCursor(events) {
+  let oldest = null;
+  for (const event of events ?? []) {
+    const raw = Number(event?.raw?.created_at);
+    const derived =
+      Number.isFinite(raw) && raw > 0 ? raw : Math.floor(Date.parse(event?.occurredAt ?? '') / 1000);
+    if (!Number.isFinite(derived) || derived <= 0) continue;
+    if (oldest == null || derived < oldest) oldest = derived;
+  }
+  return oldest;
+}
+
 // Project a signed Nostr kind:1 note into the app's feed event shape. Top-level
 // notes only by default: replies carry an `e` tag and belong to threads. Pass
 // `{ allowReply: true }` when building a thread so replies are kept.

@@ -79,6 +79,45 @@
   padding: 14px 16px;
 }
 
+/* Rich empty state: centered icon, title, and hint. Used by full screens such
+   as the notification inbox so an empty view still reads as designed, not as
+   stray text against the viewport edge. */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 44px 24px;
+  text-align: center;
+}
+
+.empty-state__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 4px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  color: var(--muted);
+}
+
+.empty-state__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.empty-state__hint {
+  margin: 0;
+  max-width: 36ch;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
 .crow {
   display: flex;
   align-items: center;
@@ -4488,6 +4527,16 @@ button.chip:hover {
   margin: 0 -16px;
 }
 
+/* Bare empty-state text inside the full-bleed list keeps the content inset. */
+.notif-list > .muted {
+  padding: 14px 16px;
+}
+
+/* The rich panel is already inset; keep its centered layout in the list. */
+.notif-list > .empty-state {
+  margin: 0 16px;
+}
+
 .notif-item {
   display: flex;
   align-items: flex-start;
@@ -5673,6 +5722,35 @@ input.pow-slider::-moz-range-thumb {
 
 input.pow-slider:focus-visible::-webkit-slider-thumb {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--orange) 38%, transparent);
+}
+
+/* ---------- feed auto-load sentinel ---------- */
+/* Sits at the end of the feed; the observer requests the next page when it
+   scrolls into view. The idle state stays quiet so it reads as a soft end. */
+.feed-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 56px;
+  padding: 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.feed-more__spinner {
+  display: inline-flex;
+}
+
+.feed-more__spinner:empty {
+  display: none;
+}
+
+.feed-more--end {
+  min-height: 0;
+  border-top: 1px solid var(--border);
+  color: var(--dim);
+  letter-spacing: 0.2px;
 }
 
 /* ---------- feed skeleton (first relay page) ---------- */

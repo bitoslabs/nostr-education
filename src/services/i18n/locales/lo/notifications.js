@@ -7,6 +7,8 @@ export default {
   activitySection: 'ກິດຈະກຳ',
   socialSection: 'ຖືກໃຈ ແລະ ການຕອບກັບ',
   socialEmpty: 'ຍັງບໍ່ມີການແຈ້ງເຕືອນຢູ່ນີ້.',
+  socialEmptyHint: 'ການຖືກໃຈ, ການຕອບກັບ, ການແຊຣ໌, zap ແລະ ຜູ້ຕິດຕາມໃໝ່ ຈະສະແດງຢູ່ນີ້.',
+  activityEmptyHint: 'ຄະແນນ, ບົດສົ່ງ ແລະ ກິດຈະກຳອື່ນໆໃນຫ້ອງຮຽນ ຈະສະແດງຢູ່ນີ້.',
   andOthers: 'ແລະ {count} ຄົນອື່ນ',
   sats: '{amount} sats',
   tabs: {

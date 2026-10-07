@@ -3,6 +3,8 @@ export default {
   feed: 'Feed',
   emptyFeed: 'Nothing here yet — follow people or find a course.',
   emptyFeedTab: 'Nothing in this tab yet.',
+  loadingMore: 'Loading more…',
+  feedEnd: "You're all caught up",
   nextActions: 'Next actions',
   nextActionsEmpty: 'All caught up — nothing needs you right now.',
   taskAssignmentDue: 'Homework due · {title}',

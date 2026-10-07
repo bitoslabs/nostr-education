@@ -112,8 +112,20 @@ export function spinner(label = t('common.spinner.working')) {
   ]);
 }
 
-export function emptyState(message) {
-  return el('p', { class: 'muted small' }, message);
+// Empty state. The plain form is a single muted line (used by dense inline
+// lists); pass an icon and/or hint to render the richer centered panel used by
+// full screens such as the notification inbox.
+export function emptyState(message, { icon: iconName, fallback, hint } = {}) {
+  if (!iconName && !hint) return el('p', { class: 'muted small' }, message);
+  return el('div', { class: 'empty-state' }, [
+    iconName
+      ? el('span', { class: 'empty-state__icon', 'aria-hidden': 'true' }, [
+          icon(iconName, { size: 24, fallback: fallback ?? '•' }),
+        ])
+      : null,
+    message ? el('p', { class: 'empty-state__title' }, message) : null,
+    hint ? el('p', { class: 'empty-state__hint' }, hint) : null,
+  ]);
 }
 
 // Standard page header used by every screen: title on the left, optional

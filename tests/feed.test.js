@@ -13,6 +13,7 @@ import {
   RANKING_VERSION,
   eventKeyOf,
   eventOccurredAt,
+  oldestNoteCursor,
 } from '../src/domain/feed.js';
 import { ROLE } from '../src/domain/school.js';
 
@@ -301,6 +302,23 @@ test('mutes drop a muted actor from For you but keep Latest and required tasks',
   assert.deepEqual(forYou.map((event) => event.id), ['task', 'm2']);
   const latest = filterFeed(events, { personaId: 'alice', tab: 'latest', context });
   assert.deepEqual(latest.map((event) => event.id), ['task', 'm1', 'm2']);
+});
+
+test('oldestNoteCursor returns the oldest source timestamp for paging', () => {
+  const notes = [
+    { id: 'a', occurredAt: '2026-10-01T10:00:00Z', raw: { created_at: 1_700_000_500 } },
+    { id: 'b', occurredAt: '2026-09-01T10:00:00Z', raw: { created_at: 1_690_000_000 } },
+    { id: 'c', occurredAt: '2026-09-15T10:00:00Z', raw: { created_at: 1_695_000_000 } },
+  ];
+  assert.equal(oldestNoteCursor(notes), 1_690_000_000);
+  // Falls back to the projected ISO time when the raw event is unavailable,
+  // and ignores entries that carry no usable timestamp.
+  assert.equal(
+    oldestNoteCursor([{ occurredAt: '2026-09-30T00:00:00Z' }, { id: 'x' }]),
+    Math.floor(Date.parse('2026-09-30T00:00:00Z') / 1000),
+  );
+  assert.equal(oldestNoteCursor([]), null);
+  assert.equal(oldestNoteCursor(undefined), null);
 });
 
 test('feedEventFromNote projects top-level kind:1 notes and skips replies', () => {

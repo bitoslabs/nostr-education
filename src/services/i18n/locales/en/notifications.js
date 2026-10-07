@@ -7,6 +7,8 @@ export default {
   activitySection: 'Activity',
   socialSection: 'Likes and replies',
   socialEmpty: 'No notifications here yet.',
+  socialEmptyHint: 'Likes, replies, reposts, zaps, and new followers will show up here.',
+  activityEmptyHint: 'Grades, submissions, and other class activity will show up here.',
   andOthers: 'and {count} others',
   sats: '{amount} sats',
   tabs: {

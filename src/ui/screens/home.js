@@ -16,9 +16,17 @@ import { eventCard } from '../components/event-card.js';
 import { button, emptyState, row, tabs } from '../components/primitives.js';
 import { statusBadge } from '../components/status-badge.js';
 
-const { section, header, h1, h3, p, div } = van.tags;
+const { section, header, h1, h3, p, div, span } = van.tags;
+
+// One observer per mounted Home screen. The sentinel node below is stable for
+// the life of the screen, so we observe it once and let the store drive the
+// label; each page that loads pushes the sentinel down and it fires again when
+// the reader scrolls back to the bottom.
+let feedMoreObserver = null;
 
 export function renderHome({ app, state }) {
+  setupFeedAutoLoad(app);
+  const more = feedMoreSentinel(state);
   return section(
     { class: 'screen' },
     header({ class: 'page-head' }, [
@@ -27,8 +35,55 @@ export function renderHome({ app, state }) {
     ]),
     () => createdBanner(state.val, getPersona(state.val.personaId), app),
     () => nextActionsSection(state.val, app),
-    () => feedList(state.val, app),
+    () => feedList(state.val, app, more),
   );
+}
+
+// Auto-load older notes when the end of the feed scrolls near. Uses an
+// IntersectionObserver on the app's scroll container (`#main`) rather than a
+// scroll listener, so it costs nothing while the reader is elsewhere.
+function setupFeedAutoLoad(app) {
+  if (typeof IntersectionObserver === 'undefined') return;
+  feedMoreObserver?.disconnect();
+  const root = typeof document !== 'undefined' ? document.getElementById('main') : null;
+  feedMoreObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        if (!entry.target.isConnected) {
+          feedMoreObserver?.unobserve(entry.target);
+          continue;
+        }
+        app.loadMoreFeed?.();
+      }
+    },
+    { root, rootMargin: '700px 0px', threshold: 0 },
+  );
+}
+
+// End-of-feed marker. It is the IntersectionObserver target; the store decides
+// whether it shows a spinner, stays quiet, or reports the end of the archive.
+function feedMoreSentinel(state) {
+  const node = div(
+    {
+      class: () => `feed-more${state.val.feedMoreStatus === 'end' ? ' feed-more--end' : ''}`,
+      role: 'status',
+      'aria-live': 'polite',
+    },
+    [
+      span(
+        { class: 'feed-more__spinner', 'aria-hidden': 'true' },
+        () => (state.val.feedMoreStatus === 'loading' ? span({ class: 'spinner' }) : null),
+      ),
+      span({ class: 'feed-more__label' }, () => {
+        if (state.val.feedMoreStatus === 'loading') return t('home.loadingMore');
+        if (state.val.feedMoreStatus === 'end') return t('home.feedEnd');
+        return '';
+      }),
+    ],
+  );
+  feedMoreObserver?.observe(node);
+  return node;
 }
 
 function dismissedKeys(state, personaId) {
@@ -108,7 +163,7 @@ function taskControls(task, app) {
   }
 }
 
-function feedList(state, app) {
+function feedList(state, app, more) {
   const persona = getPersona(state.personaId);
   const filtered = filterFeed(state.events, {
     personaId: state.personaId,
@@ -144,7 +199,7 @@ function feedList(state, app) {
     return node;
   });
   const body = cards.length
-    ? cards
+    ? [...cards, more]
     : state.events.length || state.feedStatus === 'ready'
       ? [emptyState(state.events.length ? t('home.emptyFeedTab') : t('home.emptyFeed'))]
       : feedSkeleton();
