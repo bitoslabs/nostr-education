@@ -454,6 +454,9 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     let cleanup = null;
     return openNamed('zap', {
       label: t('wallet.zap.heading', { name: identityName(peer) }),
+      // A stray backdrop click must not throw away a zap in progress; the
+      // dialog has its own close button instead (see renderZap).
+      closeOnBackdrop: false,
       content: renderZap({
         peer,
         eventId,

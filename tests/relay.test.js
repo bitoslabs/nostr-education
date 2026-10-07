@@ -32,6 +32,32 @@ test('normalizeRelayUrl allows plaintext ws:// and secure wss:// hosts', () => {
   assert.equal(normalizeRelayUrl('WS://Relay.Example.com/'), 'ws://relay.example.com');
 });
 
+test('normalizeRelayUrl defaults every localhost and IP-address host to plaintext ws://', () => {
+  assert.equal(normalizeRelayUrl('localhost:7777'), 'ws://localhost:7777');
+  assert.equal(normalizeRelayUrl('Localhost:7777/'), 'ws://localhost:7777');
+  assert.equal(normalizeRelayUrl('localhost'), 'ws://localhost');
+  assert.equal(normalizeRelayUrl('app.localhost:7777'), 'ws://app.localhost:7777');
+  assert.equal(normalizeRelayUrl('127.0.0.1:7777'), 'ws://127.0.0.1:7777');
+  assert.equal(normalizeRelayUrl('192.168.1.10:7777'), 'ws://192.168.1.10:7777');
+  assert.equal(normalizeRelayUrl('10.0.0.5'), 'ws://10.0.0.5');
+  assert.equal(normalizeRelayUrl('8.8.8.8:80'), 'ws://8.8.8.8');
+  assert.equal(normalizeRelayUrl('1.2.3.4'), 'ws://1.2.3.4');
+  assert.equal(normalizeRelayUrl('bitos.local'), 'ws://bitos.local');
+  assert.equal(normalizeRelayUrl('abcdefg.onion'), 'ws://abcdefg.onion');
+  assert.equal(normalizeRelayUrl('[::1]:7777'), 'ws://[::1]:7777');
+  assert.equal(normalizeRelayUrl('[fd00::1]:7777'), 'ws://[fd00::1]:7777');
+  assert.equal(normalizeRelayUrl('[2001:db8::1]:7777'), 'ws://[2001:db8::1]:7777');
+  assert.equal(normalizeRelayUrl('relay.damus.io'), 'wss://relay.damus.io');
+  assert.equal(normalizeRelayUrl('fcdn.example.com'), 'wss://fcdn.example.com');
+  assert.equal(normalizeRelayUrl('999.1.1.1'), '');
+  assert.equal(normalizeRelayUrl('example.com:443'), 'wss://example.com');
+});
+
+test('normalizeRelayUrl keeps an explicit scheme even for local hosts', () => {
+  assert.equal(normalizeRelayUrl('wss://localhost:7777'), 'wss://localhost:7777');
+  assert.equal(normalizeRelayUrl('ws://relay.damus.io'), 'ws://relay.damus.io');
+});
+
 test('isValidRelayUrl and relayId reflect normalization', () => {
   assert.equal(isValidRelayUrl('nos.lol'), true);
   assert.equal(isValidRelayUrl('http://nos.lol'), false);

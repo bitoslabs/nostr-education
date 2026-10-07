@@ -7,11 +7,39 @@ export const RELAY_MODE = Object.freeze({
 const MODES = new Set(Object.values(RELAY_MODE));
 const MODE_ORDER = [RELAY_MODE.READ_WRITE, RELAY_MODE.READ, RELAY_MODE.WRITE];
 
+const IPV4 =
+  /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
+
+// Plaintext ws:// is the sensible default for every localhost and IP-address
+// host, where TLS certificates are uncommon (plus mDNS and Tor names).
+// Everything else defaults to the secure wss:// scheme. An explicit scheme in
+// the input always wins.
+export function isPlaintextRelayHost(hostname) {
+  const host = String(hostname ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '');
+  if (!host) return false;
+  if (host === 'localhost' || host.endsWith('.localhost')) return true;
+  if (host.endsWith('.local') || host.endsWith('.onion')) return true;
+  if (host.includes(':')) return true;
+  return IPV4.test(host);
+}
+
 export function normalizeRelayUrl(input) {
   const raw = String(input ?? '').trim();
   if (!raw) return '';
 
-  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `wss://${raw}`;
+  let withScheme = raw;
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) {
+    let host = raw;
+    try {
+      host = new URL(`ws://${raw}`).hostname;
+    } catch {
+      return '';
+    }
+    withScheme = `${isPlaintextRelayHost(host) ? 'ws' : 'wss'}://${raw}`;
+  }
 
   try {
     const url = new URL(withScheme);

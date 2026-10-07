@@ -6,7 +6,7 @@ import { qrNode } from '../../services/qr.js';
 import { t } from '../../services/i18n/index.js';
 import { icon } from './icon.js';
 import { identityChip } from './identity-chip.js';
-import { button, spinner } from './primitives.js';
+import { button, iconButton, spinner } from './primitives.js';
 
 const DEFAULT_PRESETS = [21, 100, 500, 1000];
 const SETTLED_HOLD_MS = 1600;
@@ -56,7 +56,20 @@ export function renderZap({
   let countdown = null;
 
   const hasWebln = typeof window !== 'undefined' && !!window.webln?.sendPayment;
-  const root = el('div', { class: 'zap' });
+  // Backdrop clicks are suppressed for this dialog (a mis-tap must never discard
+  // a shown invoice), so it carries its own always-visible close control.
+  const body = el('div', { class: 'zap__body' });
+  const root = el('div', { class: 'zap' }, [
+    el('div', { class: 'zap__top' }, [
+      el('span', { class: 'spacer' }),
+      iconButton('lucide:x', {
+        label: t('common.actions.close'),
+        fallback: '✕',
+        onClick: () => close(),
+      }),
+    ]),
+    body,
+  ]);
 
   function stopWatching() {
     watching?.close?.();
@@ -249,7 +262,7 @@ export function renderZap({
       balance > 0
         ? el('p', { class: 'muted small' }, t('wallet.zap.balance', { amount: formatSats(balance) }))
         : null;
-    root.replaceChildren(
+    body.replaceChildren(
       el(
         'form',
         {
@@ -298,7 +311,41 @@ export function renderZap({
     const expiryLine = expiry
       ? el('p', { class: 'muted small zap-expiry', role: 'status', 'aria-live': 'off' })
       : null;
-    root.replaceChildren(
+
+    // Action hierarchy: one prominent pay action, a manual "I've paid" fallback,
+    // and quiet utilities. "New invoice" stays hidden until the invoice actually
+    // expires, so the default view has a single clear primary action.
+    const openWallet = el(
+      'a',
+      { class: 'btn btn--gold', href: uri, rel: 'noreferrer' },
+      t('wallet.zap.openWallet'),
+    );
+    const markPaidButton = button(t('wallet.zap.markPaid'), {
+      small: true,
+      onClick: () => {
+        actions.recordZap?.({
+          peerId: peer.id,
+          amountSats: amount,
+          eventId,
+          requestId: request.requestId,
+          note: note.value.trim(),
+          status: 'pending',
+        });
+        actions.toast?.(t('wallet.zap.verifying'), 'info');
+      },
+    });
+    const newInvoiceButton = button(t('wallet.zap.newInvoice'), {
+      variant: 'gold',
+      onClick: () => submit(),
+    });
+    newInvoiceButton.hidden = !!expiry;
+
+    const statusNode = el('div', { class: 'zap-status is-waiting', role: 'status', 'aria-live': 'polite' }, [
+      spinner(t('wallet.zap.waiting')),
+    ]);
+    const waitingHint = el('p', { class: 'muted small' }, t('wallet.zap.waitingHint'));
+
+    body.replaceChildren(
       el('div', { class: 'zap__head' }, [
         identityChip(peer, { size: 36 }),
         el('span', { class: 'zap__amount mono' }, `${formatSats(amount)} ${t('wallet.sats')}`),
@@ -307,37 +354,27 @@ export function renderZap({
       el('div', { class: 'qr-wrap' }, [node]),
       el('div', { class: 'zap-invoice' }, [
         el('code', { class: 'zap-invoice__text mono' }, invoice),
-        button(t('wallet.zap.copy'), {
-          small: true,
+        iconButton('lucide:copy', {
+          label: t('wallet.zap.copy'),
+          fallback: '⧉',
           onClick: () => actions.copyText?.(invoice, t('wallet.zap.copied')),
         }),
       ]),
-      el('div', { class: 'zap-status is-waiting', role: 'status', 'aria-live': 'polite' }, [
-        spinner(t('wallet.zap.waiting')),
-      ]),
-      el('p', { class: 'muted small' }, t('wallet.zap.waitingHint')),
+      statusNode,
+      waitingHint,
       expiryLine,
-      el('div', { class: 'arow' }, [
-        el('a', { class: 'btn btn--ghost', href: uri, rel: 'noreferrer' }, t('wallet.zap.openWallet')),
-        button(t('wallet.zap.markPaid'), {
+      el('div', { class: 'arow' }, [openWallet, markPaidButton, newInvoiceButton]),
+      el('div', { class: 'arow zap-actions-secondary' }, [
+        button(t('wallet.zap.changeAmount'), {
           small: true,
-          onClick: () => {
-            actions.recordZap?.({
-              peerId: peer.id,
-              amountSats: amount,
-              eventId,
-              requestId: request.requestId,
-              note: note.value.trim(),
-              status: 'pending',
-            });
-            actions.toast?.(t('wallet.zap.verifying'), 'info');
-          },
+          variant: 'ghost',
+          onClick: () => showForm(),
         }),
-        button(t('common.actions.cancel'), { small: true, onClick: () => close() }),
-      ]),
-      el('div', { class: 'arow' }, [
-        button(t('wallet.zap.newInvoice'), { small: true, onClick: () => submit() }),
-        button(t('wallet.zap.changeAmount'), { small: true, onClick: () => showForm() }),
+        button(t('common.actions.cancel'), {
+          small: true,
+          variant: 'ghost',
+          onClick: () => close(),
+        }),
       ]),
     );
     if (expiryLine && expiry) {
@@ -350,6 +387,11 @@ export function renderZap({
           }
           expiryLine.textContent = t('wallet.zap.invoiceExpired');
           expiryLine.classList.add('is-expired');
+          statusNode.hidden = true;
+          waitingHint.hidden = true;
+          openWallet.hidden = true;
+          markPaidButton.hidden = true;
+          newInvoiceButton.hidden = false;
           return;
         }
         expiryLine.textContent = t('wallet.zap.invoiceExpires', { time: formatCountdown(left) });
@@ -375,7 +417,7 @@ export function renderZap({
     if (settled) return;
     settled = true;
     stopWatching();
-    root.replaceChildren(
+    body.replaceChildren(
       el('div', { class: 'zap-status is-done', role: 'status', 'aria-live': 'polite' }, [
         icon('lucide:circle-check', { size: 30, fallback: '✓' }),
         el('b', {}, t('wallet.zap.settledTitle')),

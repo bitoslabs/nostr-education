@@ -4776,6 +4776,14 @@ button.chip:hover {
   color: var(--err);
 }
 
+/* Utilities sit below a hairline so the pay actions read as the primary row. */
+.zap-actions-secondary {
+  margin-top: 2px;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
 /* ---------- Right rail widgets ---------- */
 .rail__stack {
   display: grid;
@@ -5876,6 +5884,17 @@ input.pow-slider:focus-visible::-webkit-slider-thumb {
 /* ---------- zap invoice + QR ---------- */
 .zap,
 .zap-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.zap__top {
+  display: flex;
+  align-items: center;
+}
+
+.zap__body {
   display: flex;
   flex-direction: column;
   gap: 12px;
