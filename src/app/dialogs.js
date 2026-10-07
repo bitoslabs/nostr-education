@@ -15,6 +15,7 @@ import {
   subjectsForAcademy,
   versionsFor,
 } from '../domain/classroom.js';
+import { identityName } from '../domain/identity.js';
 import { conversationWith, conversationsForAccount } from '../domain/messaging.js';
 import { ROLE } from '../domain/school.js';
 import { walletBalance, zapsForAccount } from '../domain/wallet.js';
@@ -41,6 +42,7 @@ import { inviteLinkPanel, renderInviteLink, renderInviteTeacher } from '../ui/co
 import { renderNewMessage } from '../ui/components/new-message-dialog.js';
 import { noteBox, button } from '../ui/components/primitives.js';
 import { qrNode } from '../services/qr.js';
+import { lnurlPayUrl } from '../services/lnurl.js';
 import { renderCropper } from '../ui/components/image-cropper.js';
 import { learnerDisplayName } from '../ui/private-name-view.js';
 import { renderShare } from '../ui/components/share-dialog.js';
@@ -451,11 +453,13 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     const state = store.getState();
     let cleanup = null;
     return openNamed('zap', {
-      label: t('wallet.zap.title'),
+      label: t('wallet.zap.heading', { name: identityName(peer) }),
       content: renderZap({
         peer,
         eventId,
         presets: actions.zapPresets?.(),
+        hasAddress: !!lnurlPayUrl(peer),
+        anonymousDefault: !!state.prefs?.zap?.anonymousZaps,
         balance: walletBalance(zapsForAccount(state, state.accountId)),
         actions,
         close: closeNamed('zap'),
@@ -470,10 +474,18 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
   function openZap(eventId) {
     const event = findNote(eventId);
     if (!event) return null;
+    if (event.author === store.getState().personaId) {
+      actions.toast?.(t('wallet.zap.self'), 'warn');
+      return null;
+    }
     return openZapDialog({ peer: getPersona(event.author), eventId });
   }
 
   function openZapPeer(peerId) {
+    if (peerId === store.getState().personaId) {
+      actions.toast?.(t('wallet.zap.self'), 'warn');
+      return null;
+    }
     const peer = getPersona(peerId);
     if (!peer?.id) return null;
     return openZapDialog({ peer });

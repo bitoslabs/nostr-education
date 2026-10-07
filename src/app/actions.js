@@ -4767,14 +4767,14 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
   // sign a kind:9734 zap request, ask the endpoint for an invoice, then either
   // pay with WebLN or hand the invoice to the caller to render as a QR code.
 
-  async function createZapInvoice(eventId, peerId, amountSats) {
+  async function createZapInvoice(eventId, peerId, amountSats, note = '', anonymous = false) {
     const amount = Math.max(1, Math.round(Number(amountSats) || 0));
     const target = eventId ? feedEventById(eventId) : null;
     const recipient = peerId ?? target?.author ?? null;
     if (!recipient) throw new Error(t('wallet.zap.noRecipient'));
     const payUrl = lnurlPayUrl(getPersona(recipient));
     if (!payUrl) throw new Error(t('wallet.zap.noAddress'));
-    if (!signer.canSign()) throw new Error(t('actions.connectSignerToSign'));
+    if (!anonymous && !signer.canSign()) throw new Error(t('actions.connectSignerToSign'));
 
     const payRequest = await fetchPayRequest(payUrl);
     const amountMsat = amount * 1000;
@@ -4794,12 +4794,21 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         relays: DEFAULT_RELAYS,
         lnurl: payUrl,
       });
-      zapRequest = await signRecord(buildEvent({ kind: KIND.ZAP_REQUEST, tags, content: '' }), {
-        title: t('wallet.zap.title'),
-        action: t('wallet.zap.confirm'),
-        detail: `${formatSats(amount)} ${t('wallet.sats')}`,
-      });
-      if (!zapRequest) throw new Error(t('wallet.zap.cancelled'));
+      if (anonymous) {
+        // NIP-57 anonymity: sign the zap request with a throwaway key so the
+        // receipt's `P` tag (and thus the relay-visible sender) is not us.
+        const throwaway = generateKeyPair();
+        zapRequest = await localSigner(throwaway.secretKey).signEvent(
+          buildEvent({ kind: KIND.ZAP_REQUEST, tags, content: note }),
+        );
+      } else {
+        zapRequest = await signRecord(buildEvent({ kind: KIND.ZAP_REQUEST, tags, content: note }), {
+          title: t('wallet.zap.title'),
+          action: t('wallet.zap.confirm'),
+          detail: `${formatSats(amount)} ${t('wallet.sats')}`,
+        });
+        if (!zapRequest) throw new Error(t('wallet.zap.cancelled'));
+      }
     }
 
     const data = await requestZapInvoice(payRequest.callback, { amountMsat, zapRequest });
@@ -4909,11 +4918,26 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
   function watchZapSettlement({ requestId = null, peerId = null, amountSats = 0, onSettled } = {}) {
     const me = state().accountId;
     if (!me) return { close() {} };
+    const filters = [
+      { kinds: [ZAP_RECEIPT_KIND], '#P': [me] },
+      { kinds: [ZAP_RECEIPT_KIND], '#p': [me] },
+    ];
+    // A kind:9735 receipt tags the recipient with `p` and only optionally tags
+    // the sender with `P`, so the two filters above never see the settle when
+    // the recipient's LNURL server omits `P`. Also watch the peer's receipts
+    // (bounded by `since` so a popular peer's history is not replayed) and let
+    // the request-id check in zapFromReceipt pick exactly our receipt: the
+    // embedded kind:9734 request is the one we signed, so its id and pubkey
+    // identify us even without the `P` tag.
+    if (peerId) {
+      filters.push({
+        kinds: [ZAP_RECEIPT_KIND],
+        '#p': [peerId],
+        since: Math.floor(Date.now() / 1000) - 60,
+      });
+    }
     return relay.subscribe(
-      [
-        { kinds: [ZAP_RECEIPT_KIND], '#P': [me] },
-        { kinds: [ZAP_RECEIPT_KIND], '#p': [me] },
-      ],
+      filters,
       {
         onEvent: (event) => {
           const matchesId = requestId

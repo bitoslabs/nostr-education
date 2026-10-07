@@ -4695,6 +4695,12 @@ button.chip:hover {
   gap: 8px;
 }
 
+@media (max-width: 480px) {
+  .zap-presets {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 .zap-preset {
   justify-content: center;
   padding: 12px 8px;
@@ -4703,6 +4709,11 @@ button.chip:hover {
   background: var(--bg-2);
   color: var(--text);
   font-weight: 700;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+}
+
+.zap-preset:active {
+  transform: scale(0.97);
 }
 
 .zap-preset.is-on {
@@ -4711,7 +4722,23 @@ button.chip:hover {
   background: var(--key-bg);
 }
 
-.zap-custom {
+.zap-adv-toggle {
+  align-self: flex-start;
+  color: var(--muted);
+}
+
+.zap-adv {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.zap-anon-hint {
+  margin: 0;
+}
+
+.zap-custom,
+.zap-note {
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid var(--border-hi);
@@ -4732,6 +4759,21 @@ button.chip:hover {
 .zap-amount__value {
   font-family: var(--mono);
   font-size: 18px;
+}
+
+.zap-error {
+  margin: 0;
+  color: var(--err);
+  font-size: 12px;
+}
+
+.zap-expiry {
+  margin: 0;
+  text-align: center;
+}
+
+.zap-expiry.is-expired {
+  color: var(--err);
 }
 
 /* ---------- Right rail widgets ---------- */
