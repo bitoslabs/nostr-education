@@ -9,6 +9,7 @@ import {
   homeworkForClassroom,
   homeworkStatusBadge,
   isHomeworkOpen,
+  isLate,
   submissionIndex,
   submissionStatusBadge,
   subjectById,
@@ -206,6 +207,8 @@ function classCard(state, app, persona, room, lookup) {
     el('div', { class: 'crow' }, [
       el('span', { class: 'who' }, room.name),
       subject ? el('span', { class: 'ctx' }, subject.name) : null,
+      el('span', { class: 'hw__spacer' }),
+      button(t('education.refreshScores'), { small: true, onClick: () => app.refreshRecords?.() }),
     ]),
     el('p', { class: 'muted small' }, teacher ? t('education.teacherAssigned', { name: learnerDisplayName(state, persona, room.teacherId) }) : t('education.noTeacher')),
     recommended
@@ -226,6 +229,7 @@ function homeworkRow(state, app, persona, item, lookup) {
   const graded = submission?.status === SUBMISSION_STATUS.GRADED;
   const revision = submission?.status === SUBMISSION_STATUS.REVISION;
   const open = isHomeworkOpen(item);
+  const overdue = open && isLate(item);
   const label = !open
     ? t('education.closed')
     : revision
@@ -283,13 +287,10 @@ function homeworkRow(state, app, persona, item, lookup) {
     el('div', { class: 'arow' }, [
       statusBadge(t(token.key, token.params), token.tone),
       submission?.late ? statusBadge(t('education.late'), 'warn') : null,
+      overdue ? statusBadge(t('education.overdue'), 'warn') : null,
       submission
         ? timeStamp('education.submittedAt', submission.submittedEventAt ?? submission.submittedAt)
         : null,
-      button(t('education.refreshHomework'), {
-        small: true,
-        onClick: () => app.refreshRecords?.(),
-      }),
       button(label, {
         variant: graded ? 'default' : 'gold',
         small: true,

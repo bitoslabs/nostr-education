@@ -4,15 +4,19 @@ import {
   CLASS_STATUS,
   HOMEWORK_STATUS,
   LATE_POLICY,
+  canSubmitLate,
   classStatusBadge,
   homeworkStatusBadge,
   isHomeworkOpen,
+  isLate,
   normalizeLatePolicy,
   submissionStatusBadge,
 } from '../../domain/classroom.js';
 import { normalizePolicy } from '../../domain/completion.js';
+import { clearDraft, hasDraftContent, readDraft, writeDraft } from '../../domain/draft.js';
 import { buildScoreSheet, normalizeRubric, rubricMax, scoresTotal } from '../../domain/rubric.js';
 import { t } from '../../services/i18n/index.js';
+import { loadDrafts, saveDrafts } from '../../services/storage.js';
 import { button, fileChip, noteBox } from './primitives.js';
 import { fileLink } from './file-viewer.js';
 import { dangerSection, formFoot, formSection } from './form-fields.js';
@@ -28,6 +32,26 @@ function preview(text, limit = 140) {
   return value.length > limit ? `${value.slice(0, limit)}…` : value;
 }
 
+function versionRows(versions = []) {
+  return el(
+    'div',
+    { class: 'rows' },
+    versions.map((entry) =>
+      el('div', { class: 'row' }, [
+        el(
+          'span',
+          { class: 'muted small' },
+          t('teaching.versionMeta', {
+            version: entry.version,
+            date: formatDate(entry.eventCreatedAt ?? entry.submittedAt) ?? t('teaching.saved'),
+          }),
+        ),
+        el('span', { class: 'quote' }, preview(entry.text) || t('teaching.noText')),
+      ]),
+    ),
+  );
+}
+
 function historyBlock(versions = []) {
   if (!versions.length) return null;
   return el('div', {}, [
@@ -36,23 +60,23 @@ function historyBlock(versions = []) {
       {},
       versions.length === 1 ? t('teaching.historyOne') : t('teaching.history', { count: versions.length }),
     ),
-    el(
-      'div',
-      { class: 'rows' },
-      versions.map((entry) =>
-        el('div', { class: 'row' }, [
-          el(
-            'span',
-            { class: 'muted small' },
-            t('teaching.versionMeta', {
-              version: entry.version,
-              date: formatDate(entry.eventCreatedAt ?? entry.submittedAt) ?? t('teaching.saved'),
-            }),
-          ),
-          el('span', { class: 'quote' }, preview(entry.text) || t('teaching.noText')),
-        ]),
-      ),
-    ),
+    versionRows(versions),
+  ]);
+}
+
+// Collapsible earlier submissions so a teacher can compare what changed without
+// leaving the grading form. The head version is already shown above, so only the
+// versions before it are listed here.
+function previousVersions(versions = []) {
+  const earlier = versions.slice(0, -1);
+  if (!earlier.length) return null;
+  return el('details', { class: 'acc' }, [
+    el('summary', {}, [
+      el('span', { class: 'who' }, t('teaching.previousVersions')),
+      el('span', { class: 'spacer' }),
+      el('span', { class: 'muted small' }, t('teaching.history', { count: earlier.length })),
+    ]),
+    el('div', { class: 'acc__body' }, versionRows(earlier)),
   ]);
 }
 
@@ -662,35 +686,116 @@ export function renderManageHomework({ homeworkItem, actions, close }) {
   ]);
 }
 
-export function renderSubmitHomework({ homeworkItem, submission, versions = [], actions, close }) {
+export function renderSubmitHomework({ homeworkItem, submission, versions = [], classroom, accountId, actions, close }) {
   const error = errorLine();
   const open = isHomeworkOpen(homeworkItem);
+  const pastDue = isLate(homeworkItem);
+  const lateAccepted = canSubmitLate(classroom, homeworkItem);
+  // Blocked up front (not only on submit) so a learner never types an answer
+  // that the late policy would silently reject at publish time.
+  const blocked = !open || (pastDue && !lateAccepted);
+  const willBeLate = open && pastDue && lateAccepted;
+
+  // Last submitted state, used to reset the form and to tell whether the current
+  // input is worth keeping as a draft.
+  const saved = {
+    text: submission?.text ?? '',
+    link: submission?.link ?? '',
+    files: Array.isArray(submission?.files) ? [...submission.files] : [],
+  };
+  const restoredDraft = readDraft(loadDrafts(), accountId, homeworkItem.id);
+  const hasRestored = hasDraftContent(restoredDraft);
+  const initial = hasRestored ? restoredDraft : saved;
+
   const body = el('textarea', {
     rows: '6',
     placeholder: t('teaching.placeholderAnswer'),
     'aria-label': t('teaching.yourAnswer'),
+    readOnly: blocked,
   });
-  if (submission?.text) body.value = submission.text;
+  body.value = initial.text ?? '';
 
   const linkInput = el('input', {
     type: 'url',
     placeholder: t('teaching.placeholderLink'),
     'aria-label': t('teaching.linkLabel'),
+    readOnly: blocked,
   });
-  if (submission?.link) linkInput.value = submission.link;
+  linkInput.value = initial.link ?? '';
 
-  const attachments = Array.isArray(submission?.files) ? [...submission.files] : [];
+  let saveTimer = null;
+  const sameFiles = () =>
+    attachments.length === saved.files.length &&
+    attachments.every(
+      (file, index) =>
+        (file?.url ?? file?.name) === (saved.files[index]?.url ?? saved.files[index]?.name),
+    );
+  const isDirty = () =>
+    String(body.value).trim() !== String(saved.text).trim() ||
+    String(linkInput.value).trim() !== String(saved.link).trim() ||
+    !sameFiles();
+  const persistDraft = () => {
+    if (blocked) return;
+    const drafts = loadDrafts();
+    saveDrafts(
+      isDirty()
+        ? writeDraft(drafts, accountId, homeworkItem.id, {
+            text: body.value,
+            link: linkInput.value,
+            files: attachments,
+          })
+        : clearDraft(drafts, accountId, homeworkItem.id),
+    );
+  };
+  const scheduleDraft = () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(persistDraft, 500);
+  };
+  const discardDraft = () => {
+    clearTimeout(saveTimer);
+    saveDrafts(clearDraft(loadDrafts(), accountId, homeworkItem.id));
+    body.value = saved.text;
+    linkInput.value = saved.link;
+    attachments.splice(0, attachments.length, ...saved.files);
+    renderChips();
+    draftBanner.hidden = true;
+  };
+
+  const attachments = Array.isArray(initial.files) ? [...initial.files] : [];
   const chipRow = el('div', { class: 'files' });
-  const renderChips = () => chipRow.replaceChildren(...attachments.map((file) => fileChip(file.name)));
+  let busy = false;
+  const renderChips = () =>
+    chipRow.replaceChildren(
+      ...attachments.map((file, index) =>
+        fileChip(file.name, {
+          onRemove:
+            blocked || busy
+              ? null
+              : () => {
+                  attachments.splice(index, 1);
+                  renderChips();
+                  scheduleDraft();
+                },
+        }),
+      ),
+    );
   renderChips();
 
+  const draftBanner = el('div', { class: 'arow', hidden: !hasRestored }, [
+    noteBox(t('teaching.draftRestored')),
+    button(t('teaching.discardDraft'), { small: true, onClick: discardDraft }),
+  ]);
+
   const fileInput = el('input', { type: 'file', multiple: true, hidden: true });
-  const attachBtn = button(t('teaching.attachFile'), { small: true, onClick: () => fileInput.click() });
-  let busy = false;
+  const attachBtn = button(t('teaching.attachFile'), {
+    small: true,
+    disabled: blocked,
+    onClick: () => fileInput.click(),
+  });
   fileInput.addEventListener('change', async () => {
     const picked = [...(fileInput.files ?? [])];
     fileInput.value = '';
-    if (!picked.length || busy) return;
+    if (!picked.length || busy || blocked) return;
     busy = true;
     attachBtn.disabled = true;
     for (const file of picked) {
@@ -702,13 +807,48 @@ export function renderSubmitHomework({ homeworkItem, submission, versions = [], 
     }
     busy = false;
     attachBtn.disabled = false;
+    renderChips();
+    scheduleDraft();
   });
 
-  return el('div', {}, [
+  body.addEventListener('input', scheduleDraft);
+  linkInput.addEventListener('input', scheduleDraft);
+
+  const runSubmit = () => {
+    if (blocked) return;
+    const ok = actions.submitHomework({
+      homeworkId: homeworkItem.id,
+      text: body.value,
+      link: linkInput.value,
+      files: attachments,
+    });
+    if (ok) {
+      clearTimeout(saveTimer);
+      saveDrafts(clearDraft(loadDrafts(), accountId, homeworkItem.id));
+      close();
+    } else {
+      error.textContent = t('teaching.errAnswerOrAttachment');
+    }
+  };
+
+  const primaryLabel = willBeLate
+    ? t('teaching.submitLate')
+    : submission
+      ? t('teaching.submitNewVersion')
+      : t('teaching.submitHomework');
+
+  const node = el('div', {}, [
     el('h2', {}, homeworkItem.title),
     el('p', { class: 'muted small' }, t('teaching.submitDueMeta', { due: homeworkItem.due, maxScore: homeworkItem.maxScore })),
     homeworkItem.instructions ? el('p', {}, homeworkItem.instructions) : null,
-    !open ? noteBox(t('actions.homeworkClosed'), 'warn') : null,
+    !open
+      ? noteBox(t('actions.homeworkClosed'), 'warn')
+      : pastDue && !lateAccepted
+        ? noteBox(t('teaching.submitLateBlocked'), 'warn')
+        : willBeLate
+          ? noteBox(t('teaching.submitLateWarning'), 'warn')
+          : null,
+    draftBanner,
     submission
       ? noteBox(
           t('teaching.submitVersionNote', {
@@ -725,25 +865,24 @@ export function renderSubmitHomework({ homeworkItem, submission, versions = [], 
     el('div', { class: 'arow' }, [attachBtn, fileInput]),
     chipRow,
     error,
+    !blocked ? el('p', { class: 'field-hint' }, t('teaching.keyboardSubmitHint')) : null,
     el('div', { class: 'dlg-foot' }, [
       button(t('common.actions.cancel'), { onClick: close }),
-      button(submission ? t('teaching.submitNewVersion') : t('teaching.submitHomework'), {
-        variant: 'gold',
-        disabled: !open,
-        onClick: () => {
-          if (!open) return;
-          const ok = actions.submitHomework({
-            homeworkId: homeworkItem.id,
-            text: body.value,
-            link: linkInput.value,
-            files: attachments,
-          });
-          if (ok) close();
-          else error.textContent = t('teaching.errAnswerOrAttachment');
-        },
+      button(primaryLabel, {
+        variant: willBeLate ? 'default' : 'gold',
+        disabled: blocked,
+        onClick: runSubmit,
       }),
     ]),
   ]);
+
+  node.addEventListener('keydown', (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+      event.preventDefault();
+      runSubmit();
+    }
+  });
+  return node;
 }
 
 export function renderSubmissionView({
@@ -916,7 +1055,7 @@ export function renderGradeSubmission({
     else error.textContent = t('teaching.errRevisionFeedback');
   };
 
-  return el('div', {}, [
+  const node = el('div', {}, [
     el('h2', {}, t('teaching.scoreTitle', { name: learnerName })),
     el(
       'p',
@@ -941,13 +1080,7 @@ export function renderGradeSubmission({
           submission.files.map((file) => fileLink(file, { onOpen: onOpenFile })),
         )
       : null,
-    versions.length > 1
-      ? el(
-          'p',
-          { class: 'muted small' },
-          t('teaching.versionNote', { version: submission.version, total: versions.length }),
-        )
-      : null,
+    previousVersions(versions),
     revisions.some((entry) => entry.status === 'finalized')
       ? el('div', {}, [
           el('h3', {}, t('teaching.previousScores')),
@@ -985,7 +1118,16 @@ export function renderGradeSubmission({
         onClick: () => saveScore(Boolean(nextSubmissionId)),
       }),
     ]),
+    el('p', { class: 'field-hint' }, t('teaching.keyboardSaveHint')),
   ]);
+
+  node.addEventListener('keydown', (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+      event.preventDefault();
+      saveScore(Boolean(nextSubmissionId));
+    }
+  });
+  return node;
 }
 
 export function renderCompletionPolicy({ classroom, actions, close }) {

@@ -44,6 +44,8 @@ export default {
   maxMeta: 'Out of {maxScore}',
   submittedAt: 'Submitted {date}',
   late: 'late',
+  overdue: 'overdue',
+  refreshScores: 'Refresh scores',
   join: {
     backToWelcome: 'Back to welcome',
     invitation: 'Invitation',

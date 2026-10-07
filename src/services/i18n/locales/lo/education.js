@@ -44,6 +44,8 @@ export default {
   maxMeta: 'ຈາກຄະແນນເຕັມ {maxScore}',
   submittedAt: 'ສົ່ງເມື່ອ {date}',
   late: 'ຊ້າ',
+  overdue: 'ເກີນກຳນົດ',
+  refreshScores: 'ໂຫຼດຄະແນນໃໝ່',
   join: {
     backToWelcome: 'ກັບໄປໜ້າຕ້ອນຮັບ',
     invitation: 'ຄຳເຊີນ',

@@ -266,12 +266,15 @@ export function createDialogs({ overlay, store, actions, contacts = SEED_CONTACT
     if (!isHomeworkOpen(homeworkItem)) return null;
     const submission = submissionFor(state.submissions ?? [], homeworkId, state.personaId);
     const versions = versionsFor(state.submissionVersions ?? [], submission?.id);
+    const classroom = classroomById(state.classrooms ?? [], homeworkItem.classroomId);
     return openNamed('submit-homework', {
       label: t('actions.submitNamed', { name: homeworkItem.title }),
       content: renderSubmitHomework({
         homeworkItem,
         submission,
         versions,
+        classroom,
+        accountId: state.personaId,
         actions,
         close: closeNamed('submit-homework'),
       }),

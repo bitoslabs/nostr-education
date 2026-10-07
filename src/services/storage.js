@@ -2,6 +2,7 @@ const STATE_KEY = 'bitos.education.state.v1';
 const SECRET_KEY = 'bitos.education.secret.v1';
 const ORG_SECRET_KEY = 'bitos.education.orgsecrets.v1';
 const FEED_CACHE_KEY = 'bitos.education.feed.v1';
+const DRAFT_KEY = 'bitos.education.drafts.v1';
 // Only the newest notes are cached, for an instant first paint before relays
 // answer. Enough to fill the first screen; stale entries fall off the tail.
 const FEED_CACHE_LIMIT = 20;
@@ -92,8 +93,35 @@ export function clearState() {
     store.removeItem(SECRET_KEY);
     store.removeItem(ORG_SECRET_KEY);
     store.removeItem(FEED_CACHE_KEY);
+    store.removeItem(DRAFT_KEY);
   } catch {
     /* ignore */
+  }
+}
+
+// Device-local homework drafts, keyed per account + homework. Kept separate
+// from the synced state so a work-in-progress answer never reaches a relay.
+export function loadDrafts() {
+  const store = storage();
+  if (!store) return {};
+  try {
+    const raw = store.getItem(DRAFT_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveDrafts(drafts) {
+  const store = storage();
+  if (!store) return;
+  try {
+    const value = drafts && typeof drafts === 'object' ? drafts : {};
+    if (Object.keys(value).length) store.setItem(DRAFT_KEY, JSON.stringify(value));
+    else store.removeItem(DRAFT_KEY);
+  } catch {
+    /* storage may be unavailable or full */
   }
 }
 
