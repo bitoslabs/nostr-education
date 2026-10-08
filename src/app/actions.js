@@ -912,6 +912,29 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     toast(t('actions.cacheCleared'), 'ok');
   }
 
+  // Force-refresh the app shell. Retires the offline service worker and drops
+  // its caches so a new deploy can never be shadowed by a stale copy, then
+  // reloads with a cache-busting query in case an HTTP/CDN cache also holds the
+  // old index.html. index.html re-registers the worker on the next load.
+  async function forceUpdate() {
+    toast(t('actions.updating'), 'info');
+    try {
+      if (typeof caches !== 'undefined') {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((key) => caches.delete(key)));
+      }
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map((registration) => registration.unregister()));
+      }
+    } catch {
+      /* reload anyway */
+    }
+    const url = new URL(location.href);
+    url.searchParams.set('v', Date.now().toString(36));
+    location.replace(url.toString());
+  }
+
   function fetchProfile(targetId) {
     const me = targetId ?? state().accountId;
     if (!me) return Promise.resolve(null);
@@ -5076,6 +5099,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     zapPresets,
     defaultPow,
     clearCache,
+    forceUpdate,
     signInWithExtension,
     createAccount,
     signInWithKey,

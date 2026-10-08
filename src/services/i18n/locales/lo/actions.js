@@ -61,6 +61,7 @@ export default {
   academyCreatedNamed: 'ສ້າງ {name} ແລ້ວ.',
   accountCreatedBackupKey: 'ສ້າງບັນຊີແລ້ວ — ສຳຮອງກະແຈຂອງທ່ານ.',
   cacheCleared: 'ລ້າງ cache ແລ້ວ.',
+  updating: 'ກຳລັງກວດຫາເວີຊັນໃໝ່…',
   pasteKey: 'ວາງກະແຈ nsec1… ຫຼື npub1….',
   invalidKey: 'ນັ້ນບໍ່ແມ່ນ nsec, npub ຫຼື ກະແຈສາທາລະນະທີ່ຖືກຕ້ອງ.',
   keyUnreadable: 'ອ່ານກະແຈນັ້ນບໍ່ໄດ້.',

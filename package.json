@@ -1,6 +1,6 @@
 {
   "name": "nostr-school",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "BitOS Education — Nostr-native education identity and credentials.",

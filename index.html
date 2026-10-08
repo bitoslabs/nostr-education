@@ -41,7 +41,7 @@
           "nostr-tools/nip44": "./vendor/nostr-tools/nip44.js",
           "nostr-tools/nip46": "./vendor/nostr-tools/nip46.js",
           "nostr-tools/pool": "./vendor/nostr-tools/pool.js",
-          "qrcode-generator": "./vendor/qrcode-generator/qrcode.mjs",
+          "qrcode-generator": "./vendor/qrcode-generator/qrcode.js",
           "@noble/curves/": "./vendor/@noble/curves/",
           "@noble/hashes/": "./vendor/@noble/hashes/",
           "@noble/ciphers/": "./vendor/@noble/ciphers/",
@@ -89,8 +89,23 @@
           location.reload();
         });
         window.addEventListener('load', function () {
-          navigator.serviceWorker
-            .register('./sw.js', { updateViaCache: 'none' })
+          fetch('./vendor/precache.json', { cache: 'no-store' })
+            .then(function (response) {
+              if (!response.ok) throw new Error('Could not load app version');
+              return response.json();
+            })
+            .then(function (manifest) {
+              if (!manifest.version) throw new Error('App version is missing');
+              return navigator.serviceWorker.register(
+                './sw.js?v=' + encodeURIComponent(manifest.version),
+                { updateViaCache: 'none' },
+              );
+            })
+            .catch(function () {
+              // No manifest (for example, offline during the first boot):
+              // register directly so offline mode can still be installed.
+              return navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
+            })
             .then(function (registration) {
               return registration.update();
             })

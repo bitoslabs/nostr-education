@@ -193,7 +193,8 @@ function sectionBody(section, state, app, theme, registerBackupHide, registerSyn
     privacy: () => privacyBody(state, app, persona),
   };
 
-  return (bodies[section]?.() ?? []).filter(Boolean);
+  const body = bodies[section]?.();
+  return (Array.isArray(body) ? body : body ? [body] : []).filter(Boolean);
 }
 
 function switchLine(key, label, theme) {

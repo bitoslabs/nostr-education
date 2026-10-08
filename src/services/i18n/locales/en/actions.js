@@ -61,6 +61,7 @@ export default {
   academyCreatedNamed: '{name} created.',
   accountCreatedBackupKey: 'Account created — back up your key.',
   cacheCleared: 'Cache cleared.',
+  updating: 'Checking for updates…',
   pasteKey: 'Paste an nsec1… or npub1… key.',
   invalidKey: 'That is not a valid nsec, npub, or public key.',
   keyUnreadable: 'That key could not be read.',

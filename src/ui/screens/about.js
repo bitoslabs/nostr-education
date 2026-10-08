@@ -181,6 +181,20 @@ export function renderAbout({ app }) {
         externalLink(t('about.source'), REPOSITORY, { iconName: 'lucide:code', fallback: '</>' }),
       ]),
     ]),
+    el('div', { class: 'card' }, [
+      el('div', { class: 'dhead' }, [
+        el('h3', {}, t('about.updateTitle')),
+        statusBadge(VERSION, 'muted'),
+      ]),
+      el('p', { class: 'muted small' }, t('about.updateHint')),
+      el('div', { class: 'about-links' }, [
+        button(t('about.updateCache'), {
+          variant: 'gold',
+          small: true,
+          onClick: () => app.forceUpdate(),
+        }),
+      ]),
+    ]),
     owner.card,
     contributor.card,
     donateCard,
