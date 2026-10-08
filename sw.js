@@ -12,6 +12,7 @@ const CACHE_PREFIX = 'bitos-offline-';
 const META_CACHE = `${CACHE_PREFIX}meta`;
 const VERSION_KEY = './__bitos_version__';
 const SHELL_CACHE = `${CACHE_PREFIX}shell`;
+const WORKER_VERSION = new URL(self.location.href).searchParams.get('v') || '';
 const FALLBACK = [
   './',
   './index.html',
@@ -43,12 +44,18 @@ self.addEventListener('install', (event) => {
     (async () => {
       let assets = FALLBACK;
       let cacheName = SHELL_CACHE;
+      let buildVersion = WORKER_VERSION;
       try {
-        const response = await fetch(MANIFEST_URL, { cache: 'no-cache' });
+        const manifestUrl = new URL(MANIFEST_URL, self.registration.scope);
+        if (WORKER_VERSION) manifestUrl.searchParams.set('__bitos_build', WORKER_VERSION);
+        const response = await fetch(manifestUrl, { cache: 'no-store' });
         if (response.ok) {
           const manifest = await response.json();
           if (Array.isArray(manifest.assets) && manifest.assets.length) assets = manifest.assets;
-          if (manifest.version) cacheName = `${CACHE_PREFIX}${manifest.version}`;
+          if (manifest.version) {
+            buildVersion = manifest.version;
+            cacheName = `${CACHE_PREFIX}${manifest.version}`;
+          }
         }
       } catch {
         /* no manifest yet: cache the shell only */
@@ -58,7 +65,9 @@ self.addEventListener('install', (event) => {
       // Cache each asset on its own. addAll() rejects atomically, so one missing
       // file would abort the whole install and the previous worker would keep
       // serving the old build forever.
-      await Promise.allSettled(assets.map((asset) => cache.add(asset)));
+      await Promise.allSettled(
+        assets.map((asset) => cacheFreshAsset(cache, asset, buildVersion)),
+      );
 
       // Record the current cache so fetch events keep using it even after the
       // browser restarts this worker (module state does not survive).
@@ -101,12 +110,19 @@ self.addEventListener('fetch', (event) => {
 });
 
 async function networkFirst(request, fallback) {
-  const cache = await caches.open(await activeCacheName());
+  const cacheName = await activeCacheName();
+  const cache = await caches.open(cacheName);
   try {
     // Bypass the browser HTTP cache while online. Static dev servers (for
     // example `python3 -m http.server`) send no Cache-Control, so a plain
     // fetch() can return a stale module and edits never reach the running app.
-    const response = await fetch(request, { cache: 'no-store' });
+    const version = cacheName.startsWith(CACHE_PREFIX)
+      ? cacheName.slice(CACHE_PREFIX.length)
+      : '';
+    const networkRequest = shouldVersion(request)
+      ? versionedRequest(request, version)
+      : request;
+    const response = await fetch(networkRequest, { cache: 'no-store' });
     if (response.ok && response.type === 'basic') cache.put(request, response.clone());
     return response;
   } catch {
@@ -118,4 +134,30 @@ async function networkFirst(request, fallback) {
     }
     return Response.error();
   }
+}
+
+function shouldVersion(request) {
+  const { pathname } = new URL(request.url);
+  return (
+    pathname.startsWith('/src/') ||
+    pathname.startsWith('/vendor/') ||
+    pathname.startsWith('/assets/') ||
+    pathname === '/manifest.webmanifest'
+  );
+}
+
+function versionedRequest(request, version) {
+  if (!version) return request;
+  const url = new URL(request.url);
+  url.searchParams.set('__bitos_build', version);
+  return new Request(url, request);
+}
+
+async function cacheFreshAsset(cache, asset, version) {
+  const canonicalRequest = new Request(new URL(asset, self.registration.scope));
+  const response = await fetch(versionedRequest(canonicalRequest, version), {
+    cache: 'no-store',
+  });
+  if (!response.ok) throw new Error(`Could not cache ${asset}: ${response.status}`);
+  await cache.put(canonicalRequest, response);
 }
