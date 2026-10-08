@@ -1,6 +1,6 @@
 {
   "name": "BitOS Education",
-  "short_name": "BitOS",
+  "short_name": "BitOS Edu",
   "description": "Nostr-native education identity and credentials.",
   "start_url": "./",
   "scope": "./",
