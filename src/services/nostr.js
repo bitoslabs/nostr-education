@@ -3,8 +3,13 @@ import { decode, npubEncode, nsecEncode } from 'nostr-tools/nip19';
 import { decrypt as nip44Decrypt, encrypt as nip44Encrypt, getConversationKey } from 'nostr-tools/nip44';
 import { BunkerSigner } from 'nostr-tools/nip46';
 
+// The primary relay is first in the list: reads query it before any other
+// relay answers, and writes are attempted in list order. Keep the relay that
+// holds this app's records in that slot so homework and grades resolve fast.
+export const PRIMARY_RELAY = 'wss://nostr-01.yakihonne.com';
+
 export const DEFAULT_RELAYS = Object.freeze([
-  'wss://nostr-01.yakihonne.com',
+  PRIMARY_RELAY,
   'wss://relay.bitos.space',
   'wss://relay.damus.io',
   'wss://nos.lol',

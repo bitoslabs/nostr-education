@@ -9,6 +9,7 @@ import {
   normalizeRelayList,
   normalizeRelayMode,
   normalizeRelayUrl,
+  promoteRelay,
   relayId,
   relayModeLabel,
   relaysForKind,
@@ -128,4 +129,21 @@ test('relaysForKind routes read, write, and read+write relays', () => {
   ];
   assert.deepEqual(relaysForKind(list, 'read'), ['wss://rw.example', 'wss://r.example']);
   assert.deepEqual(relaysForKind(list, 'write'), ['wss://rw.example', 'wss://w.example']);
+});
+
+test('promoteRelay moves a relay to the primary slot and ignores unknown ids', () => {
+  const list = normalizeRelayList(['wss://a.example', 'wss://b.example', 'wss://c.example']);
+  const promoted = promoteRelay(list, list[2].id);
+  assert.deepEqual(
+    promoted.map((relay) => relay.url),
+    ['wss://c.example', 'wss://a.example', 'wss://b.example'],
+  );
+  assert.equal(promoted[0].id, list[2].id);
+
+  // Unknown id and already-primary id both leave the order untouched.
+  assert.deepEqual(
+    promoteRelay(list, 'relay:wss://missing.example').map((relay) => relay.url),
+    ['wss://a.example', 'wss://b.example', 'wss://c.example'],
+  );
+  assert.deepEqual(promoteRelay(list, list[0].id), list);
 });

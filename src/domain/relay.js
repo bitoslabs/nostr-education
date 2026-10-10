@@ -117,6 +117,17 @@ export function setRelayMode(list, id, mode) {
   return (list ?? []).map((relay) => (relay.id === id ? { ...relay, mode: normalized } : relay));
 }
 
+// The first relay in the list is the primary: reads hit it first and the other
+// relays only join afterwards, so promoting a relay simply moves it to the
+// front. Unknown or already-primary ids leave the order untouched.
+export function promoteRelay(list, id) {
+  const relays = [...(list ?? [])];
+  const index = relays.findIndex((relay) => relay.id === id);
+  if (index <= 0) return relays;
+  const [entry] = relays.splice(index, 1);
+  return [entry, ...relays];
+}
+
 export function relaysForKind(list, kind) {
   const wanted = kind === 'write' ? RELAY_MODE.WRITE : RELAY_MODE.READ;
   return (list ?? [])

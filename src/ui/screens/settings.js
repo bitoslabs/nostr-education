@@ -952,6 +952,25 @@ function relayRow(relay, app) {
         : 'settings.relay.health.checking';
   const healthLabel = t(healthKey);
   const detail = relay.latencyMs != null ? `${healthLabel} · ${relay.latencyMs} ms` : healthLabel;
+  // The first relay in the list is the primary (reads start there). Show which
+  // one it is, and let any other relay be promoted into that slot.
+  const primaryControl = relay.primary
+    ? el(
+        'span',
+        { class: 'chip', title: t('settings.relay.primaryTitle') },
+        `★ ${t('settings.relay.primary')}`,
+      )
+    : el(
+        'button',
+        {
+          class: 'chip',
+          type: 'button',
+          title: t('settings.relay.setPrimary'),
+          'aria-label': t('settings.relay.setPrimary'),
+          onClick: () => app.setPrimaryRelay(relay.id),
+        },
+        `☆ ${t('settings.relay.setPrimary')}`,
+      );
   return el('div', { class: 'list-row' }, [
     el(
       'span',
@@ -965,6 +984,7 @@ function relayRow(relay, app) {
       el('span', { class: 'mono small' }, relay.url),
       el('span', { class: `list-row__sub ${tone === 'err' ? 'danger' : ''}` }, detail),
     ]),
+    primaryControl,
     el(
       'button',
       {

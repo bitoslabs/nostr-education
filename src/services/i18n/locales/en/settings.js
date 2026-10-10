@@ -221,7 +221,10 @@ export default {
     check: 'Check relays',
     add: 'Add relay',
     changeMode: 'Change read/write mode',
-    note: 'BitOS reads from read relays and publishes to write relays. Tap a relay to cycle its mode. Both wss:// and plaintext ws:// URLs are accepted.',
+    primary: 'primary',
+    primaryTitle: 'Primary relay: reads query this relay first.',
+    setPrimary: 'Set as primary',
+    note: 'BitOS reads from read relays and publishes to write relays. Tap a relay to cycle its mode. The ★ relay is primary — reads start there; tap ☆ to promote another relay. Both wss:// and plaintext ws:// URLs are accepted.',
   },
   session: {
     title: 'Session',

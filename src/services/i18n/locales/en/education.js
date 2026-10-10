@@ -3,6 +3,8 @@ export default {
   browseCatalog: 'Browse the catalog for new courses.',
   goToDiscover: 'Go to Discover',
   refresh: 'Sync from relays',
+  loadHomework: 'Load homework',
+  loadingHomework: 'Loading homework…',
   lastScorePercent: 'Last score: {score}/{max} ({percent}%).',
   lastScoreValue: 'Last score: {score}.',
   scoreHistory: 'Earlier',

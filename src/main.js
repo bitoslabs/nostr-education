@@ -20,7 +20,7 @@ import {
   reconcileAssessmentHeads,
 } from './domain/records.js';
 import { parseProfileMeta } from './domain/profile.js';
-import { normalizeRelayList } from './domain/relay.js';
+import { normalizeRelayList, promoteRelay, relayId } from './domain/relay.js';
 import { normalizeMode } from './domain/mode.js';
 import { normalizePrefs, subscriptionEnabled } from './domain/prefs.js';
 import { MEMBERSHIP } from './domain/school.js';
@@ -32,6 +32,7 @@ import { createIconifyLoader } from './services/iconify.js';
 import {
   DEFAULT_RELAYS,
   KIND,
+  PRIMARY_RELAY,
   connectBunkerSigner,
   decodeKey,
   encodeNpub,
@@ -118,9 +119,14 @@ const store = createStore({
   mode: normalizeMode(persisted.mode),
   prefs: normalizePrefs(persisted.prefs),
   blossomServer: persisted.blossomServer ?? BLOSSOM_SERVERS[0],
-  relayConfig: normalizeRelayList(persisted.relayConfig ?? persisted.relays ?? DEFAULT_RELAYS, {
-    defaults: DEFAULT_RELAYS,
-  }),
+  // The primary relay leads the list (reads hit it first); existing sessions
+  // keep their configured relays but the primary is promoted to the front.
+  relayConfig: promoteRelay(
+    normalizeRelayList(persisted.relayConfig ?? persisted.relays ?? DEFAULT_RELAYS, {
+      defaults: DEFAULT_RELAYS,
+    }),
+    relayId(PRIMARY_RELAY),
+  ),
   relays: [],
   following: persisted.following ?? {},
   locale: persisted.locale ?? 'lo',
@@ -189,6 +195,9 @@ const store = createStore({
   // Loaded comment threads, keyed by note id: { status, replies[] }. Session
   // only; replies are fetched on demand when a thread opens.
   threads: {},
+  // Record fetch state for the manual "Load homework" control: 'idle' while
+  // nothing has been requested, 'loading' during a fetch, 'ready' after.
+  recordsStatus: 'idle',
 });
 
 // Repair any submission head that was resolved with the old revision ordering,
@@ -221,6 +230,7 @@ const actions = createActions({ store, bus, signer, confirm, relay: relayService
 const dialogs = createDialogs({ overlay, store, actions });
 const app = { ...actions, ...dialogs };
 app.refreshRecords = refreshRecords;
+app.loadHomework = loadHomework;
 app.loadMoreFeed = loadMoreFeed;
 
 // The prototype once seeded clearly-fake demo zaps and conversations. Wallet,
@@ -483,7 +493,12 @@ function refreshRecords({ timeoutMs = 8000, silent = false } = {}) {
         resolve(count);
       };
       const timer = setTimeout(() => finish(true), timeoutMs);
+      // eose 'all': a missed homework or grade may sit on any relay, so only
+      // resolve once every relay answered (maxWaitMs bounds the ones that
+      // never do). onClose covers a relay that refused the query outright.
       sub = relayService.subscribe(recordFilters(me), {
+        eose: 'all',
+        maxWaitMs: Math.max(1000, timeoutMs - 1000),
         onEvent: (event) => {
           const task = (async () => {
             const before = seen.size;
@@ -502,6 +517,10 @@ function refreshRecords({ timeoutMs = 8000, silent = false } = {}) {
           eose = true;
           finish();
         },
+        onClose: () => {
+          eose = true;
+          finish();
+        },
       });
     });
   })().finally(() => {
@@ -509,6 +528,17 @@ function refreshRecords({ timeoutMs = 8000, silent = false } = {}) {
     if (store.getState().messagesStatus === 'loading') store.setState({ messagesStatus: 'ready' });
   });
   return refreshInFlight;
+}
+
+// Manual "Load homework" control on the learner workspace. Same query as
+// refreshRecords, but always audible (toasts) and a touch longer timeout so a
+// slow relay can still deliver; recordsStatus drives the button's loading
+// state so a learner can see the fetch is actually running.
+function loadHomework() {
+  store.setState({ recordsStatus: 'loading' });
+  return Promise.resolve(refreshRecords({ timeoutMs: 12000 })).finally(() => {
+    store.setState({ recordsStatus: 'ready' });
+  });
 }
 
 let credentialSub = null;
@@ -663,11 +693,14 @@ function loadMoreFeed() {
   };
 
   // `until` is inclusive, so step one second below the cursor to avoid
-  // re-fetching notes already on screen.
+  // re-fetching notes already on screen. eose 'all': deciding that the feed
+  // ended must not conclude from the primary relay alone.
   const timer = setTimeout(() => finish(received >= NOTE_LIMIT), 8000);
   feedMoreSub = relayService.subscribe(
     [{ kinds: [KIND.NOTE], '#t': [APP_TAG], until: until - 1, limit: NOTE_LIMIT }],
     {
+      eose: 'all',
+      maxWaitMs: 8000,
       onEvent: (event) => {
         if (!verify(event) || seen.has(event.id)) return;
         seen.add(event.id);
@@ -1013,13 +1046,53 @@ restoreSigner().finally(() => {
 function refetchIfAuthed() {
   if (store.getState().authed) refreshRecords({ silent: true });
 }
+
+// Safari can suspend a backgrounded tab and leave its WebSocket sockets
+// half-open: the page still reports online, subscriptions look alive, but no
+// relay event is ever delivered again — homework then "sometimes not work"
+// until a reload. After a long stay in the background (or a back/forward
+// cache restore, which Safari also uses instead of unloading), drop the
+// pooled connections and rebuild every subscription on fresh sockets.
+const RESYNC_AFTER_HIDDEN_MS = 60000;
+let hiddenSince = null;
+
+function resyncFromRelays() {
+  relayService.reconnect();
+  store.setState({ relays: relayService.statuses() });
+  syncRecords();
+  syncProfiles();
+  syncCatalog();
+  syncCredentials();
+  syncNotes();
+  syncEngagement();
+  syncEngagementNotifications();
+  syncZaps();
+  refreshRecords({ silent: true });
+}
+
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') refetchIfAuthed();
+    if (document.visibilityState === 'visible') {
+      const suspended =
+        hiddenSince != null && Date.now() - hiddenSince >= RESYNC_AFTER_HIDDEN_MS;
+      hiddenSince = null;
+      if (suspended) resyncFromRelays();
+      else refetchIfAuthed();
+      return;
+    }
+    hiddenSince = Date.now();
   });
 }
 if (typeof window !== 'undefined') {
   window.addEventListener('online', refetchIfAuthed);
+  // Restoring from Safari's back/forward cache does not always fire a
+  // visibility change, so re-sync there too.
+  window.addEventListener('pageshow', (event) => {
+    if (event.persisted) {
+      hiddenSince = null;
+      resyncFromRelays();
+    }
+  });
 }
 
 export { store, bus };

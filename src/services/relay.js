@@ -8,11 +8,29 @@ export const RELAY_STATE = Object.freeze({
   OFFLINE: 'offline',
 });
 
-const CONNECT_TIMEOUT_MS = 5000;
+export const EOSE_MODE = Object.freeze({
+  // onEose fires as soon as the primary relay answered. Fast for painting,
+  // while the remaining relays keep merging events in the background.
+  PRIMARY: 'primary',
+  // onEose fires only after every relay answered (or timed out). Use this when
+  // a caller concludes "nothing found" from EOSE, so a slow relay's records are
+  // not missed.
+  ALL: 'all',
+});
 
-export function createRelayService({ relays = DEFAULT_RELAYS } = {}) {
+const CONNECT_TIMEOUT_MS = 5000;
+// The primary relay is queried first; the remaining relays join only after it
+// answered or after this delay. One slow relay can never stall the first page
+// of data, and startup spreads its REQs instead of firing them all at once.
+export const PRIMARY_FALLBACK_MS = 2500;
+// nostr-tools closes a subscription whose EOSE is late by this much. Without
+// it, a relay that accepted the connection but never answers keeps the pooled
+// EOSE from ever firing, so a fetch hangs until its outer timeout.
+const DEFAULT_MAX_WAIT_MS = 10000;
+
+export function createRelayService({ relays = DEFAULT_RELAYS, createPool = () => new SimplePool() } = {}) {
   let list = normalizeRelayList(relays, { defaults: DEFAULT_RELAYS });
-  const pool = new SimplePool();
+  const pool = createPool();
   const health = new Map();
   const latency = new Map();
   for (const relay of list) health.set(relay.url, RELAY_STATE.CONNECTING);
@@ -42,7 +60,10 @@ export function createRelayService({ relays = DEFAULT_RELAYS } = {}) {
     return { ok, failed, count: ok.length, total: targets.length };
   }
 
-  function subscribe(filters, { onEvent, onEose, onClose } = {}) {
+  function subscribe(
+    filters,
+    { onEvent, onEose, onClose, eose = EOSE_MODE.PRIMARY, maxWaitMs = DEFAULT_MAX_WAIT_MS } = {},
+  ) {
     const targets = relaysForKind(list, 'read');
     const requests = Array.isArray(filters) ? filters : [filters];
     if (!targets.length) {
@@ -53,29 +74,87 @@ export function createRelayService({ relays = DEFAULT_RELAYS } = {}) {
     // nostr-tools 2.25 expects one Filter object here, not Filter[]. Passing
     // the array produces an invalid nested REQ command. Use one pooled
     // subscription per filter and expose them as a single closer.
-    let eoseCount = 0;
-    let closeCount = 0;
+    //
+    // Read order is primary-first: the primary relay (first read relay) gets
+    // the query immediately, the rest join once it answered (or after
+    // PRIMARY_FALLBACK_MS) so events from every configured relay still merge.
+    const primaryTargets = [targets[0]];
+    const restTargets = targets.slice(1);
+    const batchCount = restTargets.length ? 2 : 1;
+    const expectedEose = requests.length * batchCount;
+    let closed = false;
+    let restStarted = !restTargets.length;
+    let primaryEose = 0;
+    let restEose = 0;
+    let eoseFired = false;
+    let closeFired = false;
+    const subscriptions = [];
+    const live = new Set();
     const closeReasons = [];
-      const subscriptions = requests.map((filter) => pool.subscribeMany(targets, filter, {
-        onevent(event) {
-          onEvent?.(event);
-        },
-        oneose() {
-          eoseCount += 1;
-          if (eoseCount !== requests.length) return;
-          onEose?.();
-        },
-        onclose(reasons) {
-          closeCount += 1;
-          closeReasons.push(...(reasons ?? []));
-          if (closeCount !== requests.length) return;
-          onClose?.(closeReasons);
-        },
-      }));
+    let fallbackTimer = null;
+
+    function fireEose() {
+      if (eoseFired || closed) return;
+      eoseFired = true;
+      onEose?.();
+    }
+
+    function startRest() {
+      if (restStarted || closed) return;
+      restStarted = true;
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+      subscribeBatch(restTargets, true);
+    }
+
+    function subscribeBatch(targets, isRest) {
+      for (const filter of requests) {
+        const handle = { sub: null, isRest };
+        live.add(handle);
+        handle.sub = pool.subscribeMany(targets, filter, {
+          maxWait: maxWaitMs,
+          onevent(event) {
+            if (!closed) onEvent?.(event);
+          },
+          oneose() {
+            if (isRest) restEose += 1;
+            else primaryEose += 1;
+            if (primaryEose === requests.length) {
+              if (eose === EOSE_MODE.PRIMARY) fireEose();
+              // The primary answered; bring in the remaining relays so their
+              // events still arrive (background merge).
+              startRest();
+            }
+            if (eose === EOSE_MODE.ALL && primaryEose + restEose === expectedEose) fireEose();
+          },
+          onclose(reasons) {
+            if (reasons?.length) closeReasons.push(...reasons);
+            live.delete(handle);
+            if (!closed && live.size === 0 && restStarted && !closeFired) {
+              closeFired = true;
+              onClose?.(closeReasons);
+            }
+          },
+        });
+        subscriptions.push(handle.sub);
+      }
+    }
+
+    subscribeBatch(primaryTargets, false);
+    if (restTargets.length) fallbackTimer = setTimeout(startRest, PRIMARY_FALLBACK_MS);
 
     return {
       close(reason) {
-        for (const subscription of subscriptions) subscription.close(reason);
+        if (closed) return;
+        closed = true;
+        if (fallbackTimer) clearTimeout(fallbackTimer);
+        for (const handle of [...live]) {
+          live.delete(handle);
+          try {
+            handle.sub?.close(reason);
+          } catch {
+            /* the subscription may already be closed */
+          }
+        }
       },
     };
   }
@@ -97,6 +176,25 @@ export function createRelayService({ relays = DEFAULT_RELAYS } = {}) {
     return statuses();
   }
 
+  // Safari (and mobile browsers generally) can suspend a background tab and
+  // leave its WebSockets half-open: the page still looks online but no relay
+  // event is ever delivered again. Closing the pooled connections drops those
+  // zombie sockets; the next subscription reconnects on fresh ones.
+  function reconnect() {
+    let urls = [];
+    try {
+      urls = list.map((relay) => relay.url);
+      pool.close(urls);
+    } catch {
+      /* pool may already be closed */
+    }
+    for (const url of urls) {
+      health.set(url, RELAY_STATE.CONNECTING);
+      latency.delete(url);
+    }
+    return statuses();
+  }
+
   function setRelays(next) {
     list = normalizeRelayList(next, { defaults: DEFAULT_RELAYS });
     const active = new Set(list.map((relay) => relay.url));
@@ -109,12 +207,13 @@ export function createRelayService({ relays = DEFAULT_RELAYS } = {}) {
   }
 
   function statuses() {
-    return list.map((relay) => ({
+    return list.map((relay, index) => ({
       id: relay.id,
       url: relay.url,
       mode: relay.mode,
       health: health.get(relay.url) ?? RELAY_STATE.CONNECTING,
       latencyMs: latency.get(relay.url) ?? null,
+      primary: index === 0,
     }));
   }
 
@@ -130,6 +229,7 @@ export function createRelayService({ relays = DEFAULT_RELAYS } = {}) {
     publish,
     subscribe,
     check,
+    reconnect,
     setRelays,
     statuses,
     close,

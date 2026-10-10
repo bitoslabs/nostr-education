@@ -328,6 +328,7 @@ export default {
   keepOneRelay: 'ເກັບຣີເລໄວ້ຢ່າງໜ້ອຍໜຶ່ງ.',
   relayRemoved: 'ລຶບຣີເລແລ້ວ.',
   relaySetTo: 'ຕັ້ງຣີເລເປັນ {mode}.',
+  relaySetPrimary: 'ຕັ້ງ {url} ເປັນຣີເລຫຼັກແລ້ວ.',
   checkingRelays: 'ກຳລັງກວດສອບຣີເລ…',
   relaysReachable: 'ເຂົ້າເຖິງ {healthy}/{total} ຣີເລໄດ້.',
   actionNotAvailable: 'ການດຳເນີນການນີ້ຍັງບໍ່ມີ.',

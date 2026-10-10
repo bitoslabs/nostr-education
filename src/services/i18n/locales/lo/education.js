@@ -3,6 +3,8 @@ export default {
   browseCatalog: 'ເບິ່ງລາຍການຄູຮຽນໃໝ່.',
   goToDiscover: 'ໄປທີ່ຄົ້ນຫາ',
   refresh: 'ຊິງຈາກຣີເລ',
+  loadHomework: 'ໂຫຼດວຽກບ້ານ',
+  loadingHomework: 'ກຳລັງໂຫຼດວຽກບ້ານ…',
   lastScorePercent: 'ຄະແນນລ່າສຸດ: {score}/{max} ({percent}%).',
   lastScoreValue: 'ຄະແນນລ່າສຸດ: {score}.',
   scoreHistory: 'ກ່ອນໜ້ານີ້',

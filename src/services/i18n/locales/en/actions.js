@@ -328,6 +328,7 @@ export default {
   keepOneRelay: 'Keep at least one relay.',
   relayRemoved: 'Relay removed.',
   relaySetTo: 'Relay set to {mode}.',
+  relaySetPrimary: 'Primary relay set to {url}.',
   checkingRelays: 'Checking relays…',
   relaysReachable: '{healthy}/{total} relays reachable.',
   actionNotAvailable: 'This action is not available yet.',

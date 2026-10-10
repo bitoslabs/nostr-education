@@ -58,8 +58,9 @@ export function renderEducation({ app, state }) {
         el('h3', {}, t('education.findCourse')),
         el('p', { class: 'muted small' }, t('education.browseCatalog')),
         el('div', { class: 'arow' }, [
+          loadHomeworkButton(snapshot, app),
           button(t('education.goToDiscover'), { onClick: () => app.navigate('/discover') }),
-          button(t('common.workspace.joinWithLink'), { variant: 'gold', onClick: () => app.navigate('/join') }),
+          button(t('common.workspace.joinWithLink'), { onClick: () => app.navigate('/join') }),
           button(t('education.refresh'), { small: true, onClick: () => app.refreshRecords?.() }),
         ]),
       ]),
@@ -170,6 +171,27 @@ function createAcademyCard(app) {
   ]);
 }
 
+// Manual fetch for homework and grades: the same relay query refreshRecords
+// runs, always with feedback, and disabled while a fetch is in flight.
+function loadHomeworkButton(snapshot, app, { small = false } = {}) {
+  const loading = snapshot?.recordsStatus === 'loading';
+  return button(loading ? t('education.loadingHomework') : t('education.loadHomework'), {
+    variant: 'gold',
+    small,
+    disabled: loading,
+    onClick: () => app.loadHomework?.(),
+  });
+}
+
+// Empty homework is ambiguous: nothing assigned yet, or the fetch failed. Offer
+// the manual load right there instead of an empty dead end.
+function emptyHomework(state, app) {
+  return el('div', { class: 'arow' }, [
+    emptyState(t('education.emptyHomework')),
+    loadHomeworkButton(state, app, { small: true }),
+  ]);
+}
+
 function classCards(state, app, persona) {
   const classrooms = classroomsForStudent(state.classrooms ?? [], persona.id, state.capabilities ?? []);
   if (!classrooms.length) {
@@ -218,7 +240,7 @@ function classCard(state, app, persona, room, lookup) {
         : null,
     ...(homework.length
       ? homework.map((item) => homeworkRow(state, app, persona, item, lookup))
-      : [emptyState(t('education.emptyHomework'))]),
+      : [emptyHomework(state, app)]),
   ]);
 }
 

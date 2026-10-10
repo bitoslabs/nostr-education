@@ -103,6 +103,7 @@ import {
   addRelay as addRelayToList,
   nextRelayMode,
   normalizeRelayUrl,
+  promoteRelay,
   removeRelay as removeRelayFromList,
   setRelayMode as setRelayModeInList,
 } from '../domain/relay.js';
@@ -1025,6 +1026,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       };
       const timer = setTimeout(finish, 7000);
       sub = relay.subscribe([{ kinds: [KIND.PROFILE], authors: [pubkey], limit: 1 }], {
+        eose: 'all',
         onEvent: (event) => {
           if (event.pubkey !== pubkey) return;
           const meta = parseProfileMeta(event.content);
@@ -1104,6 +1106,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       };
       const timer = setTimeout(finish, 7000);
       sub = relay.subscribe([{ kinds: [KIND.NOTE], authors: [pubkey], limit: PROFILE_NOTE_LIMIT }], {
+        eose: 'all',
         onEvent: (event) => {
           if (event.pubkey !== pubkey || seen.has(event.id)) return;
           // Keep replies too (`allowReply`); the Replies tab filters on `replyTo`.
@@ -1146,6 +1149,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
       };
       const timer = setTimeout(finish, 7000);
       sub = relay.subscribe([{ kinds: [KIND.ZAP], '#p': [pubkey], limit: 50 }], {
+        eose: 'all',
         onEvent: (event) => {
           if (seen.has(event.id)) return;
           const zap = zapFromReceipt(event, pubkey);
@@ -1206,6 +1210,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
           return;
         }
         notesSub = relay.subscribe([{ kinds: [KIND.NOTE], ids }], {
+          eose: 'all',
           onEvent: (event) => {
             if (seen.has(event.id)) return;
             const mapped = threadEventFromNote(event);
@@ -1221,6 +1226,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         });
       };
       reactSub = relay.subscribe([{ kinds: [KIND.REACTION], authors: [pubkey], limit: 80 }], {
+        eose: 'all',
         onEvent: (event) => {
           if (event.content === '-') return; // a dislike, not a like
           for (const tag of event.tags ?? []) {
@@ -1889,6 +1895,9 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
         '#d': [`${RECORD_TYPES.JOIN_LINK}:${inviteId}`],
         '#t': [APP_TAG],
       }], {
+        // Concluding "not published yet" from EOSE must wait for every relay,
+        // or a join link only the secondary relays carry looks missing.
+        eose: 'all',
         onEvent: (event) => {
           const record = decodeRecord(event.content, event.tags);
           if (record?.type === RECORD_TYPES.JOIN_LINK && record.id === inviteId) finish(true);
@@ -4429,6 +4438,17 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     toast(t('actions.relaySetTo', { mode: t(relayModeKey(mode)) }), 'info');
   }
 
+  // The first relay in the list is the primary: reads query it first, so
+  // promoting a relay moves it to the front of the configured list.
+  function setPrimaryRelay(id) {
+    const current = state().relayConfig ?? [];
+    const entry = current.find((relay) => relay.id === id);
+    if (!entry || current[0]?.id === id) return false;
+    applyRelayConfig(promoteRelay(current, id));
+    toast(t('actions.relaySetPrimary', { url: entry.url }), 'ok');
+    return true;
+  }
+
   async function checkRelays() {
     toast(t('actions.checkingRelays'), 'info');
     await relay.check();
@@ -5207,6 +5227,7 @@ export function createActions({ store, bus, signer, confirm: confirmService, rel
     addRelay,
     removeRelay,
     cycleRelayMode,
+    setPrimaryRelay,
     checkRelays,
     stub,
   };
